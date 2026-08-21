@@ -17,9 +17,9 @@ Ziel ist die direkte Vergleichbarkeit von Servern unter identischen Bedingungen:
 - SHA256-Prüfung der verwendeten GGUF-Dateien
 - Vergleich mehrerer Serverläufe
 
-## Version 1.1.0 – automatisches Setup
+## Version 1.1.1 – One-Click-Setup ohne winget
 
-Unter Windows ist **kein manuelles Python- oder llama.cpp-Setup mehr nötig**.
+Unter Windows ist **kein manuelles Python- oder llama.cpp-Setup nötig**. `winget` wird für die Python-Installation nicht mehr benötigt.
 
 Einfach:
 
@@ -36,22 +36,38 @@ Der erste Start richtet das System automatisch ein.
 `START_BENCHMARK.bat` bzw. `scripts/START_BENCHMARK.ps1` erledigt automatisch:
 
 1. Prüfung auf Python 3.10 oder neuer.
-2. Falls Python fehlt: Installation von Python 3.12 über `winget`.
-3. Erstellung einer isolierten `.venv`.
-4. Installation/Aktualisierung aller benötigten Python-Pakete.
-5. Erkennung einer NVIDIA-GPU über `nvidia-smi`.
-6. Abfrage des neuesten offiziellen llama.cpp-Releases von GitHub.
-7. Automatische Auswahl des passenden Windows-x64-Builds:
+2. Falls Python fehlt: direkter Download des offiziellen Python-3.12.10-Installers von `python.org`.
+3. SHA256-Prüfung des heruntergeladenen Python-Installers.
+4. Projektlokale Installation unter `.runtime/python` – keine globale PATH-Änderung und keine systemweite Python-Installation erforderlich.
+5. Erstellung einer isolierten `.venv`.
+6. Installation/Aktualisierung aller benötigten Python-Pakete.
+7. Erkennung einer NVIDIA-GPU über `nvidia-smi`.
+8. Abfrage des neuesten offiziellen llama.cpp-Releases von GitHub.
+9. Automatische Auswahl des passenden Windows-x64-Builds:
    - CUDA 13.3, wenn der Treiber CUDA 13 unterstützt,
    - sonst CUDA 12.4 bei NVIDIA,
    - CPU-Build, falls keine NVIDIA-GPU erkannt wird.
-8. Download von `llama-bench` und `llama-server`.
-9. Bei CUDA: Download der passenden CUDA-Runtime-DLLs. Ein separates CUDA Toolkit ist nicht notwendig.
-10. Speicherung des verwendeten llama.cpp-Builds unter `tools/llama.cpp/.llama-build.json`.
-11. Erstellung bzw. Aktualisierung von `benchmark.yaml`.
-12. Automatische Erkennung aller `*.gguf`-Dateien unter `models/`.
-13. Ausführung von `llmbench doctor` zur Vorprüfung.
-14. Automatischer Start des Benchmarks, sobald mindestens ein Modell vorhanden ist.
+10. Download von `llama-bench` und `llama-server`.
+11. Bei CUDA: Download der passenden CUDA-Runtime-DLLs. Ein separates CUDA Toolkit ist nicht notwendig.
+12. Speicherung des verwendeten llama.cpp-Builds unter `tools/llama.cpp/.llama-build.json`.
+13. Erstellung bzw. Aktualisierung von `benchmark.yaml`.
+14. Automatische Erkennung aller `*.gguf`-Dateien unter `models/`.
+15. Ausführung von `llmbench doctor` zur Vorprüfung.
+16. Automatischer Start des Benchmarks, sobald mindestens ein Modell vorhanden ist.
+
+### Python-Bootstrap
+
+Wenn bereits Python 3.10+ vorhanden ist, verwendet das Setup die bestehende Installation zur Erstellung von `.venv`.
+
+Wenn kein geeignetes Python vorhanden ist, wird **Python 3.12.10 direkt von python.org** geladen und ausschließlich für dieses Projekt nach
+
+```text
+.runtime/python/
+```
+
+installiert. Das Setup unterstützt Windows **x64** und **ARM64**. Der Download wird vor der Ausführung gegen eine fest hinterlegte SHA256-Prüfsumme aus den offiziellen Python-Release-Metadaten geprüft.
+
+Damit funktioniert das Setup auch auf Systemen, auf denen Microsoft Store oder `winget` deaktiviert bzw. durch Unternehmensrichtlinien blockiert sind.
 
 ## Modelle
 

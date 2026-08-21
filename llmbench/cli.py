@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import __version__
 from .compare import compare_summaries
+from .bootstrap import bootstrap_config
 from .config import load_config, save_example, validate_config
 from .doctor import doctor
 from .runner import run_suite
@@ -53,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", default=None, help="Nur ein benanntes Modell testen")
     run.add_argument("--skip-endpoint", action="store_true")
 
+    boot = sub.add_parser("bootstrap", help="Lokale Tools eintragen und GGUF-Modelle automatisch erkennen")
+    boot.add_argument("--config", default="benchmark.yaml")
+    boot.add_argument("--root", default=".")
+    boot.add_argument("--llama-dir", default="tools/llama.cpp")
+    boot.add_argument("--models-dir", default="models")
+
     comp = sub.add_parser("compare", help="Mehrere Server-Runs vergleichen")
     comp.add_argument("inputs", nargs="+", help="Run-Ordner oder summary.json-Dateien")
     comp.add_argument("--out", default="comparison")
@@ -64,6 +71,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "init":
         save_example(args.output)
         print(f"Beispielkonfiguration geschrieben: {Path(args.output).resolve()}")
+        return 0
+
+    if args.cmd == "bootstrap":
+        result = bootstrap_config(args.config, args.root, args.llama_dir, args.models_dir)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
 
     if args.cmd in {"doctor", "run"}:

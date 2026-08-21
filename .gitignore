@@ -5,3 +5,6 @@ results/
 comparison/
 benchmark.yaml
 *.log
+tools/
+models/*.gguf
+models/**/*.gguf

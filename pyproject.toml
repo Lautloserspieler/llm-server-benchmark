@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-server-benchmark"
-version = "1.0.0"
+version = "1.1.0"
 description = "Reproducible local LLM server benchmarking with llama.cpp, hardware telemetry, long-context and endpoint load tests."
 readme = "README.md"
 requires-python = ">=3.10"

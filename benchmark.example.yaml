@@ -1,13 +1,13 @@
 project:
   name: "Firmenweiter LLM Server Benchmark"
-  server_name: "RTX-PRO-4000-Blackwell-Testserver"
+  server_name: null
   output_dir: "results"
   hash_models: true
 
 tools:
-  # Pfade an eure llama.cpp-Installation anpassen.
-  llama_bench: "C:/llama.cpp/llama-bench.exe"
-  llama_server: "C:/llama.cpp/llama-server.exe"
+  # Diese Pfade werden beim ersten Start automatisch überschrieben.
+  llama_bench: "tools/llama.cpp/llama-bench.exe"
+  llama_server: "tools/llama.cpp/llama-server.exe"
 
 benchmark:
   repetitions: 5
@@ -18,20 +18,13 @@ benchmark:
   cache_type_k: f16
   cache_type_v: f16
   resource_sample_interval: 0.5
-
-  # Input-/Prompt-Verarbeitung
   prompt_tokens: [512, 4096, 8192]
-
-  # Reine Textgenerierung
   generation_tokens: [128, 512]
-
-  # Tatsächlich gefüllter Kontext (KV-Cache), nicht nur eingestelltes Max-Context.
   context_depths: [0, 8192, 32768, 65536, 130000]
   long_context_prompt_tokens: 512
   long_context_generation_tokens: 128
 
 endpoint:
-  # Aktivieren, wenn zusätzlich der echte Serverbetrieb mit parallelen Requests getestet werden soll.
   enabled: false
   auto_start: true
   base_url: "http://127.0.0.1:8080"
@@ -47,41 +40,5 @@ endpoint:
     Erkläre in einem technisch präzisen Absatz, warum reproduzierbare Benchmarks
     für lokale LLM-Server wichtig sind.
 
-models:
-  - name: "Gemma-12B-Q4_0"
-    path: "C:/Models/gemma-12b-q4_0.gguf"
-    quality_gate: "Teilweise bestanden"
-    notes: "Schnelles Standardmodell; interner Dokumententest erkannte Punkt 25 nicht."
-    profiles:
-      - name: "Full-GPU"
-        gpu_layers: -1
-        threads: auto
-
-      - name: "Hybrid-10T"
-        # Beispiel. Die optimale Layerzahl muss einmal für das konkrete Modell ermittelt werden.
-        gpu_layers: 30
-        threads: 10
-
-  - name: "GPT-OSS-20B-Q4_0"
-    path: "C:/Models/gpt-oss-20b-q4_0.gguf"
-    quality_gate: "Nicht bestanden – Halluzinationen im Dokumententest"
-    profiles:
-      - name: "Full-GPU"
-        gpu_layers: -1
-        threads: auto
-
-  - name: "Qwen-27B-Q4_0"
-    path: "C:/Models/qwen-27b-q4_0.gguf"
-    quality_gate: "Bestanden"
-    notes: "Stärkstes Modell im bisherigen internen Dokumententest."
-    endpoint:
-      enabled: false
-      profile: "Hybrid-30L-10T"
-    profiles:
-      - name: "Full-GPU-Versuch"
-        gpu_layers: -1
-        threads: auto
-
-      - name: "Hybrid-30L-10T"
-        gpu_layers: 30
-        threads: 10
+# Wird durch die automatische Modellerkennung ergänzt.
+models: []

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-server-benchmark"
+version = "1.0.0"
+description = "Reproducible local LLM server benchmarking with llama.cpp, hardware telemetry, long-context and endpoint load tests."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Erik Meyer"}]
+dependencies = [
+  "PyYAML>=6.0.1",
+  "psutil>=5.9.8",
+  "httpx>=0.27.0",
+  "nvidia-ml-py>=12.560.30"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+llmbench = "llmbench.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["llmbench*"]

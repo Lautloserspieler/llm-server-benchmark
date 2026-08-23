@@ -48,4 +48,18 @@ echo "=== Vorabpruefung ==="
 python -m llmbench doctor --config "$CONFIG"
 
 echo "=== Benchmark ==="
-python -m llmbench run --config "$CONFIG"
+echo "Wie lange soll der Test laufen?"
+echo "  1: kurz (short)   - schnelle Überprüfung"
+echo "  2: mittel (medium) - Standardwerte"
+echo "  3: lang (long)    - präzise Ergebnisse"
+read -p "Auswahl [1-3, Standard=2]: " choice
+
+duration="medium"
+if [ "$choice" = "1" ]; then
+    duration="short"
+elif [ "$choice" = "3" ]; then
+    duration="long"
+fi
+
+echo "Verwende Dauer: $duration"
+python -m llmbench run --config "$CONFIG" --duration "$duration"

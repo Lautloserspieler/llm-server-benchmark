@@ -404,7 +404,18 @@ if ($SetupOnly) {
 }
 
 Write-Step "Benchmark"
-& $VenvPython -m llmbench run --config $Config
+Write-Host "Wie lange soll der Test laufen?"
+Write-Host "  1: kurz (short)   - schnelle Überprüfung"
+Write-Host "  2: mittel (medium) - Standardwerte"
+Write-Host "  3: lang (long)    - präzise Ergebnisse"
+$choice = Read-Host "Auswahl [1-3, Standard=2]"
+
+$duration = "medium"
+if ($choice -eq "1") { $duration = "short" }
+elseif ($choice -eq "3") { $duration = "long" }
+
+Write-Host "Verwende Dauer: $duration"
+& $VenvPython -m llmbench run --config $Config --duration $duration
 if ($LASTEXITCODE -ne 0) {
     throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)."
 }

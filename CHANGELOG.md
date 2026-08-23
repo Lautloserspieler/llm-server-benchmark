@@ -86,6 +86,14 @@
   HTTP-404 aus `Invoke-RestMethod`. Das GitHub-Anfragelimit wird ebenfalls
   als solches benannt.
 - Neue Vorlage `llama-cpp-version.txt` im Projektordner.
+- Die Startprobe nach der Installation nutzt `--list-devices`; `llama-bench`
+  kennt kein `--version`. Sie wertet zusätzlich aus, ob die Backends geladen
+  wurden, und läuft über `Start-Process` mit getrennten Ausgabekanälen, damit
+  stderr nicht als `NativeCommandError` die Meldung unlesbar macht.
+- `llmbench doctor` prüft die Langformen der benötigten Optionen
+  (`--flash-attn`, `--n-depth`, …). Die Kurzform `-d` kam auch in `-dev` und
+  `--delay` vor und wäre nie als fehlend erkannt worden. Der Bericht zeigt
+  jetzt die vom Build erkannten Geräte.
 - Das Windows-Setup installiert das Paket jetzt mit den Web-Extras, wie
   `setup.bat` auch.
 

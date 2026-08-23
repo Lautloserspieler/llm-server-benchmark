@@ -50,12 +50,16 @@ def probe_build(exe: str, with_hash: bool = True) -> dict[str, Any]:
         return {"error": str(exc)}
 
     info["binary"] = file_fingerprint(resolved, with_hash=with_hash)
+    # llama-bench kennt kein --version. Die Buildnummer steht ohnehin in
+    # jeder Ergebniszeile (build_commit/build_number); hier interessiert,
+    # welche Backends und Geraete der Build auf diesem Rechner sieht.
     try:
-        cp = run_capture([resolved, "--version"], timeout=20)
-        text = (cp.stderr or "") + (cp.stdout or "")
-        info["version_output"] = text.strip()[:400]
+        cp = run_capture([resolved, "--list-devices"], timeout=30)
+        text = ((cp.stdout or "") + (cp.stderr or "")).strip()
+        info["devices_output"] = text[:600]
+        info["devices_probe_returncode"] = cp.returncode
     except Exception as exc:
-        info["version_output"] = f"nicht ermittelbar: {exc}"
+        info["devices_output"] = f"nicht ermittelbar: {exc}"
 
     # Vom Setup-Skript hinterlegte Build-Metadaten, falls vorhanden.
     marker = Path(resolved).parent / ".llama-build.json"

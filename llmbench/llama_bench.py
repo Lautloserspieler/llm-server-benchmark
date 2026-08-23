@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
+import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from .config import normalize_flash_attention
 from .monitor import ResourceMonitor, strip_samples
@@ -71,8 +74,47 @@ def probe_build(exe: str, with_hash: bool = True) -> dict[str, Any]:
     return info
 
 
+def _drain(stream: IO[str], sink: list[str], on_line: Callable[[str], None] | None) -> None:
+    """Liest einen Ausgabestrom mit und meldet jede fertige Zeile.
+
+    llama-bench trennt seine Fortschrittsmeldungen mit Wagenruecklauf statt
+    Zeilenumbruch, damit sie sich im Terminal ueberschreiben. readline() wuerde
+    darauf warten, dass irgendwann ein \n kommt - deshalb wird hier zeichenweise
+    gelesen und bei beiden Trennzeichen abgeschlossen.
+    """
+    buffer: list[str] = []
+    try:
+        while True:
+            char = stream.read(1)
+            if not char:
+                break
+            if char in ("\r", "\n"):
+                if buffer:
+                    line = "".join(buffer)
+                    sink.append(line)
+                    if on_line:
+                        with contextlib.suppress(Exception):
+                            on_line(line)
+                    buffer = []
+                continue
+            buffer.append(char)
+    except Exception:
+        pass
+    finally:
+        if buffer:
+            line = "".join(buffer)
+            sink.append(line)
+            if on_line:
+                with contextlib.suppress(Exception):
+                    on_line(line)
+
+
 def _base_args(
-    exe: str, model_path: str, bench_cfg: dict[str, Any], profile: dict[str, Any]
+    exe: str,
+    model_path: str,
+    bench_cfg: dict[str, Any],
+    profile: dict[str, Any],
+    with_progress: bool = True,
 ) -> list[str]:
     args = [
         exe,
@@ -87,6 +129,11 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
+    if with_progress:
+        # Meldet, bei welcher Wiederholung llama-bench gerade ist. Ohne das
+        # bleibt die Anzeige waehrend langer Tests stumm. Aeltere Builds
+        # kennen die Option nicht; run_llama_bench faengt das ab.
+        args.append("--progress")
     threads = profile.get("threads", "auto")
     if threads not in (None, "auto", -1):
         args.extend(["-t", str(threads)])
@@ -103,16 +150,60 @@ def _base_args(
     return args
 
 
-def run_llama_bench(
-    exe: str,
-    model_path: str,
-    bench_cfg: dict[str, Any],
-    profile: dict[str, Any],
-    test_kind: str,
-    output_dir: Path,
-) -> dict[str, Any]:
-    exe = resolve_executable(exe)
-    args = _base_args(exe, model_path, bench_cfg, profile)
+def _rejected_progress(stdout: str, stderr: str) -> bool:
+    text = (stdout or "") + (stderr or "")
+    return "--progress" in text and ("invalid parameter" in text or "unknown argument" in text)
+
+
+def _execute(
+    args: list[str],
+    timeout_s: float,
+    monitor: ResourceMonitor,
+    on_progress: Callable[[str, dict[str, Any] | None], None] | None,
+) -> tuple[str, str, int | None, bool]:
+    timed_out = False
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    monitor.set_target_pid(proc.pid)
+
+    out_lines: list[str] = []
+    err_lines: list[str] = []
+
+    def _report(line: str) -> None:
+        if on_progress:
+            on_progress(line.strip(), monitor.latest())
+
+    # Beide Kanaele nebenlaeufig leeren: sonst blockiert llama-bench, sobald
+    # der Puffer eines Kanals vollaeuft, und die Anzeige stuende still.
+    readers = [
+        threading.Thread(target=_drain, args=(proc.stdout, out_lines, None), daemon=True),
+        threading.Thread(target=_drain, args=(proc.stderr, err_lines, _report), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    try:
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        kill_process_tree(proc)
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=30)
+    for reader in readers:
+        reader.join(timeout=10)
+
+    return "\n".join(out_lines), "\n".join(err_lines), proc.returncode, timed_out
+
+
+def _test_args(base: list[str], bench_cfg: dict[str, Any], test_kind: str) -> list[str]:
+    args = list(base)
     if test_kind == "prompt":
         args.extend(["-p", csv_value(bench_cfg["prompt_tokens"]), "-n", "0", "-d", "0"])
     elif test_kind == "generation":
@@ -125,32 +216,40 @@ def run_llama_bench(
         ])
     else:
         raise ValueError(f"Unbekannte Testart: {test_kind}")
+    return args
+
+
+def run_llama_bench(
+    exe: str,
+    model_path: str,
+    bench_cfg: dict[str, Any],
+    profile: dict[str, Any],
+    test_kind: str,
+    output_dir: Path,
+    on_progress: Callable[[str, dict[str, Any] | None], None] | None = None,
+) -> dict[str, Any]:
+    exe = resolve_executable(exe)
+    args = _test_args(_base_args(exe, model_path, bench_cfg, profile), bench_cfg, test_kind)
 
     timeout_s = float(bench_cfg.get("timeout_seconds", 3600))
     monitor = ResourceMonitor(float(bench_cfg.get("resource_sample_interval", 0.5)))
     started = time.perf_counter()
     monitor.start()
 
-    timed_out = False
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    monitor.set_target_pid(proc.pid)
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        kill_process_tree(proc)
-        try:
-            stdout, stderr = proc.communicate(timeout=30)
-        except Exception:
-            stdout, stderr = "", ""
-    returncode = proc.returncode
+    stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
+
+    # Aeltere llama.cpp-Builds kennen --progress nicht und lehnen den Aufruf
+    # sofort ab. In dem Fall einmal ohne wiederholen, statt den Test zu
+    # verlieren.
+    if returncode != 0 and not timed_out and _rejected_progress(stdout, stderr):
+        args = _test_args(
+            _base_args(exe, model_path, bench_cfg, profile, with_progress=False),
+            bench_cfg, test_kind,
+        )
+        if on_progress:
+            on_progress("Build kennt --progress nicht, Wiederholung ohne Fortschrittsanzeige", None)
+        stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
+
     duration = time.perf_counter() - started
     telemetry = monitor.stop()
 

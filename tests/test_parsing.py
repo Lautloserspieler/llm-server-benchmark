@@ -2,7 +2,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from llmbench.llama_bench import _base_args, _extract_json, flatten_bench_rows, run_llama_bench
+from llmbench.llama_bench import (
+    _base_args,
+    _drain,
+    _extract_json,
+    _rejected_progress,
+    flatten_bench_rows,
+    run_llama_bench,
+)
 
 BENCH_CFG = {
     "repetitions": 3, "delay_seconds": 0, "batch_size": 2048, "ubatch_size": 512,
@@ -93,3 +100,91 @@ def test_telemetry_samples_stay_out_of_the_returned_result(tmp_path: Path, monke
     assert "samples" not in result["telemetry"]
     assert result["telemetry"]["samples_stored_in"] == "raw_*.json"
     assert '"samples"' in (tmp_path / "raw_generation.json").read_text(encoding="utf-8")
+
+
+def test_drain_splits_on_carriage_returns():
+    """llama-bench trennt Fortschrittsmeldungen mit \r statt \n.
+    readline() wuerde darauf warten, dass irgendwann ein \n kommt."""
+    import io
+
+    sink: list[str] = []
+    seen: list[str] = []
+    _drain(io.StringIO("1/5\r2/5\r3/5\nfertig\n"), sink, seen.append)
+    assert sink == ["1/5", "2/5", "3/5", "fertig"]
+    assert seen == sink
+
+
+def test_drain_reports_a_trailing_fragment_without_separator():
+    import io
+
+    sink: list[str] = []
+    _drain(io.StringIO("letzte Zeile ohne Umbruch"), sink, None)
+    assert sink == ["letzte Zeile ohne Umbruch"]
+
+
+def test_progress_flag_is_passed_by_default():
+    args = _base_args("llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1})
+    assert "--progress" in args
+    args = _base_args("llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1}, with_progress=False)
+    assert "--progress" not in args
+
+
+def test_rejected_progress_detects_an_older_build():
+    assert _rejected_progress("", "error: invalid parameter for argument: --progress")
+    assert not _rejected_progress("", "error: invalid parameter for argument: --version")
+    assert not _rejected_progress("", "")
+
+
+def test_progress_lines_reach_the_callback(tmp_path: Path, monkeypatch):
+    script = tmp_path / "prog.py"
+    script.write_text(
+        "import sys\n"
+        "for i in range(1, 4):\n"
+        "    sys.stderr.write(f'run {i}/3\\r'); sys.stderr.flush()\n"
+        "print('[{\"n_prompt\":0,\"n_gen\":128,\"n_depth\":0,\"avg_ts\":10.0}]')\n",
+        encoding="utf-8",
+    )
+    real_popen = subprocess.Popen
+
+    def fake_popen(_args, **kwargs):
+        return real_popen([sys.executable, str(script)], **kwargs)
+
+    monkeypatch.setattr("llmbench.llama_bench.resolve_executable", lambda x: x)
+    monkeypatch.setattr("llmbench.llama_bench.subprocess.Popen", fake_popen)
+
+    seen: list[str] = []
+    result = run_llama_bench(
+        "llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1}, "generation", tmp_path,
+        on_progress=lambda note, _sample: seen.append(note),
+    )
+    assert result["status"] == "ok"
+    assert "run 3/3" in seen
+
+
+def test_older_build_without_progress_is_retried(tmp_path: Path, monkeypatch):
+    """Ein Build ohne --progress soll den Test nicht kosten."""
+    script = tmp_path / "reject.py"
+    script.write_text(
+        "import sys\n"
+        "if '--progress' in sys.argv:\n"
+        "    sys.stderr.write('error: invalid parameter for argument: --progress\\n')\n"
+        "    sys.exit(1)\n"
+        "print('[{\"n_prompt\":0,\"n_gen\":128,\"n_depth\":0,\"avg_ts\":11.0}]')\n",
+        encoding="utf-8",
+    )
+    real_popen = subprocess.Popen
+    calls: list[list[str]] = []
+
+    def fake_popen(args, **kwargs):
+        calls.append(list(args))
+        return real_popen([sys.executable, str(script)] + list(args[1:]), **kwargs)
+
+    monkeypatch.setattr("llmbench.llama_bench.resolve_executable", lambda x: x)
+    monkeypatch.setattr("llmbench.llama_bench.subprocess.Popen", fake_popen)
+
+    result = run_llama_bench(
+        "llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1}, "generation", tmp_path
+    )
+    assert result["status"] == "ok"
+    assert len(calls) == 2
+    assert "--progress" in calls[0] and "--progress" not in calls[1]

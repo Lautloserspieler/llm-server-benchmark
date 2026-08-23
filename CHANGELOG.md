@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.3.0
+
+### Live-Anzeige waehrend des Laufs
+
+- Neue Statuszeile im Terminal: laufender Test, verstrichene Zeit, Fortschritt
+  aus `llama-bench --progress`, GPU-Auslastung, VRAM, Leistungsaufnahme,
+  Temperatur und eine Restzeitschaetzung. Bisher war waehrend eines Laufs
+  ueberhaupt nichts zu sehen.
+- Die Ausgabe von `llama-bench` wird jetzt nebenlaeufig mitgelesen statt
+  komplett abgefangen. Fortschrittsmeldungen sind mit Wagenruecklauf statt
+  Zeilenumbruch getrennt; das wird eigens behandelt.
+- Kennt der installierte Build `--progress` nicht, wird der Test einmal ohne
+  wiederholt statt zu scheitern.
+- Jedes Einzelergebnis erscheint sofort nach seinem Test, nicht erst im Bericht.
+- Die Restzeit wird je Testart gemittelt: ein Long-Context-Test dauert ein
+  Vielfaches eines Prompt-Tests, ein Gesamtmittel waere deutlich daneben.
+- Ohne Terminal (Umleitung in eine Datei) schaltet die Anzeige selbsttaetig auf
+  einzelne Zeilen um. Erzwingbar mit `llmbench run --plain`.
+- Am Ende steht eine Ergebnistabelle direkt im Terminal.
+
+### PDF-Bericht
+
+- Jeder Lauf erzeugt zusaetzlich `report.pdf`: Serverdaten, Nachweis der
+  Testbedingungen, Ergebnistabellen und Balkendiagramme je Modell und Profil,
+  Telemetrie und Endpoint-Werte.
+- Prompt Processing und Text Generation bekommen getrennte Diagramme. Auf einer
+  gemeinsamen Skala waeren die Generierungsbalken nicht mehr ablesbar.
+- Schlaegt die PDF-Erzeugung fehl, bleibt der Lauf gueltig; der Grund landet als
+  Hinweis in `summary.json`.
+- Neue Abhaengigkeit: `reportlab`.
+
+### Web-Dashboard entfernt
+
+- `llmbench serve`, `llmbench/server.py` und der gesamte `web/`-Ordner sind
+  entfallen, ebenso die Abhaengigkeiten `fastapi` und `uvicorn` und das
+  Extra `[web]`. Die Live-Anzeige im Terminal ersetzt es.
+
 ## 1.2.0
 
 ### Reproduzierbarkeit

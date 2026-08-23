@@ -10,6 +10,8 @@ from .config import config_fingerprint, public_config, resolve_path
 from .endpoint import run_endpoint_load, start_llama_server, stop_llama_server, wait_health
 from .hardware import collect_hardware
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build, run_llama_bench
+from .pdf_report import generate_run_pdf
+from .progress import Reporter, make_reporter
 from .report import generate_run_html
 from .utils import (
     ensure_dir,
@@ -22,6 +24,16 @@ from .utils import (
 )
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
+
+
+def count_tests(cfg: dict[str, Any], selected_model: str | None = None) -> int:
+    """Wie viele Einzeltests stehen an. Basis der Restzeitschaetzung."""
+    total = 0
+    for model in cfg.get("models", []):
+        if selected_model and model["name"].lower() != selected_model.lower():
+            continue
+        total += len(model.get("profiles") or []) * len(BENCH_KINDS)
+    return total
 
 
 def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
@@ -67,8 +79,12 @@ def _resolve_endpoint_profile(model: dict[str, Any], endpoint_cfg: dict[str, Any
 
 
 def run_suite(
-    cfg: dict[str, Any], selected_model: str | None = None, skip_endpoint: bool = False
+    cfg: dict[str, Any],
+    selected_model: str | None = None,
+    skip_endpoint: bool = False,
+    reporter: Reporter | None = None,
 ) -> Path:
+    reporter = reporter or make_reporter()
     server_name = cfg["project"].get("server_name") or hostname()
     output_root = Path(resolve_path(cfg["project"]["output_dir"], cfg))
     run_dir = ensure_dir(output_root / f"{safe_name(server_name)}_{utc_now_compact()}")
@@ -95,6 +111,7 @@ def run_suite(
     }
 
     build_ids: set[str] = set()
+    reporter.run_started(server_name, count_tests(cfg, selected_model))
 
     for model in cfg["models"]:
         if selected_model and model["name"].lower() != selected_model.lower():
@@ -107,6 +124,7 @@ def run_suite(
             model_result["error"] = f"Modelldatei nicht gefunden: {meta['path']}"
             summary["models"].append(model_result)
             summary["warnings"].append(model_result["error"])
+            reporter.note(model_result["error"])
             write_json(run_dir / "summary.partial.json", summary)
             continue
 
@@ -118,6 +136,7 @@ def run_suite(
                 "benchmarks": {},
             }
             for kind in BENCH_KINDS:
+                reporter.test_started(model["name"], profile["name"], kind)
                 try:
                     result = run_llama_bench(
                         cfg["tools"]["llama_bench"],
@@ -126,6 +145,7 @@ def run_suite(
                         profile,
                         kind,
                         profile_dir,
+                        on_progress=reporter.progress,
                     )
                 except Exception as exc:
                     result = {
@@ -134,9 +154,15 @@ def run_suite(
                         "error": str(exc),
                         "traceback": traceback.format_exc(),
                     }
+                reporter.test_finished(
+                    result.get("status", "failed"),
+                    flatten_bench_rows(result),
+                    result.get("error"),
+                )
                 build_ids.update(build_ids_from_rows(result))
                 for warn in (result.get("telemetry") or {}).get("warnings", []):
                     summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
+                    reporter.note(warn)
                 profile_result["benchmarks"][kind] = result
             model_result["profiles"].append(profile_result)
 
@@ -147,6 +173,7 @@ def run_suite(
             if note:
                 summary["warnings"].append(note)
             endpoint_dir = ensure_dir(model_dir / "endpoint")
+            reporter.note(f"Endpoint-Test fuer {model['name']} laeuft ...")
             proc = None
             try:
                 if endpoint_cfg.get("auto_start", True):
@@ -201,7 +228,67 @@ def run_suite(
     write_json(run_dir / "summary.json", summary)
     _write_csv(run_dir / "benchmarks.csv", summary)
     generate_run_html(summary, run_dir / "report.html")
+    try:
+        generate_run_pdf(summary, run_dir / "report.pdf")
+    except Exception as exc:  # PDF ist Beiwerk, der Lauf bleibt gueltig
+        summary["warnings"].append(f"PDF-Bericht konnte nicht erzeugt werden: {exc}")
+        write_json(run_dir / "summary.json", summary)
+        reporter.note(f"PDF-Bericht uebersprungen: {exc}")
+    reporter.run_finished()
+    print_summary_table(summary)
     return run_dir
+
+
+def print_summary_table(summary: dict[str, Any]) -> None:
+    """Ergebnisuebersicht direkt im Terminal, damit man den Bericht nicht
+    erst oeffnen muss."""
+    rows: list[tuple[str, str, str, str, str]] = []
+    for m in summary.get("models", []):
+        model_name = str(m.get("model", {}).get("name") or "?")
+        if m.get("status") == "failed":
+            rows.append((model_name, "—", "—", "Fehler", str(m.get("error") or "")))
+            continue
+        for profile in m.get("profiles", []):
+            for kind, result in profile.get("benchmarks", {}).items():
+                bench_rows = flatten_bench_rows(result)
+                if not bench_rows:
+                    label = "Zeitueberschreitung" if result.get("status") == "timeout" else "Fehler"
+                    rows.append((model_name, str(profile.get("name")), kind, label, ""))
+                    continue
+                for row in bench_rows:
+                    rows.append((
+                        model_name,
+                        str(profile.get("name")),
+                        str(row.get("test")),
+                        f"{float(row.get('avg_ts') or 0):.2f}",
+                        f"±{float(row.get('stddev_ts') or 0):.2f}",
+                    ))
+    if not rows:
+        return
+
+    headers = ("Modell", "Profil", "Test", "Tokens/s", "Stdabw.")
+    widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
+
+    def line(values: tuple[str, ...], filler: str = " ") -> str:
+        cells = []
+        for i, value in enumerate(values):
+            cells.append(value.rjust(widths[i]) if i >= 3 else value.ljust(widths[i]))
+        return filler.join(cells).rstrip()
+
+    print()
+    print("Ergebnisse")
+    print(line(headers))
+    print("-" * (sum(widths) + len(widths) - 1))
+    for row in rows:
+        print(line(row))
+    warnings = summary.get("warnings") or []
+    if warnings:
+        print()
+        print(f"Hinweise ({len(warnings)}):")
+        for warning in warnings[:10]:
+            print(f" - {warning}")
+        if len(warnings) > 10:
+            print(f"   ... und {len(warnings) - 10} weitere, siehe summary.json")
 
 
 def _write_csv(path: Path, summary: dict[str, Any]) -> None:

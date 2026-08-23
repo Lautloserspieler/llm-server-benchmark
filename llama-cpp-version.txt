@@ -1,0 +1,11 @@
+# Fester llama.cpp-Build fuer diese Vergleichsserie.
+#
+# Solange hier nur Kommentare stehen, installiert das Setup den neuesten
+# Build, der die noetigen Windows-Pakete enthaelt. Welcher das war, nennt
+# das Setup am Ende - und der gehoert dann hier hinein, damit jeder
+# weitere Server exakt denselben Build bekommt.
+#
+# Beispiel (Kommentarzeichen entfernen und Tag anpassen):
+# b10456
+#
+# Verfuegbare Tags: https://github.com/ggml-org/llama.cpp/releases

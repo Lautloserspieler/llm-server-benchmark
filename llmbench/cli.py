@@ -12,6 +12,11 @@ from .config import load_config, save_example, validate_config
 from .doctor import doctor
 from .runner import run_suite
 
+try:
+    from .server import start_server
+except ImportError:
+    start_server = None
+
 
 def _print_doctor(data: dict) -> int:
     print("\nTools")
@@ -37,10 +42,68 @@ def _print_doctor(data: dict) -> int:
     return 1 if failed else 0
 
 
+def run_setup_wizard() -> int:
+    """Interactive setup wizard to configure benchmark.yaml.
+    """
+    print("\n--- LLM Server Benchmark Setup Wizard ---")
+    print("Ich helfe dir, die Konfiguration automatisch zu erstellen.\n")
+
+    root = Path(".").resolve()
+    config_path = "benchmark.yaml"
+
+    # 1. Try automatic bootstrap first
+    print("Suche nach llama.cpp und Modellen...")
+    result = bootstrap_config(config_path, root, None, None)
+
+    llama_dir = result["llama_dir"]
+    models_found = result["models_found"]
+
+    # Validate binaries
+    import platform
+    ext = ".exe" if platform.system() == "Windows" else ""
+    has_binaries = (Path(llama_dir) / f"llama-bench{ext}").exists() and (Path(llama_dir) / f"llama-server{ext}").exists()
+
+    if not has_binaries:
+        print(f"⚠️  Konnte llama.cpp in {llama_dir} nicht finden.")
+        val = input("Bitte gib den Pfad zum llama.cpp Ordner ein (oder Enter zum Abbrechen): ").strip()
+        if not val:
+            print("Setup abgebrochen.")
+            return 1
+        llama_dir = val
+        # Re-validate
+        if not ((Path(llama_dir) / f"llama-bench{ext}").exists() and (Path(llama_dir) / f"llama-server{ext}").exists()):
+            print("❌ Ungültiger Pfad. Die Dateien llama-bench und llama-server müssen dort liegen.")
+            return 1
+    else:
+        print(f"✅ llama.cpp gefunden in: {llama_dir}")
+
+    if models_found == 0:
+        print("⚠️  Keine GGUF-Modelle automatisch gefunden.")
+        val = input("Bitte gib den Pfad zum Modelle-Ordner ein (oder Enter zum Überspringen): ").strip()
+        if val:
+            # Trigger bootstrap again with custom path
+            result = bootstrap_config(config_path, root, llama_dir, val)
+            models_found = result["models_found"]
+            print(f"✅ {models_found} Modelle gefunden.")
+        else:
+            print("Keine Modelle konfiguriert. Du kannst sie später manuell in benchmark.yaml hinzufügen.")
+    else:
+        print(f"✅ {models_found} Modelle automatisch erkannt.")
+
+    # Final save with corrected tools
+    bootstrap_config(config_path, root, llama_dir, result.get("models_dir"))
+
+    print(f"\n✨ Setup abgeschlossen! Konfiguration gespeichert in: {Path(config_path).resolve()}")
+    print("Du kannst jetzt den Benchmark mit `llmbench run` starten.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="llmbench", description="Reproduzierbarer LLM-Server-Benchmark")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    setup = sub.add_parser("setup", help="Interaktiver Setup-Wizard für die Konfiguration")
 
     init = sub.add_parser("init", help="Beispielkonfiguration erzeugen")
     init.add_argument("--output", default="benchmark.yaml")
@@ -63,11 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
     comp = sub.add_parser("compare", help="Mehrere Server-Runs vergleichen")
     comp.add_argument("inputs", nargs="+", help="Run-Ordner oder summary.json-Dateien")
     comp.add_argument("--out", default="comparison")
+    
+    srv = sub.add_parser("serve", help="Startet das Web-Dashboard")
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--port", type=int, default=8000)
+    
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cmd == "setup":
+        return run_setup_wizard()
     if args.cmd == "init":
         save_example(args.output)
         print(f"Beispielkonfiguration geschrieben: {Path(args.output).resolve()}")
@@ -85,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Konfigurationsfehler:", file=sys.stderr)
             for e in errors:
                 print(f" - {e}", file=sys.stderr)
+            print("\n💡 Tipp: Nutze `llmbench setup`, um die Konfiguration interaktiv zu erstellen.")
             return 2
 
     if args.cmd == "doctor":
@@ -105,6 +176,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "compare":
         report = compare_summaries(args.inputs, args.out)
         print(f"Vergleich erstellt: {report}")
+        return 0
+
+    if args.cmd == "serve":
+        if start_server is None:
+            print("Web-Abhängigkeiten fehlen. Bitte mit `pip install -e .[web]` installieren.", file=sys.stderr)
+            return 2
+        start_server(args.host, args.port)
         return 0
 
     return 2

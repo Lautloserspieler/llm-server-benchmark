@@ -17,19 +17,37 @@ Ziel ist die direkte Vergleichbarkeit von Servern unter identischen Bedingungen:
 - SHA256-Prüfung der verwendeten GGUF-Dateien
 - Vergleich mehrerer Serverläufe
 
-## Version 1.1.1 – One-Click-Setup ohne winget
+## Version 1.2.0 – Cross-Platform & Web Dashboard
 
-Unter Windows ist **kein manuelles Python- oder llama.cpp-Setup nötig**. `winget` wird für die Python-Installation nicht mehr benötigt.
+Unter Windows, Linux und macOS ist **kein manuelles llama.cpp-Kompilieren (für den Start)** nötig. 
 
-Einfach:
+### 🚀 Schnellstart (Plug & Play)
+
+Wenn du bereits Python installiert hast, ist der schnellste Weg:
 
 ```text
 1. Repository herunterladen oder klonen
-2. GGUF-Dateien nach models/ kopieren
-3. START_BENCHMARK.bat starten
+2. GGUF-Dateien nach models/ kopieren (optional)
+3. setup.bat (Windows) oder ./setup.sh (Linux/macOS) ausführen
 ```
 
-Der erste Start richtet das System automatisch ein.
+Das Setup-Skript installiert alle Abhängigkeiten und startet einen interaktiven Wizard, der deine llama.cpp-Installation und Modelle automatisch erkennt oder dich nach den Pfaden fragt.
+
+**Alternativ (Vollautomatisch inkl. Python):**
+Nutze `START_BENCHMARK.bat` (Windows) oder `./START_BENCHMARK.sh` (Linux/macOS). Diese Skripte installieren bei Bedarf sogar Python in einer isolierten Umgebung.
+
+### Neues Web-Dashboard
+
+Zusätzlich zu den lokalen Reports kannst du nun ein dynamisches Web-Dashboard starten:
+
+```powershell
+# Einmalige Installation der Web-Abhängigkeiten
+pip install -e .[web]
+
+# Server starten
+python -m llmbench serve
+```
+Anschließend ist das Dashboard unter `http://127.0.0.1:8000` erreichbar.
 
 ### Was automatisch installiert bzw. eingerichtet wird
 

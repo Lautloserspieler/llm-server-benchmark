@@ -52,7 +52,9 @@ def save_example(path: str | Path) -> None:
 
 
 def resolve_path(value: str, cfg: dict[str, Any]) -> str:
-    p = Path(value)
+    import os
+    expanded = os.path.expandvars(os.path.expanduser(value))
+    p = Path(expanded)
     if p.is_absolute():
         return str(p)
     return str((Path(cfg["_config_dir"]) / p).resolve())

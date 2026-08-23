@@ -1,11 +1,25 @@
+# Python
 .venv/
 .runtime/
 __pycache__/
 *.pyc
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# Benchmark-Artefakte
 results/
 comparison/
-benchmark.yaml
 *.log
+
+# Maschinenspezifische Konfiguration (Vorlage: benchmark.example.yaml)
+benchmark.yaml
+benchmark.yaml.bak
+
+# Heruntergeladene Werkzeuge und Modelle
 tools/
 models/*.gguf
 models/**/*.gguf
+
+# Vom Werkzeug verschobene, zum Loeschen vorgesehene Dateien
+_to_delete/

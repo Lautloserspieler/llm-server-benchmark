@@ -1,41 +1,46 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
 
 echo ""
 echo "===================================================="
-echo "   LLM Server Benchmark - Quick Setup (Linux/macOS)"
+echo "   LLM Server Benchmark - Einrichtung (Linux/macOS)"
 echo "===================================================="
 echo ""
 
-# Check for Python
-if ! command -v python3 &> /dev/null; then
-    echo "[!] Python 3 wurde nicht gefunden."
-    echo "Bitte installiere Python 3.10+."
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[!] Python 3 wurde nicht gefunden. Bitte Python 3.10 oder neuer installieren."
     exit 1
 fi
 
-# Create Virtual Environment
 if [ ! -d ".venv" ]; then
     echo "[+] Erstelle virtuelle Umgebung (.venv)..."
     python3 -m venv .venv
 fi
 
-# Activate and Install
-echo "[+] Installiere Abhängigkeiten..."
+echo "[+] Installiere llmbench inklusive Web-Dashboard..."
+# shellcheck disable=SC1091
 source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -e ".[web]"
 
 echo ""
-echo "[V] Setup erfolgreich!"
+echo "[OK] Installation abgeschlossen."
 echo ""
-echo "Starte jetzt den Setup-Wizard..."
+echo "Hinweis: llama-bench und llama-server werden unter Linux/macOS nicht"
+echo "automatisch heruntergeladen. Lege beide unter tools/llama.cpp/ ab"
+echo "(Download: https://github.com/ggml-org/llama.cpp/releases oder selbst bauen)."
+echo ""
+echo "Starte jetzt die Einrichtung..."
 echo ""
 
-python3 -m llmbench setup
+python -m llmbench setup
 
 echo ""
 echo "===================================================="
-echo "   Setup beendet. Du kannst jetzt starten mit:"
-echo "   ./.venv/bin/python -m llmbench run"
+echo "   Weiter mit:"
+echo "   ./.venv/bin/llmbench doctor --config benchmark.yaml"
+echo "   ./.venv/bin/llmbench run    --config benchmark.yaml"
 echo "===================================================="
 echo ""

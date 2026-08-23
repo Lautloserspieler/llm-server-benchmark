@@ -1,44 +1,51 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 cd "$(dirname "$0")"
 ROOT_DIR=$(pwd)
 CONFIG="benchmark.yaml"
 
-echo "=== System Check ==="
-if ! command -v python3 &> /dev/null; then
-    echo "Error: Python 3.10+ is required."
+echo "=== Systempruefung ==="
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Fehler: Python 3.10 oder neuer wird benoetigt."
     exit 1
 fi
 
-echo "=== Python Environment ==="
+echo "=== Python-Umgebung ==="
 if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 fi
+# shellcheck disable=SC1091
 source .venv/bin/activate
-pip install --upgrade pip setuptools wheel
-pip install -e .
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e ".[web]"
 
-echo "=== Llama.cpp Setup ==="
+echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp
-if [ ! -f "tools/llama.cpp/llama-bench" ] && [ ! -f "tools/llama.cpp/llama-server" ]; then
-    echo "WARNING: Automatic download of llama.cpp is not yet fully implemented for Linux/macOS in this script."
-    echo "Please compile or download llama-bench and llama-server for your system and place them in tools/llama.cpp/"
+if [ ! -f "tools/llama.cpp/llama-bench" ] || [ ! -f "tools/llama.cpp/llama-server" ]; then
+    echo "HINWEIS: Der automatische Download von llama.cpp ist derzeit nur unter"
+    echo "Windows implementiert. Bitte llama-bench und llama-server fuer dieses"
+    echo "System bauen oder herunterladen und in tools/llama.cpp/ ablegen:"
+    echo "  https://github.com/ggml-org/llama.cpp/releases"
+    echo ""
+    echo "Wichtig fuer den Serververgleich: auf allen Servern denselben Build"
+    echo "verwenden. 'llmbench compare' prueft das und meldet Abweichungen."
 fi
 
-echo "=== Configuration & Model Detection ==="
+echo "=== Konfiguration und Modellerkennung ==="
 mkdir -p models
-python -m llmbench bootstrap --config $CONFIG --root "$ROOT_DIR" --llama-dir "tools/llama.cpp" --models-dir models
+python -m llmbench bootstrap --config "$CONFIG" --root "$ROOT_DIR" \
+    --llama-dir "tools/llama.cpp" --models-dir models
 
-if [ -z "$(ls -A models/*.gguf 2>/dev/null)" ]; then
+if [ -z "$(find models -name '*.gguf' -print -quit 2>/dev/null)" ]; then
     echo ""
-    echo -e "\033[32mSetup finished.\033[0m No GGUF models found."
-    echo -e "Please place one or more .gguf files in the \033[33mmodels/\033[0m directory and run this script again."
+    echo "Einrichtung beendet. Es wurden keine GGUF-Modelle gefunden."
+    echo "Lege eine oder mehrere .gguf-Dateien unter models/ ab und starte erneut."
     exit 0
 fi
 
-echo "=== Pre-flight Check ==="
-python -m llmbench doctor --config $CONFIG
+echo "=== Vorabpruefung ==="
+python -m llmbench doctor --config "$CONFIG"
 
 echo "=== Benchmark ==="
-python -m llmbench run --config $CONFIG
+python -m llmbench run --config "$CONFIG"

@@ -60,6 +60,26 @@
 - `--allow-remote` gibt das Dashboard bewusst ins Netz frei und erzwingt
   dann ein Zugriffstoken.
 
+### Windows-Setup
+
+- `START_BENCHMARK_CORE.ps1` ermittelt das llama.cpp-Release nicht mehr über
+  `/releases/latest`. Diese Adresse liefert bei llama.cpp ein altes Release
+  ohne Windows-Pakete, wodurch das Setup mit "Kein passendes llama.cpp-Asset
+  gefunden" abbrach. Stattdessen wird die Release-Liste durchgegangen und das
+  neueste Release genommen, das die benötigten Dateien wirklich enthält.
+- Der llama.cpp-Build lässt sich festschreiben: `llama-cpp-version.txt`,
+  Parameter `-LlamaCppTag` oder Umgebungsvariable `LLMBENCH_LLAMACPP_TAG`.
+  Ohne Vorgabe hing die installierte Version davon ab, wann das Setup lief.
+- Die CUDA-Erkennung greift auf die Treiberversion zurück, wenn der Kopf von
+  `nvidia-smi` sich nicht auswerten lässt, und schreibt in die Ausgabe, woher
+  der Wert stammt. Vorher fiel sie stillschweigend auf cuda-12.4 zurück.
+- Alle PowerShell-Skripte werden als UTF-8 **mit BOM** gespeichert. Windows
+  PowerShell 5.1 las sie sonst als ANSI, was jeden Umlaut zerlegte
+  ("Systemprüfung" wurde zu "SystemprÃ¼fung").
+- `START_BENCHMARK.bat` und `UPDATE_DEPENDENCIES.bat` reichen Argumente durch.
+- Das Windows-Setup installiert das Paket jetzt mit den Web-Extras, wie
+  `setup.bat` auch.
+
 ### Sonstiges
 
 - Version an allen Stellen auf 1.2.0 vereinheitlicht.

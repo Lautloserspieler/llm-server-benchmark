@@ -1,5 +1,6 @@
-param(
+﻿param(
     [string]$Config = "benchmark.yaml",
+    [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
     [switch]$ForceUpdateLlamaCpp
 )
@@ -14,6 +15,7 @@ $LlamaDir = Join-Path $ToolsDir "llama.cpp"
 $ModelsDir = Join-Path $Root "models"
 $VenvDir = Join-Path $Root ".venv"
 $StateFile = Join-Path $LlamaDir ".llama-build.json"
+$PinFile = Join-Path $Root "llama-cpp-version.txt"
 
 function Write-Step([string]$Message) {
     Write-Host ""
@@ -29,8 +31,8 @@ function Get-PythonCommand {
     foreach ($candidate in $candidates) {
         try {
             $cmd = Get-Command $candidate.Exe -ErrorAction Stop
-            $args = @($candidate.Args) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
-            $path = & $cmd.Source @args 2>$null
+            $pyArgs = @($candidate.Args) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
+            $path = & $cmd.Source @pyArgs 2>$null
             if ($LASTEXITCODE -eq 0 -and $path) {
                 return ($path | Select-Object -Last 1).Trim()
             }
@@ -65,23 +67,99 @@ function Install-Python {
     return $python
 }
 
+function ConvertTo-Version([string]$Value) {
+    if (-not $Value) { return $null }
+    if ($Value -notmatch '\.') { $Value = "$Value.0" }
+    try { return [version]$Value } catch { return $null }
+}
+
 function Get-NvidiaInfo {
     $nvsmi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
     if (-not $nvsmi) {
         return $null
     }
-    $text = (& $nvsmi.Source 2>$null | Out-String)
+
     $driver = (& $nvsmi.Source --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
+    if ($driver) { $driver = $driver.ToString().Trim() }
+
     $cuda = $null
-    if ($text -match 'CUDA Version:\s*([0-9]+(?:\.[0-9]+)?)') {
-        $cuda = [version]$Matches[1]
+    $source = "nicht ermittelbar"
+
+    # 1. Bevorzugt die Angabe aus dem nvidia-smi-Kopf. Die Schreibweise hat
+    #    sich zwischen Treiberversionen geaendert, daher toleranter Ausdruck.
+    $text = (& $nvsmi.Source 2>$null | Out-String)
+    if ($text -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
+        $cuda = ConvertTo-Version $Matches[1]
+        if ($cuda) { $source = "nvidia-smi" }
     }
-    return @{ Command = $nvsmi.Source; Driver = $driver; Cuda = $cuda }
+
+    # 2. Sonst aus der Treiberversion ableiten. CUDA 13 kam mit dem Treiberzweig
+    #    r580, CUDA 12 mit r525; neuere Treiber unterstuetzen den jeweiligen Stand.
+    if (-not $cuda -and $driver -match '^([0-9]+)') {
+        $major = [int]$Matches[1]
+        if ($major -ge 580) { $cuda = [version]"13.0"; $source = "Treiberversion $driver" }
+        elseif ($major -ge 525) { $cuda = [version]"12.0"; $source = "Treiberversion $driver" }
+    }
+
+    return @{ Command = $nvsmi.Source; Driver = $driver; Cuda = $cuda; CudaSource = $source }
 }
 
-function Get-LlamaCppRelease {
+function Invoke-GitHubApi([string]$Url) {
     $headers = @{ "User-Agent" = "llm-server-benchmark-installer"; "Accept" = "application/vnd.github+json" }
-    return Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" -Headers $headers
+    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+    return Invoke-RestMethod -Uri $Url -Headers $headers
+}
+
+function Get-PinnedLlamaTag {
+    if ($LlamaCppTag) { return $LlamaCppTag.Trim() }
+    if ($env:LLMBENCH_LLAMACPP_TAG) { return $env:LLMBENCH_LLAMACPP_TAG.Trim() }
+    if (Test-Path $PinFile) {
+        foreach ($line in (Get-Content $PinFile)) {
+            $value = $line.Trim()
+            if ($value -and -not $value.StartsWith("#")) { return $value }
+        }
+    }
+    return $null
+}
+
+function Test-ReleaseHasAssets($Release, [string]$MainPattern, [string]$RuntimePattern) {
+    if (-not $Release -or -not $Release.assets) { return $false }
+    $names = @($Release.assets | ForEach-Object { $_.name })
+    if (-not ($names | Where-Object { $_ -match $MainPattern })) { return $false }
+    if ($RuntimePattern -and -not ($names | Where-Object { $_ -match $RuntimePattern })) { return $false }
+    return $true
+}
+
+function Resolve-LlamaCppRelease([string]$MainPattern, [string]$RuntimePattern) {
+    # Ein fest vorgegebener Tag hat Vorrang. Nur so bekommen alle Server
+    # denselben Build - ohne ihn haengt die Version davon ab, wann jemand
+    # das Setup gestartet hat.
+    $pinned = Get-PinnedLlamaTag
+    if ($pinned) {
+        Write-Host "Vorgegebener llama.cpp-Build: $pinned"
+        $release = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$pinned"
+        if (-not (Test-ReleaseHasAssets $release $MainPattern $RuntimePattern)) {
+            $names = ($release.assets | ForEach-Object { $_.name }) -join "`n  - "
+            throw "Im vorgegebenen Release $pinned gibt es kein passendes Windows-Paket.`nVorhandene Dateien:`n  - $names"
+        }
+        return $release
+    }
+
+    # llama.cpp veroeffentlicht fortlaufende Builds (b10456, b10455, ...).
+    # /releases/latest liefert dabei nicht den neuesten Build, sondern das
+    # neueste als "stabil" markierte Release - und das kann ein alter Tag
+    # ohne jedes Windows-Paket sein. Deshalb wird die Liste durchgegangen
+    # und das neueste Release genommen, das die noetigen Dateien enthaelt.
+    foreach ($page in 1..3) {
+        $releases = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30&page=$page"
+        if (-not $releases -or @($releases).Count -eq 0) { break }
+        foreach ($release in @($releases)) {
+            if ($release.draft) { continue }
+            if (Test-ReleaseHasAssets $release $MainPattern $RuntimePattern) { return $release }
+        }
+    }
+
+    throw "In den letzten 90 llama.cpp-Releases wurde kein Paket gefunden, das zu '$MainPattern' passt. Bitte llama-bench.exe und llama-server.exe von Hand nach tools\llama.cpp kopieren."
 }
 
 function Install-LlamaCpp {
@@ -98,10 +176,6 @@ function Install-LlamaCpp {
 
     Write-Step "llama.cpp wird automatisch eingerichtet"
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
-    $release = Get-LlamaCppRelease
-    if (-not $release -or -not $release.assets) {
-        throw "Die aktuelle llama.cpp-Version konnte nicht von GitHub ermittelt werden."
-    }
 
     $nvidia = Get-NvidiaInfo
     $backend = "cpu"
@@ -117,11 +191,18 @@ function Install-LlamaCpp {
         $escaped = [regex]::Escape($backend)
         $mainPattern = "^llama-.*-bin-win-$escaped-x64\.zip$"
         $runtimePattern = "^cudart-llama-bin-win-$escaped-x64\.zip$"
-        Write-Host "NVIDIA erkannt: Treiber $($nvidia.Driver), gemeldete CUDA-Kompatibilität $($nvidia.Cuda)"
+        if ($nvidia.Cuda) {
+            Write-Host "NVIDIA erkannt: Treiber $($nvidia.Driver), CUDA-Kompatibilität $($nvidia.Cuda) (ermittelt über $($nvidia.CudaSource))"
+        } else {
+            Write-Warning "NVIDIA erkannt (Treiber $($nvidia.Driver)), die unterstützte CUDA-Version war nicht ermittelbar. Es wird der konservative Build cuda-12.4 verwendet, der auch auf neueren Treibern läuft."
+        }
         Write-Host "Ausgewähltes llama.cpp-Paket: $backend"
     } else {
         Write-Warning "nvidia-smi wurde nicht gefunden. Es wird automatisch der CPU-Build installiert."
     }
+
+    $release = Resolve-LlamaCppRelease $mainPattern $runtimePattern
+    Write-Host "Verwendetes llama.cpp-Release: $($release.tag_name)"
 
     $main = $release.assets | Where-Object { $_.name -match $mainPattern } | Select-Object -First 1
     $runtime = $null
@@ -174,6 +255,35 @@ function Install-LlamaCpp {
             throw "llama-server.exe wurde nach dem Entpacken nicht gefunden."
         }
 
+        # Sofort ausprobieren, ob der Build auf diesem Rechner ueberhaupt
+        # startet. Ein zum Treiber unpassendes CUDA-Paket faellt sonst erst
+        # nach dem Modell-Laden auf, also womoeglich erst Stunden spaeter.
+        $benchExe = Join-Path $LlamaDir "llama-bench.exe"
+        $probe = ""
+        # llama-bench schreibt seine Version auf stderr. Mit
+        # ErrorActionPreference = "Stop" wuerde 2>&1 daraus einen
+        # abbrechenden Fehler machen, deshalb hier kurz umgestellt.
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $probe = (& $benchExe --version 2>&1 | Out-String)
+        } catch {
+            $probe = $_.Exception.Message
+        } finally {
+            $ErrorActionPreference = $previousEap
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            $hint = ""
+            if ($backend -like "cuda-*") {
+                $hint = "`nVermutlich passt das Paket '$backend' nicht zum installierten Treiber ($($nvidia.Driver)). Entweder mit -LlamaCppTag einen anderen Build waehlen oder den CPU-Build verwenden."
+            }
+            throw "llama-bench.exe laesst sich nach der Installation nicht starten (Exitcode $LASTEXITCODE).$hint`nAusgabe:`n$probe"
+        }
+
+        $firstLine = ($probe -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+        Write-Host "Startprobe erfolgreich: $firstLine"
+
         $state = [ordered]@{
             tag = $release.tag_name
             backend = $backend
@@ -185,6 +295,12 @@ function Install-LlamaCpp {
         }
         $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
         Write-Host "llama.cpp $($release.tag_name) wurde installiert."
+        if (-not (Get-PinnedLlamaTag)) {
+            Write-Host ""
+            Write-Host "Fuer den Serververgleich: alle weiteren Server auf denselben Build festlegen." -ForegroundColor Yellow
+            Write-Host "Dazu diese Zeile in llama-cpp-version.txt im Projektordner speichern:" -ForegroundColor Yellow
+            Write-Host "  $($release.tag_name)" -ForegroundColor Yellow
+        }
     } finally {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
@@ -206,7 +322,7 @@ $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 if (-not (Test-Path $VenvPython)) { throw "Python in .venv wurde nicht gefunden." }
 & $VenvPython -m pip install --upgrade pip setuptools wheel
 if ($LASTEXITCODE -ne 0) { throw "pip konnte nicht aktualisiert werden." }
-& $VenvPython -m pip install -e .
+& $VenvPython -m pip install -e ".[web]"
 if ($LASTEXITCODE -ne 0) { throw "Projektabhängigkeiten konnten nicht installiert werden." }
 
 Install-LlamaCpp

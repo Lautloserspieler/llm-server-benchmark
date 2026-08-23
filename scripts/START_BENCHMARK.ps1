@@ -1,5 +1,6 @@
-param(
+﻿param(
     [string]$Config = "benchmark.yaml",
+    [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
     [switch]$ForceUpdateLlamaCpp
 )
@@ -28,6 +29,7 @@ if (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
 }
 
 $forward = @("-Config", $Config)
+if ($LlamaCppTag) { $forward += @("-LlamaCppTag", $LlamaCppTag) }
 if ($SetupOnly) { $forward += "-SetupOnly" }
 if ($ForceUpdateLlamaCpp) { $forward += "-ForceUpdateLlamaCpp" }
 

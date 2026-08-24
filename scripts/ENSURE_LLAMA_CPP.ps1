@@ -18,15 +18,6 @@ function Write-Step([string]$Text) {
     Write-Host "=== $Text ===" -ForegroundColor Cyan
 }
 
-function Invoke-GitHubApi([string]$Url) {
-    $headers = @{
-        "User-Agent" = "llm-server-benchmark-installer"
-        "Accept" = "application/vnd.github+json"
-    }
-    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
-    return Invoke-RestMethod -Uri $Url -Headers $headers
-}
-
 function Get-PinnedTag {
     if ($LlamaCppTag) { return $LlamaCppTag.Trim() }
     if ($env:LLMBENCH_LLAMACPP_TAG) { return $env:LLMBENCH_LLAMACPP_TAG.Trim() }
@@ -50,10 +41,12 @@ function Get-NvidiaInfo {
     if ($gpuName) { $gpuName = $gpuName.ToString().Trim() }
 
     $cudaText = $null
-    $smiText = (& $cmd.Source 2>$null | Out-String)
-    if ($smiText -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
-        $cudaText = $Matches[1]
-    }
+    try {
+        $smiText = (& $cmd.Source 2>$null | Out-String)
+        if ($smiText -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
+            $cudaText = $Matches[1]
+        }
+    } catch { }
 
     $supportedMajor = $null
     if ($driver -match '^([0-9]+)') {
@@ -103,7 +96,7 @@ function Invoke-LlamaProbe([string]$BenchExe, [int]$Retries = 1) {
         }
 
         if ($last.Ok) { return $last }
-        if ($attempt -lt $Retries) { Start-Sleep -Milliseconds 500 }
+        if ($attempt -lt $Retries) { Start-Sleep -Milliseconds 400 }
     }
     return $last
 }
@@ -134,65 +127,153 @@ function Test-ExistingLlama {
     return $false
 }
 
-function Get-Releases {
+function Add-TagsFromText($List, [string]$Text) {
+    if (-not $Text) { return }
+    foreach ($match in [regex]::Matches($Text, '/releases/tag/(b[0-9]+)')) {
+        $List.Add($match.Groups[1].Value)
+    }
+}
+
+function Get-ReleaseTags {
     $pin = Get-PinnedTag
     if ($pin) {
         Write-Host "Festgelegter llama.cpp-Build: $pin"
-        return @((Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$pin"))
+        return @($pin)
     }
 
-    $releases = @(Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=12&page=1")
-    return @($releases | Where-Object { -not $_.draft } | Select-Object -First 8)
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+    $rawTags = New-Object System.Collections.Generic.List[string]
+    $sourceMessages = New-Object System.Collections.Generic.List[string]
+
+    # Quelle 1: GitHub REST API. Schnellster Weg, aber auf Firmen-/Proxy-PCs
+    # manchmal rate-limited oder gefiltert. Ein Fehler ist deshalb NICHT fatal.
+    try {
+        $headers = @{
+            "User-Agent" = "llm-server-benchmark-installer"
+            "Accept" = "application/vnd.github+json"
+        }
+        if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+        $api = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30&page=1" -Headers $headers -TimeoutSec 20
+        foreach ($release in @($api)) {
+            if ($release.tag_name -and ([string]$release.tag_name -match '^b[0-9]+$')) {
+                $rawTags.Add([string]$release.tag_name)
+            }
+        }
+        $sourceMessages.Add("GitHub API: $(@($api).Count) Antworten")
+    } catch {
+        $sourceMessages.Add("GitHub API fehlgeschlagen: $($_.Exception.Message)")
+    }
+
+    # Quelle 2: Releases-Atom-Feed. Braucht kein API-Limit und funktioniert
+    # oft auch dann, wenn api.github.com im Netz eingeschraenkt ist.
+    if ($rawTags.Count -lt 8) {
+        try {
+            $atom = Invoke-WebRequest -Uri "https://github.com/ggml-org/llama.cpp/releases.atom" -UseBasicParsing -TimeoutSec 20
+            Add-TagsFromText $rawTags ([string]$atom.Content)
+            $sourceMessages.Add("releases.atom geladen")
+        } catch {
+            $sourceMessages.Add("releases.atom fehlgeschlagen: $($_.Exception.Message)")
+        }
+    }
+
+    # Quelle 3: normale GitHub-Releases-Seite.
+    if ($rawTags.Count -lt 8) {
+        try {
+            $html = Invoke-WebRequest -Uri "https://github.com/ggml-org/llama.cpp/releases" -UseBasicParsing -TimeoutSec 20
+            Add-TagsFromText $rawTags ([string]$html.Content)
+            $sourceMessages.Add("Releases-HTML geladen")
+        } catch {
+            $sourceMessages.Add("Releases-HTML fehlgeschlagen: $($_.Exception.Message)")
+        }
+    }
+
+    # Quelle 4: git ls-remote, falls Git vorhanden ist. Keine GitHub-API noetig.
+    if ($rawTags.Count -lt 8) {
+        $git = Get-Command git.exe -ErrorAction SilentlyContinue
+        if ($git) {
+            try {
+                $lines = & $git.Source ls-remote --tags --refs https://github.com/ggml-org/llama.cpp.git 2>$null
+                foreach ($line in @($lines)) {
+                    if ($line -match 'refs/tags/(b[0-9]+)$') { $rawTags.Add($Matches[1]) }
+                }
+                $sourceMessages.Add("git ls-remote geladen")
+            } catch {
+                $sourceMessages.Add("git ls-remote fehlgeschlagen: $($_.Exception.Message)")
+            }
+        }
+    }
+
+    $unique = @{}
+    $sortable = @()
+    foreach ($tag in $rawTags) {
+        if (-not $tag -or $unique.ContainsKey($tag)) { continue }
+        $unique[$tag] = $true
+        if ($tag -match '^b([0-9]+)$') {
+            $sortable += [pscustomobject]@{ Tag = $tag; Build = [int64]$Matches[1] }
+        }
+    }
+
+    $tags = @($sortable | Sort-Object Build -Descending | Select-Object -First 12 | ForEach-Object { $_.Tag })
+    if ($tags.Count -eq 0) {
+        Write-Host "Release-Ermittlung Diagnose:" -ForegroundColor Yellow
+        foreach ($msg in $sourceMessages) { Write-Host "  - $msg" -ForegroundColor Yellow }
+        throw "Keine llama.cpp-Build-Tags konnten ermittelt werden. Wahrscheinlich blockiert das Netzwerk GitHub-Releases/API."
+    }
+
+    Write-Host "llama.cpp-Builds gefunden: $($tags.Count) (neuester: $($tags[0]))" -ForegroundColor Green
+    return $tags
 }
 
-function Get-CudaPackages($Release, [int]$PreferredMajor) {
-    $main = @{}
-    $runtime = @{}
+function Get-CudaVersions([int]$PreferredMajor) {
+    if ($PreferredMajor -ge 13) { return @("13.3") }
+    if ($PreferredMajor -eq 12) { return @("12.4") }
+    # Unbekannte Familie: zuerst den konservativeren CUDA-12-Build testen.
+    return @("12.4")
+}
 
-    foreach ($asset in @($Release.assets)) {
-        $name = [string]$asset.name
-        if ($name -match '^llama-.*-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
-            $main[$Matches[1]] = $asset
-        } elseif ($name -match '^cudart-llama-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
-            $runtime[$Matches[1]] = $asset
+function New-Package([string]$Tag, [string]$CudaVersion) {
+    $base = "https://github.com/ggml-org/llama.cpp/releases/download/$Tag"
+    $mainName = "llama-$Tag-bin-win-cuda-$CudaVersion-x64.zip"
+    $runtimeName = "cudart-llama-bin-win-cuda-$CudaVersion-x64.zip"
+    return [pscustomobject]@{
+        Tag = $Tag
+        Backend = "cuda-$CudaVersion"
+        MainName = $mainName
+        RuntimeName = $runtimeName
+        MainUrl = "$base/$mainName"
+        RuntimeUrl = "$base/$runtimeName"
+    }
+}
+
+function Invoke-Download([string]$Url, [string]$Path) {
+    $lastError = $null
+    foreach ($attempt in 1..3) {
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 180
+            if ((Test-Path $Path) -and (Get-Item $Path).Length -gt 0) { return }
+            throw "Download lieferte eine leere Datei."
+        } catch {
+            $lastError = $_.Exception.Message
+            Remove-Item $Path -Force -ErrorAction SilentlyContinue
+            if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
         }
     }
-
-    $packages = @()
-    foreach ($versionText in $main.Keys) {
-        if (-not $runtime.ContainsKey($versionText)) { continue }
-        try { $version = [version]$versionText } catch { continue }
-
-        # Bei bekannter Treiberfamilie nur dieselbe CUDA-Major-Familie testen.
-        # Das verhindert, dass ein funktionierender 12.x-Fallback anschließend
-        # vom Core wieder durch 13.x ersetzt wird und hält die Messumgebung klar.
-        if ($PreferredMajor -and $version.Major -ne $PreferredMajor) { continue }
-
-        $packages += [pscustomobject]@{
-            Version = $version
-            VersionText = $versionText
-            Backend = "cuda-$versionText"
-            MainAsset = $main[$versionText]
-            RuntimeAsset = $runtime[$versionText]
-        }
-    }
-
-    return @($packages | Sort-Object @{Expression="Version";Descending=$true})
+    throw "Download fehlgeschlagen: $Url - $lastError"
 }
 
 function Expand-LlamaPackage($Package, [string]$Destination, [string]$TempRoot) {
     if (Test-Path $Destination) { Remove-Item -Recurse -Force $Destination }
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
-    $mainZip = Join-Path $TempRoot $Package.MainAsset.name
-    $runtimeZip = Join-Path $TempRoot $Package.RuntimeAsset.name
+    $mainZip = Join-Path $TempRoot $Package.MainName
+    $runtimeZip = Join-Path $TempRoot $Package.RuntimeName
 
-    Write-Host "  Lade $($Package.MainAsset.name)"
-    Invoke-WebRequest -Uri $Package.MainAsset.browser_download_url -OutFile $mainZip -UseBasicParsing
+    Write-Host "  Lade $($Package.MainName)"
+    Invoke-Download $Package.MainUrl $mainZip
     Expand-Archive -Path $mainZip -DestinationPath $Destination -Force
 
-    Write-Host "  Lade $($Package.RuntimeAsset.name)"
-    Invoke-WebRequest -Uri $Package.RuntimeAsset.browser_download_url -OutFile $runtimeZip -UseBasicParsing
+    Write-Host "  Lade $($Package.RuntimeName)"
+    Invoke-Download $Package.RuntimeUrl $runtimeZip
     Expand-Archive -Path $runtimeZip -DestinationPath $Destination -Force
 
     $bench = Join-Path $Destination "llama-bench.exe"
@@ -215,8 +296,8 @@ function Install-WorkingCudaBuild {
     Write-Host "GPU: $($nvidia.GpuName)"
     Write-Host "NVIDIA-Treiber: $($nvidia.Driver), nvidia-smi CUDA: $($nvidia.CudaText), bevorzugte CUDA-Familie: $($nvidia.SupportedMajor).x"
 
-    $releases = @(Get-Releases)
-    if ($releases.Count -eq 0) { throw "Keine llama.cpp-Releases gefunden." }
+    $tags = @(Get-ReleaseTags)
+    $cudaVersions = @(Get-CudaVersions $nvidia.SupportedMajor)
 
     $attempts = New-Object System.Collections.Generic.List[object]
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("llmbench-llama-heal-" + [guid]::NewGuid().ToString("N"))
@@ -225,13 +306,13 @@ function Install-WorkingCudaBuild {
 
     try {
         $maxAttempts = 8
-        foreach ($release in $releases) {
-            $packages = @(Get-CudaPackages $release $nvidia.SupportedMajor)
-            foreach ($package in $packages) {
+        foreach ($tag in $tags) {
+            foreach ($cudaVersion in $cudaVersions) {
                 if ($attempts.Count -ge $maxAttempts) { break }
+                $package = New-Package $tag $cudaVersion
 
                 Write-Host ""
-                Write-Host "Teste llama.cpp $($release.tag_name) / $($package.Backend)..." -ForegroundColor Cyan
+                Write-Host "Teste llama.cpp $tag / $($package.Backend)..." -ForegroundColor Cyan
                 try {
                     Expand-LlamaPackage $package $stage $tempRoot
                     $bench = Join-Path $stage "llama-bench.exe"
@@ -240,27 +321,22 @@ function Install-WorkingCudaBuild {
                         throw "llama-bench.exe oder llama-server.exe fehlt nach dem Entpacken."
                     }
 
-                    # Manche aktuelle Windows/Blackwell-Probleme sind beim
-                    # CUDA-Kernel-Init nicht deterministisch. Deshalb 3 Versuche.
                     $workaround = $null
                     $oldPdl = $env:GGML_CUDA_PDL
                     Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue
                     $probe = Invoke-LlamaProbe $bench 3
 
-                    # Zweiter Versuchspfad: PDL deaktivieren. Aktuelle llama.cpp-
-                    # CUDA-Probleme auf Windows können genau beim PDL-Kernelcheck
-                    # abstürzen. Nur aktivieren, wenn der normale Start scheitert.
                     if (-not $probe.Ok -and $nvidia.SupportedMajor -ge 13) {
-                        Write-Host "  Normaler Start fehlgeschlagen. Teste zusätzlich GGML_CUDA_PDL=0..." -ForegroundColor Yellow
+                        Write-Host "  Normaler Start fehlgeschlagen. Teste GGML_CUDA_PDL=0..." -ForegroundColor Yellow
                         $env:GGML_CUDA_PDL = "0"
                         $pdlProbe = Invoke-LlamaProbe $bench 3
                         if ($pdlProbe.Ok) {
                             $probe = $pdlProbe
                             $workaround = "GGML_CUDA_PDL=0"
                         } else {
+                            $probe = $pdlProbe
                             if ($null -eq $oldPdl) { Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue }
                             else { $env:GGML_CUDA_PDL = $oldPdl }
-                            $probe = $pdlProbe
                         }
                     } elseif ($probe.Ok) {
                         if ($null -eq $oldPdl) { Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue }
@@ -268,7 +344,7 @@ function Install-WorkingCudaBuild {
                     }
 
                     $attempts.Add([pscustomobject]@{
-                        Tag = $release.tag_name
+                        Tag = $tag
                         Backend = $package.Backend
                         ExitCode = $probe.ExitCode
                         Output = $probe.Output
@@ -276,7 +352,7 @@ function Install-WorkingCudaBuild {
                     })
 
                     if (-not $probe.Ok) {
-                        Write-Warning "Build startet nicht (Exitcode $($probe.ExitCode)). Nächster Release-Kandidat..."
+                        Write-Warning "Build startet nicht (Exitcode $($probe.ExitCode)). Naechster Release-Kandidat..."
                         continue
                     }
 
@@ -287,16 +363,14 @@ function Install-WorkingCudaBuild {
                         Copy-Item $_.FullName -Destination $LlamaDir -Recurse -Force
                     }
 
-                    if ($workaround -eq "GGML_CUDA_PDL=0") {
-                        $env:GGML_CUDA_PDL = "0"
-                    }
+                    if ($workaround -eq "GGML_CUDA_PDL=0") { $env:GGML_CUDA_PDL = "0" }
 
                     $state = [ordered]@{
-                        tag = $release.tag_name
+                        tag = $tag
                         backend = $package.Backend
                         installed_at = (Get-Date).ToString("o")
-                        main_asset = $package.MainAsset.name
-                        runtime_asset = $package.RuntimeAsset.name
+                        main_asset = $package.MainName
+                        runtime_asset = $package.RuntimeName
                         nvidia_driver = $nvidia.Driver
                         gpu_name = $nvidia.GpuName
                         cuda_compatibility = $nvidia.CudaText
@@ -308,13 +382,13 @@ function Install-WorkingCudaBuild {
 
                     $deviceLine = ($probe.Output -split "`r?`n" | Where-Object { $_ -match 'Device|CUDA' } | Select-Object -First 1)
                     Write-Host ""
-                    Write-Host "Funktionierender llama.cpp-Build gefunden: $($release.tag_name) / $($package.Backend)" -ForegroundColor Green
+                    Write-Host "Funktionierender llama.cpp-Build gefunden: $tag / $($package.Backend)" -ForegroundColor Green
                     if ($workaround) { Write-Host "Aktiver CUDA-Workaround: $workaround" -ForegroundColor Yellow }
                     if ($deviceLine) { Write-Host $deviceLine.Trim() -ForegroundColor Green }
                     return $true
                 } catch {
                     $attempts.Add([pscustomobject]@{
-                        Tag = $release.tag_name
+                        Tag = $tag
                         Backend = $package.Backend
                         ExitCode = $null
                         Output = $_.Exception.Message
@@ -329,21 +403,19 @@ function Install-WorkingCudaBuild {
         Write-Host ""
         Write-Host "Alle getesteten CUDA-Builds sind fehlgeschlagen:" -ForegroundColor Red
         foreach ($attempt in $attempts) {
-            $wa = if ($attempt.Workaround) { " [$($attempt.Workaround)]" } else { "" }
-            Write-Host "  $($attempt.Tag) / $($attempt.Backend)$wa -> Exitcode $($attempt.ExitCode)"
+            Write-Host "  $($attempt.Tag) / $($attempt.Backend) -> Exitcode $($attempt.ExitCode)"
         }
-        throw "Keiner der getesteten offiziellen llama.cpp-CUDA-Builds konnte auf diesem System gestartet werden. CPU-Fallback wird bei erkannter NVIDIA-GPU bewusst nicht still verwendet, damit der Benchmark keine falschen GPU-Ergebnisse produziert."
+        throw "Keiner der getesteten offiziellen llama.cpp-CUDA-Builds konnte auf diesem System gestartet werden."
     } finally {
         Remove-Item -Recurse -Force $tempRoot -ErrorAction SilentlyContinue
     }
 }
 
-if (-not $ForceUpdateLlamaCpp -and (Test-ExistingLlama)) {
-    exit 0
-}
+if (-not $ForceUpdateLlamaCpp -and (Test-ExistingLlama)) { exit 0 }
 
 $nvidia = Get-NvidiaInfo
 if (-not $nvidia) {
+    # Kein NVIDIA-System: der Core-Installer uebernimmt den CPU-Fall.
     exit 0
 }
 

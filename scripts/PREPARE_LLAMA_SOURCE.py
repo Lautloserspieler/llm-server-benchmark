@@ -44,6 +44,29 @@ def resolve_latest_ref() -> str:
     return "master"
 
 
+def find_cached_ref(source_root: Path) -> str | None:
+    """Find the newest already extracted bNNNN source in the persistent workspace."""
+    if not source_root.is_dir():
+        return None
+
+    candidates: list[tuple[int, str]] = []
+    for entry in source_root.iterdir():
+        if not entry.is_dir() or not (entry / "CMakeLists.txt").is_file():
+            continue
+        match = re.fullmatch(r"b(\d+)", entry.name)
+        if match:
+            candidates.append((int(match.group(1)), entry.name))
+
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+
+    master = source_root / "master"
+    if (master / "CMakeLists.txt").is_file():
+        return "master"
+    return None
+
+
 def resolve_ref(
     explicit_ref: str | None,
     pin_file: Path,
@@ -57,11 +80,12 @@ def resolve_ref(
     1. explicit --ref
     2. LLMBENCH_LLAMACPP_TAG
     3. llama-cpp-version.txt
-    4. already prepared usable source from a previous run
-    5. latest upstream release
+    4. source recorded by this project
+    5. any valid source already cached in %LOCALAPPDATA%/LLMBench/src
+    6. latest upstream release
 
-    With --force, item 4 is intentionally skipped so an unpinned setup can
-    refresh to the latest upstream release.
+    --force intentionally skips cached source selection so an unpinned setup
+    can refresh to the latest upstream release.
     """
     if explicit_ref:
         return explicit_ref.strip()
@@ -92,6 +116,11 @@ def resolve_ref(
             if previous_ref and any((p / "CMakeLists.txt").is_file() for p in candidates):
                 print(f"Verwende bereits vorbereiteten llama.cpp-Stand: {previous_ref}")
                 return previous_ref
+
+        cached_ref = find_cached_ref(source_root)
+        if cached_ref:
+            print(f"Verwende persistent gecachten llama.cpp-Stand: {cached_ref}")
+            return cached_ref
 
     return resolve_latest_ref()
 
@@ -136,9 +165,6 @@ def extract_source(zip_path: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     safe_rmtree(destination)
 
-    # Unter Windows bewusst in einem kurzen Arbeitsverzeichnis entpacken.
-    # llama.cpp enthaelt sehr tiefe UI-Pfade, die zusammen mit einem langen
-    # Downloads-/Projektpfad sonst WinError 206 ausloesen koennen.
     with tempfile.TemporaryDirectory(prefix="x-", dir=str(destination.parent)) as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
         with zipfile.ZipFile(zip_path, "r") as archive:
@@ -150,8 +176,7 @@ def extract_source(zip_path: Path, destination: Path) -> None:
         if not candidates:
             raise RuntimeError("CMakeLists.txt wurde im llama.cpp-Quellarchiv nicht gefunden.")
 
-        tree = candidates[0]
-        shutil.move(str(tree), str(destination))
+        shutil.move(str(candidates[0]), str(destination))
 
     if not (destination / "CMakeLists.txt").is_file():
         raise RuntimeError("llama.cpp wurde entpackt, aber CMakeLists.txt fehlt im Zielordner.")
@@ -170,7 +195,6 @@ def get_short_work_root() -> Path:
 
 
 def write_source_metadata(runtime: Path, ref: str, source_dir: Path, work_root: Path, zip_path: Path) -> None:
-    """Persist source metadata without requiring the download cache to exist."""
     (runtime / "llama-source-ref.txt").write_text(ref, encoding="utf-8")
     (runtime / "llama-source-path.txt").write_text(str(source_dir), encoding="utf-8")
     (runtime / "llama-work-root.txt").write_text(str(work_root), encoding="utf-8")

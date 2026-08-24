@@ -1,0 +1,54 @@
+{
+  "header": {
+    "title": "LLM Benchmark",
+    "new_benchmark": "New Benchmark"
+  },
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "configuration": "Configuration",
+    "runner": "Runner"
+  },
+  "hero": {
+    "title": "Benchmark Dashboard",
+    "subtitle": "Analyze and compare local LLM inference performance."
+  },
+  "runs": {
+    "title": "Recent Runs",
+    "total": "{{count}} Total",
+    "loading": "Loading runs...",
+    "empty": "No benchmark runs found. Start a new benchmark to see results here.",
+    "unknown_server": "Unknown Server",
+    "unknown_cpu": "Unknown CPU",
+    "models_tested_one": "{{count}} Model Tested",
+    "models_tested_other": "{{count}} Models Tested",
+    "view_details": "View Details"
+  },
+  "config": {
+    "title": "Configuration",
+    "subtitle": "Adjust benchmark settings easily through forms.",
+    "save": "Save Settings",
+    "loading": "Loading settings...",
+    "success": "Configuration saved!",
+    "project_settings": "Project & General",
+    "benchmark_settings": "Benchmark Parameters",
+    "endpoint_settings": "API Endpoint Tests",
+    "fields": {
+      "project_name": "Project Name",
+      "server_name": "Server Name (Optional)",
+      "repetitions": "Repetitions per test",
+      "batch_size": "Batch Size",
+      "flash_attention": "Enable Flash Attention",
+      "endpoint_enabled": "Run Endpoint (API) Benchmarks",
+      "parallel_slots": "Parallel Requests (Slots)",
+      "temperature": "Temperature"
+    }
+  },
+  "runner": {
+    "title": "Task Runner",
+    "subtitle": "Execute benchmark phases and monitor progress.",
+    "bootstrap": "1. Run Setup (Bootstrap)",
+    "doctor": "2. System Check (Doctor)",
+    "run": "3. Run Benchmark",
+    "logs": "Live Console Output"
+  }
+}

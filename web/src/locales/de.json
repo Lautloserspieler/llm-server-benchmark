@@ -1,0 +1,54 @@
+{
+  "header": {
+    "title": "LLM Benchmark",
+    "new_benchmark": "Neuer Benchmark"
+  },
+  "sidebar": {
+    "dashboard": "Übersicht",
+    "configuration": "Konfiguration",
+    "runner": "Ausführung"
+  },
+  "hero": {
+    "title": "Benchmark Dashboard",
+    "subtitle": "Analysiere und vergleiche die Performance lokaler LLMs."
+  },
+  "runs": {
+    "title": "Letzte Benchmarks",
+    "total": "{{count}} Gesamt",
+    "loading": "Lade Ergebnisse...",
+    "empty": "Keine Benchmark-Ergebnisse gefunden. Starte einen neuen Benchmark, um hier Resultate zu sehen.",
+    "unknown_server": "Unbekannter Server",
+    "unknown_cpu": "Unbekannte CPU",
+    "models_tested_one": "{{count}} Modell getestet",
+    "models_tested_other": "{{count}} Modelle getestet",
+    "view_details": "Details ansehen"
+  },
+  "config": {
+    "title": "Konfiguration",
+    "subtitle": "Benchmark-Einstellungen einfach über Formulare anpassen.",
+    "save": "Einstellungen speichern",
+    "loading": "Lade Einstellungen...",
+    "success": "Erfolgreich gespeichert!",
+    "project_settings": "Projekt & Allgemein",
+    "benchmark_settings": "Benchmark Parameter",
+    "endpoint_settings": "API Endpoint Tests",
+    "fields": {
+      "project_name": "Projekt Name",
+      "server_name": "Server Name (Optional)",
+      "repetitions": "Wiederholungen pro Test",
+      "batch_size": "Batch Size",
+      "flash_attention": "Flash Attention aktivieren",
+      "endpoint_enabled": "Endpoint (API) Benchmarks ausführen",
+      "parallel_slots": "Parallele Anfragen (Slots)",
+      "temperature": "Temperatur"
+    }
+  },
+  "runner": {
+    "title": "Task Ausführung",
+    "subtitle": "Führe Setup und Benchmarks aus und verfolge die Logs.",
+    "bootstrap": "1. Setup (Bootstrap) ausführen",
+    "doctor": "2. Systemcheck (Doctor)",
+    "run": "3. Benchmark starten",
+    "logs": "Live Konsolen-Ausgabe"
+  }
+}

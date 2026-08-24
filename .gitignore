@@ -1,11 +1,27 @@
+# Python
 .venv/
 .runtime/
 __pycache__/
 *.pyc
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# Benchmark-Artefakte
 results/
 comparison/
-benchmark.yaml
 *.log
+
+# Maschinenspezifische Konfiguration (Vorlage: benchmark.example.yaml)
+benchmark.yaml
+benchmark.yaml.bak
+
+# Heruntergeladene Werkzeuge und Modelle
 tools/
 models/*.gguf
 models/**/*.gguf
+
+# Web-Dashboard: Abhaengigkeiten nicht einchecken, gebauten Stand schon,
+# damit `llmbench serve` ohne installiertes npm funktioniert.
+web/node_modules/
+web/.vite/

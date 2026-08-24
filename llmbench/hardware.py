@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import platform
+import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +14,25 @@ from .utils import run_capture, utc_now_iso
 
 def _cpu_name() -> str:
     name = platform.processor().strip()
-    if name:
+    if name and name != "unknown":
         return name
     if os.name == "nt":
         p = run_capture(["wmic", "cpu", "get", "name"], timeout=10)
         lines = [x.strip() for x in p.stdout.splitlines() if x.strip() and "Name" not in x]
         if lines:
             return lines[0]
+    elif sys.platform == "darwin":
+        p = run_capture(["sysctl", "-n", "machdep.cpu.brand_string"], timeout=5)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
+    elif sys.platform.startswith("linux"):
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if "model name" in line:
+                        return line.split(":")[1].strip()
+        except Exception:
+            pass
     return platform.machine()
 
 
@@ -35,6 +49,7 @@ def _nvidia_smi_info() -> list[dict[str, Any]]:
             if len(parts) < len(fields):
                 continue
             item: dict[str, Any] = dict(zip(fields, parts))
+            item["vendor"] = "NVIDIA"
             for key in ["index", "memory.total"]:
                 try:
                     item[key] = int(float(item[key]))
@@ -49,6 +64,46 @@ def _nvidia_smi_info() -> list[dict[str, Any]]:
     except Exception:
         return []
 
+def _rocm_smi_info() -> list[dict[str, Any]]:
+    try:
+        # Many ROCm versions support JSON output.
+        cp = run_capture(["rocm-smi", "--showid", "--showvbios", "--showpower", "--json"], timeout=10)
+        if cp.returncode != 0:
+            return []
+        data = json.loads(cp.stdout)
+        gpus = []
+        for idx, (gpu_id, info) in enumerate(data.items()):
+            if not gpu_id.startswith("card"):
+                continue
+            item = {
+                "index": idx,
+                "vendor": "AMD",
+                "name": info.get("Device ID", f"AMD GPU {gpu_id}"),
+                "vbios_version": info.get("VBIOS version", "unknown")
+            }
+            gpus.append(item)
+        return gpus
+    except Exception:
+        return []
+
+def _xpu_smi_info() -> list[dict[str, Any]]:
+    try:
+        cp = run_capture(["xpu-smi", "discovery", "-j"], timeout=10)
+        if cp.returncode != 0:
+            return []
+        data = json.loads(cp.stdout)
+        gpus = []
+        for dev in data.get("device_list", []):
+            item = {
+                "index": dev.get("device_id", 0),
+                "vendor": "Intel",
+                "name": dev.get("device_name", "Intel GPU"),
+                "memory.total": dev.get("memory_physical_size_mb", 0)
+            }
+            gpus.append(item)
+        return gpus
+    except Exception:
+        return []
 
 def collect_hardware() -> dict[str, Any]:
     vm = psutil.virtual_memory()
@@ -58,6 +113,12 @@ def collect_hardware() -> dict[str, Any]:
         disk_info = {"root": disk_root, "total_bytes": disk.total, "free_bytes": disk.free}
     except Exception:
         disk_info = {}
+        
+    gpus = []
+    gpus.extend(_nvidia_smi_info())
+    gpus.extend(_rocm_smi_info())
+    gpus.extend(_xpu_smi_info())
+    
     return {
         "collected_at": utc_now_iso(),
         "hostname": platform.node(),
@@ -71,5 +132,5 @@ def collect_hardware() -> dict[str, Any]:
         },
         "memory": {"total_bytes": vm.total, "available_bytes": vm.available},
         "disk": disk_info,
-        "gpus": _nvidia_smi_info(),
+        "gpus": gpus,
     }

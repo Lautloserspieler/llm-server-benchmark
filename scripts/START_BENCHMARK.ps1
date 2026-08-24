@@ -10,18 +10,23 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $EnsurePython = Join-Path $PSScriptRoot "ENSURE_PYTHON.ps1"
 $EnsureLlama = Join-Path $PSScriptRoot "ENSURE_LLAMA_CPP.ps1"
+$PrepareLlamaSource = Join-Path $PSScriptRoot "PREPARE_LLAMA_SOURCE.py"
 $DiagnoseLlama = Join-Path $PSScriptRoot "DIAGNOSE_LLAMA_CRASH.ps1"
 $CoreScript = Join-Path $PSScriptRoot "START_BENCHMARK_CORE.ps1"
 $RuntimeRoot = Join-Path $Root ".runtime"
 $LocalPythonDir = Join-Path $RuntimeRoot "python"
 $PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
 $BuildToolsVenv = Join-Path $RuntimeRoot "build-tools"
+$PreparedRefFile = Join-Path $RuntimeRoot "llama-source-ref.txt"
 
 if (-not (Test-Path $EnsurePython)) {
     throw "Python-Bootstrap fehlt: $EnsurePython"
 }
 if (-not (Test-Path $EnsureLlama)) {
     throw "llama.cpp-Bootstrap fehlt: $EnsureLlama"
+}
+if (-not (Test-Path $PrepareLlamaSource)) {
+    throw "llama.cpp-Source-Preparer fehlt: $PrepareLlamaSource"
 }
 if (-not (Test-Path $CoreScript)) {
     throw "Benchmark-Core fehlt: $CoreScript"
@@ -49,9 +54,6 @@ if ($ResolvedPython -and (Test-Path $ResolvedPython)) {
 }
 
 # Source-Build-Toolchain vorab projektlokal bereitstellen.
-# CMake 3.31.8 ist nicht als PyPI-Wheel für alle Windows/Python-Kombinationen
-# verfügbar. llama.cpp benötigt für Blackwell einen ausreichend neuen CMake;
-# daher verwenden wir die verfügbare 3.31.x-Serie ab 3.31.10.
 $BuildToolsPython = Join-Path $BuildToolsVenv "Scripts\python.exe"
 $BuildToolsCMake = Join-Path $BuildToolsVenv "Scripts\cmake.exe"
 $BuildToolsNinja = Join-Path $BuildToolsVenv "Scripts\ninja.exe"
@@ -85,11 +87,45 @@ $env:PATH = "$BuildToolsBin;$env:PATH"
 Write-Host "CMake: $((& $BuildToolsCMake --version | Select-Object -First 1))"
 Write-Host "Ninja: $(& $BuildToolsNinja --version)"
 
+# GitHub-Source-ZIPs auf Windows nicht mehr mit Expand-Archive/Move-Item
+# vorbereiten. Python zipfile behandelt Dotfiles wie .clang-format robust.
+Write-Host ""
+Write-Host "=== llama.cpp Source vorbereiten ===" -ForegroundColor Cyan
+$prepareArgs = @($PrepareLlamaSource, "--project-root", $Root)
+if ($LlamaCppTag) {
+    $prepareArgs += @("--ref", $LlamaCppTag)
+}
+if ($ForceUpdateLlamaCpp) {
+    $prepareArgs += "--force"
+}
+& $ResolvedPython @prepareArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "llama.cpp-Quellcode konnte nicht vorbereitet werden."
+}
+
+$PreparedRef = $null
+if (Test-Path $PreparedRefFile) {
+    $PreparedRef = (Get-Content $PreparedRefFile -Raw).Trim()
+}
+if (-not $PreparedRef) {
+    throw "Source-Preparer war erfolgreich, hat aber keine Source-Ref hinterlegt."
+}
+
+# Genau denselben Ref an den Builder übergeben, damit dieser das bereits
+# vorbereitete Source-Verzeichnis verwendet und nicht erneut entpackt.
+$LlamaCppTag = $PreparedRef
+
+# ForceUpdate soll Source + Build neu erzeugen. Den Force-Schalter geben wir
+# nicht an ENSURE_LLAMA_CPP weiter, weil dessen alter Extraktionspfad sonst den
+# soeben robust vorbereiteten Source wieder löschen würde.
+if ($ForceUpdateLlamaCpp) {
+    Remove-Item (Join-Path $Root "tools\llama.cpp") -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $RuntimeRoot "llama-build") -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # CUDA-/llama.cpp-Setup separat vor dem Core ausführen. Bei einem nativen
 # Windows-Crash automatisch Eventlog, Exitcode, DLLs und CUDA-Umgebung sammeln.
-$llamaArgs = @{}
-if ($LlamaCppTag) { $llamaArgs["LlamaCppTag"] = $LlamaCppTag }
-if ($ForceUpdateLlamaCpp) { $llamaArgs["ForceUpdateLlamaCpp"] = $true }
+$llamaArgs = @{ LlamaCppTag = $LlamaCppTag }
 
 try {
     & $EnsureLlama @llamaArgs
@@ -118,7 +154,5 @@ $forward = @{ Config = $Config }
 if ($LlamaCppTag) { $forward["LlamaCppTag"] = $LlamaCppTag }
 if ($SetupOnly) { $forward["SetupOnly"] = $true }
 
-# ForceUpdateLlamaCpp wird absichtlich nicht ein zweites Mal an den Core
-# weitergereicht: ENSURE_LLAMA_CPP hat bereits einen startbaren Build gewählt.
 & $CoreScript @forward
 exit $LASTEXITCODE

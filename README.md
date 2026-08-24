@@ -112,7 +112,27 @@ Den Fingerabdruck eines Servers zeigt auch `llmbench doctor` an. Vor einer Vergl
 
 ### llama.cpp wird bewusst eingefroren
 
-Nach der ersten Installation wird llama.cpp **nicht** bei jedem Start aktualisiert, sonst könnten zwei Server unbemerkt mit verschiedenen Builds messen. Ein bewusstes Update erfolgt über `UPDATE_DEPENDENCIES.bat`. Für eine Vergleichsserie dieses Update auf allen Servern vor dem ersten Lauf durchführen und danach nicht mehr anfassen.
+Nach der ersten Installation wird llama.cpp **nicht** bei jedem Start aktualisiert, sonst könnten zwei Server unbemerkt mit verschiedenen Builds messen. Ein bewusstes Update erfolgt über `UPDATE_DEPENDENCIES.bat`.
+
+#### Build festschreiben
+
+Ohne feste Vorgabe installiert das Setup den neuesten llama.cpp-Build — und der hängt davon ab, *wann* jemand das Setup gestartet hat. Zwei Server, die eine Woche auseinander eingerichtet werden, bekommen verschiedene Builds.
+
+Für eine Vergleichsserie deshalb den Build festschreiben. Der erste Server nennt nach der Installation den verwendeten Tag; diesen in eine Datei `llama-cpp-version.txt` im Projektordner schreiben:
+
+```text
+b10456
+```
+
+Alle weiteren Server installieren dann genau diesen Build. Die Datei gehört ins Repository — sie ist Teil der Testbedingungen. Alternativ einmalig per Parameter:
+
+```powershell
+.\START_BENCHMARK.bat -LlamaCppTag b10456
+```
+
+Oder über die Umgebungsvariable `LLMBENCH_LLAMACPP_TAG`. Reihenfolge: Parameter, dann Umgebungsvariable, dann `llama-cpp-version.txt`, dann neuester Build.
+
+Welcher Build tatsächlich installiert wurde, steht in `tools/llama.cpp/.llama-build.json` und in jedem Ergebnis unter `tools.llama_cpp_build_ids`. `llmbench compare` meldet Abweichungen als Fehler.
 
 Die automatische Erkennung sucht ausschließlich in `tools/llama.cpp` und `bin/` innerhalb des Projekts. Sie greift **nicht** mehr auf das Arbeitsverzeichnis, den PATH oder Systemordner zu — genau das hatte zuvor dazu geführt, dass ein zufällig installiertes llama.cpp den eingefrorenen Build verdrängen konnte. Das alte Verhalten ist über `--allow-system-search` weiterhin erreichbar.
 

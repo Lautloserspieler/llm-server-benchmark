@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true, ValueFromRemainingArguments=$true)]
     [string[]]$Runs
 )

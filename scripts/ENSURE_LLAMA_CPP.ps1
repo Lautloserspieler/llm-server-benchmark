@@ -45,6 +45,29 @@ function Add-ToPath([string]$Dir) {
     }
 }
 
+# Windows PowerShell 5.1 behandelt stderr nativer Programme in einer Pipeline
+# als PowerShell-ErrorRecord. CMake schreibt aber auch normale Statusmeldungen
+# (z.B. CMAKE_BUILD_TYPE=Release) auf stderr. Deshalb darf hier NUR der echte
+# Prozess-Exitcode ueber Erfolg/Fehler entscheiden.
+function Invoke-NativeLogged {
+    param(
+        [Parameter(Mandatory=$true)][string]$Exe,
+        [Parameter(Mandatory=$true)][object[]]$Arguments,
+        [Parameter(Mandatory=$true)][string]$LogFile
+    )
+
+    $previousErrorAction = $ErrorActionPreference
+    $rc = 1
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Exe @Arguments 2>&1 | Tee-Object -FilePath $LogFile
+        $rc = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    return $rc
+}
+
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -345,13 +368,12 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
         $args += '-DGGML_CUDA_FA=OFF'
     }
 
-    & $Tools.CMake @args 2>&1 | Tee-Object -FilePath $configureLog
-    $rc=$LASTEXITCODE
+    $rc = Invoke-NativeLogged -Exe $Tools.CMake -Arguments $args -LogFile $configureLog
     if ($rc -ne 0) { throw "CMake-Konfiguration fehlgeschlagen (Exitcode $rc). Log: $configureLog" }
 
     $jobs=[Math]::Max(1,[Environment]::ProcessorCount)
-    & $Tools.CMake --build $buildDir --target llama-bench llama-server --parallel $jobs 2>&1 | Tee-Object -FilePath $buildLog
-    $rc=$LASTEXITCODE
+    $buildArgs=@('--build',$buildDir,'--target','llama-bench','llama-server','--parallel',$jobs)
+    $rc = Invoke-NativeLogged -Exe $Tools.CMake -Arguments $buildArgs -LogFile $buildLog
     if ($rc -ne 0) { throw "llama.cpp-Kompilierung fehlgeschlagen (Exitcode $rc). Log: $buildLog" }
 
     Copy-Binaries $buildDir

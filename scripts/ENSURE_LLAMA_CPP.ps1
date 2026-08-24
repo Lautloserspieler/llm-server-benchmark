@@ -46,6 +46,9 @@ function Get-NvidiaInfo {
     $driver = (& $cmd.Source --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
     if ($driver) { $driver = $driver.ToString().Trim() }
 
+    $gpuName = (& $cmd.Source --query-gpu=name --format=csv,noheader 2>$null | Select-Object -First 1)
+    if ($gpuName) { $gpuName = $gpuName.ToString().Trim() }
+
     $cudaText = $null
     $smiText = (& $cmd.Source 2>$null | Out-String)
     if ($smiText -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
@@ -65,51 +68,68 @@ function Get-NvidiaInfo {
     return [pscustomobject]@{
         Command = $cmd.Source
         Driver = $driver
+        GpuName = $gpuName
         CudaText = $cudaText
         SupportedMajor = $supportedMajor
     }
 }
 
-function Invoke-LlamaProbe([string]$BenchExe) {
-    $outFile = [System.IO.Path]::GetTempFileName()
-    $errFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $proc = Start-Process -FilePath $BenchExe -ArgumentList "--list-devices" -NoNewWindow -Wait -PassThru `
-            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-        $stdout = Get-Content $outFile -Raw -ErrorAction SilentlyContinue
-        $stderr = Get-Content $errFile -Raw -ErrorAction SilentlyContinue
-        $combined = (($stdout + "`n" + $stderr).Trim())
-        return [pscustomobject]@{
-            Ok = ($proc.ExitCode -eq 0)
-            ExitCode = $proc.ExitCode
-            Output = $combined
+function Invoke-LlamaProbe([string]$BenchExe, [int]$Retries = 1) {
+    $last = $null
+    foreach ($attempt in 1..([Math]::Max(1, $Retries))) {
+        $outFile = [System.IO.Path]::GetTempFileName()
+        $errFile = [System.IO.Path]::GetTempFileName()
+        try {
+            $proc = Start-Process -FilePath $BenchExe -ArgumentList "--list-devices" -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            $stdout = Get-Content $outFile -Raw -ErrorAction SilentlyContinue
+            $stderr = Get-Content $errFile -Raw -ErrorAction SilentlyContinue
+            $combined = (($stdout + "`n" + $stderr).Trim())
+            $last = [pscustomobject]@{
+                Ok = ($proc.ExitCode -eq 0)
+                ExitCode = $proc.ExitCode
+                Output = $combined
+                Attempt = $attempt
+            }
+        } catch {
+            $last = [pscustomobject]@{
+                Ok = $false
+                ExitCode = $null
+                Output = $_.Exception.Message
+                Attempt = $attempt
+            }
+        } finally {
+            Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
         }
-    } catch {
-        return [pscustomobject]@{
-            Ok = $false
-            ExitCode = $null
-            Output = $_.Exception.Message
-        }
-    } finally {
-        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+
+        if ($last.Ok) { return $last }
+        if ($attempt -lt $Retries) { Start-Sleep -Milliseconds 500 }
     }
+    return $last
 }
 
 function Test-ExistingLlama {
     $bench = Join-Path $LlamaDir "llama-bench.exe"
     $server = Join-Path $LlamaDir "llama-server.exe"
     if (-not (Test-Path $bench) -or -not (Test-Path $server)) { return $false }
-    $probe = Invoke-LlamaProbe $bench
+
+    $state = $null
+    if (Test-Path $StateFile) {
+        try { $state = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { }
+    }
+
+    if ($state -and $state.cuda_workaround -eq "GGML_CUDA_PDL=0") {
+        $env:GGML_CUDA_PDL = "0"
+        Write-Host "CUDA-Workaround aus Build-State aktiviert: GGML_CUDA_PDL=0" -ForegroundColor Yellow
+    }
+
+    $probe = Invoke-LlamaProbe $bench 3
     if ($probe.Ok) {
         Write-Host "Vorhandene llama.cpp-Installation ist startbar." -ForegroundColor Green
-        if (Test-Path $StateFile) {
-            try {
-                $state = Get-Content $StateFile -Raw | ConvertFrom-Json
-                Write-Host "Build: $($state.tag) / $($state.backend)"
-            } catch { }
-        }
+        if ($state) { Write-Host "Build: $($state.tag) / $($state.backend)" }
         return $true
     }
+
     Write-Warning "Vorhandene llama.cpp-Installation ist defekt (Exitcode $($probe.ExitCode)). Es wird automatisch ein anderer Build gesucht."
     return $false
 }
@@ -142,19 +162,22 @@ function Get-CudaPackages($Release, [int]$PreferredMajor) {
     foreach ($versionText in $main.Keys) {
         if (-not $runtime.ContainsKey($versionText)) { continue }
         try { $version = [version]$versionText } catch { continue }
-        if ($PreferredMajor -and $version.Major -gt $PreferredMajor) { continue }
-        $priority = if ($PreferredMajor -and $version.Major -eq $PreferredMajor) { 0 } else { 1 }
+
+        # Bei bekannter Treiberfamilie nur dieselbe CUDA-Major-Familie testen.
+        # Das verhindert, dass ein funktionierender 12.x-Fallback anschließend
+        # vom Core wieder durch 13.x ersetzt wird und hält die Messumgebung klar.
+        if ($PreferredMajor -and $version.Major -ne $PreferredMajor) { continue }
+
         $packages += [pscustomobject]@{
             Version = $version
             VersionText = $versionText
             Backend = "cuda-$versionText"
             MainAsset = $main[$versionText]
             RuntimeAsset = $runtime[$versionText]
-            Priority = $priority
         }
     }
 
-    return @($packages | Sort-Object Priority, @{Expression="Version";Descending=$true})
+    return @($packages | Sort-Object @{Expression="Version";Descending=$true})
 }
 
 function Expand-LlamaPackage($Package, [string]$Destination, [string]$TempRoot) {
@@ -186,12 +209,10 @@ function Expand-LlamaPackage($Package, [string]$Destination, [string]$TempRoot) 
 
 function Install-WorkingCudaBuild {
     $nvidia = Get-NvidiaInfo
-    if (-not $nvidia) {
-        Write-Host "Keine NVIDIA-GPU über nvidia-smi erkannt. Der normale Core-Installer übernimmt den CPU-Fall."
-        return $false
-    }
+    if (-not $nvidia) { return $false }
 
     Write-Step "llama.cpp CUDA-Selbsttest"
+    Write-Host "GPU: $($nvidia.GpuName)"
     Write-Host "NVIDIA-Treiber: $($nvidia.Driver), nvidia-smi CUDA: $($nvidia.CudaText), bevorzugte CUDA-Familie: $($nvidia.SupportedMajor).x"
 
     $releases = @(Get-Releases)
@@ -219,16 +240,43 @@ function Install-WorkingCudaBuild {
                         throw "llama-bench.exe oder llama-server.exe fehlt nach dem Entpacken."
                     }
 
-                    $probe = Invoke-LlamaProbe $bench
+                    # Manche aktuelle Windows/Blackwell-Probleme sind beim
+                    # CUDA-Kernel-Init nicht deterministisch. Deshalb 3 Versuche.
+                    $workaround = $null
+                    $oldPdl = $env:GGML_CUDA_PDL
+                    Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue
+                    $probe = Invoke-LlamaProbe $bench 3
+
+                    # Zweiter Versuchspfad: PDL deaktivieren. Aktuelle llama.cpp-
+                    # CUDA-Probleme auf Windows können genau beim PDL-Kernelcheck
+                    # abstürzen. Nur aktivieren, wenn der normale Start scheitert.
+                    if (-not $probe.Ok -and $nvidia.SupportedMajor -ge 13) {
+                        Write-Host "  Normaler Start fehlgeschlagen. Teste zusätzlich GGML_CUDA_PDL=0..." -ForegroundColor Yellow
+                        $env:GGML_CUDA_PDL = "0"
+                        $pdlProbe = Invoke-LlamaProbe $bench 3
+                        if ($pdlProbe.Ok) {
+                            $probe = $pdlProbe
+                            $workaround = "GGML_CUDA_PDL=0"
+                        } else {
+                            if ($null -eq $oldPdl) { Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue }
+                            else { $env:GGML_CUDA_PDL = $oldPdl }
+                            $probe = $pdlProbe
+                        }
+                    } elseif ($probe.Ok) {
+                        if ($null -eq $oldPdl) { Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue }
+                        else { $env:GGML_CUDA_PDL = $oldPdl }
+                    }
+
                     $attempts.Add([pscustomobject]@{
                         Tag = $release.tag_name
                         Backend = $package.Backend
                         ExitCode = $probe.ExitCode
                         Output = $probe.Output
+                        Workaround = $workaround
                     })
 
                     if (-not $probe.Ok) {
-                        Write-Warning "Build startet nicht (Exitcode $($probe.ExitCode)). Nächster Kandidat..."
+                        Write-Warning "Build startet nicht (Exitcode $($probe.ExitCode)). Nächster Release-Kandidat..."
                         continue
                     }
 
@@ -239,6 +287,10 @@ function Install-WorkingCudaBuild {
                         Copy-Item $_.FullName -Destination $LlamaDir -Recurse -Force
                     }
 
+                    if ($workaround -eq "GGML_CUDA_PDL=0") {
+                        $env:GGML_CUDA_PDL = "0"
+                    }
+
                     $state = [ordered]@{
                         tag = $release.tag_name
                         backend = $package.Backend
@@ -246,8 +298,10 @@ function Install-WorkingCudaBuild {
                         main_asset = $package.MainAsset.name
                         runtime_asset = $package.RuntimeAsset.name
                         nvidia_driver = $nvidia.Driver
+                        gpu_name = $nvidia.GpuName
                         cuda_compatibility = $nvidia.CudaText
                         installer = "self-healing"
+                        cuda_workaround = $workaround
                         attempts_before_success = $attempts.Count
                     }
                     $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
@@ -255,6 +309,7 @@ function Install-WorkingCudaBuild {
                     $deviceLine = ($probe.Output -split "`r?`n" | Where-Object { $_ -match 'Device|CUDA' } | Select-Object -First 1)
                     Write-Host ""
                     Write-Host "Funktionierender llama.cpp-Build gefunden: $($release.tag_name) / $($package.Backend)" -ForegroundColor Green
+                    if ($workaround) { Write-Host "Aktiver CUDA-Workaround: $workaround" -ForegroundColor Yellow }
                     if ($deviceLine) { Write-Host $deviceLine.Trim() -ForegroundColor Green }
                     return $true
                 } catch {
@@ -263,6 +318,7 @@ function Install-WorkingCudaBuild {
                         Backend = $package.Backend
                         ExitCode = $null
                         Output = $_.Exception.Message
+                        Workaround = $null
                     })
                     Write-Warning "Kandidat fehlgeschlagen: $($_.Exception.Message)"
                 }
@@ -273,7 +329,8 @@ function Install-WorkingCudaBuild {
         Write-Host ""
         Write-Host "Alle getesteten CUDA-Builds sind fehlgeschlagen:" -ForegroundColor Red
         foreach ($attempt in $attempts) {
-            Write-Host "  $($attempt.Tag) / $($attempt.Backend) -> Exitcode $($attempt.ExitCode)"
+            $wa = if ($attempt.Workaround) { " [$($attempt.Workaround)]" } else { "" }
+            Write-Host "  $($attempt.Tag) / $($attempt.Backend)$wa -> Exitcode $($attempt.ExitCode)"
         }
         throw "Keiner der getesteten offiziellen llama.cpp-CUDA-Builds konnte auf diesem System gestartet werden. CPU-Fallback wird bei erkannter NVIDIA-GPU bewusst nicht still verwendet, damit der Benchmark keine falschen GPU-Ergebnisse produziert."
     } finally {
@@ -287,7 +344,6 @@ if (-not $ForceUpdateLlamaCpp -and (Test-ExistingLlama)) {
 
 $nvidia = Get-NvidiaInfo
 if (-not $nvidia) {
-    # Kein NVIDIA-System: Core-Skript übernimmt CPU-Installation.
     exit 0
 }
 

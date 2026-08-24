@@ -10,6 +10,8 @@ from typing import Any
 
 import psutil
 
+from .telemetry import get_telemetry_provider, GpuSample
+
 
 def _agg(items: list[dict[str, Any]], key: str) -> tuple[float | None, float | None]:
     """Mittelwert und Maximum einer Kennzahl. Einmal berechnen statt dreimal."""
@@ -35,8 +37,7 @@ class ResourceMonitor:
     _samples: list[dict[str, Any]] = field(default_factory=list)
     _stop: threading.Event = field(default_factory=threading.Event)
     _thread: threading.Thread | None = None
-    _nvml: Any = None
-    _handles: list[Any] = field(default_factory=list)
+    _provider: Any = None
     _target_pid: int | None = None
     _own_pids: set[int] = field(default_factory=set)
     _seen_gpu_pids: set[int] = field(default_factory=set)
@@ -50,17 +51,7 @@ class ResourceMonitor:
         self._own_pids = {os.getpid()}
         self._stop.clear()
         psutil.cpu_percent(interval=None)
-        try:
-            import pynvml
-
-            pynvml.nvmlInit()
-            self._nvml = pynvml
-            self._handles = [
-                pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(pynvml.nvmlDeviceGetCount())
-            ]
-        except Exception:
-            self._nvml = None
-            self._handles = []
+        self._provider = get_telemetry_provider()
         # Ruhewert vor der Last: macht sichtbar, ob die Maschine sauber war.
         self._baseline = self._sample()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -94,38 +85,24 @@ class ResourceMonitor:
             pass
 
     def _gpu_sample(self) -> list[dict[str, Any]]:
-        if not self._nvml:
+        if not self._provider:
             return []
+        samples = self._provider.sample_gpus()
         out = []
-        for idx, h in enumerate(self._handles):
-            try:
-                mem = self._nvml.nvmlDeviceGetMemoryInfo(h)
-                util = self._nvml.nvmlDeviceGetUtilizationRates(h)
-                temp = self._nvml.nvmlDeviceGetTemperature(h, self._nvml.NVML_TEMPERATURE_GPU)
-                power_w = None
-                with contextlib.suppress(Exception):
-                    power_w = self._nvml.nvmlDeviceGetPowerUsage(h) / 1000.0
-                pids: list[int] = []
-                with contextlib.suppress(Exception):
-                    pids = [
-                        int(p.pid)
-                        for p in self._nvml.nvmlDeviceGetComputeRunningProcesses(h)
-                    ]
-                self._seen_gpu_pids.update(pids)
-                out.append(
-                    {
-                        "index": idx,
-                        "util_gpu_percent": float(util.gpu),
-                        "util_memory_percent": float(util.memory),
-                        "memory_used_bytes": int(mem.used),
-                        "memory_total_bytes": int(mem.total),
-                        "temperature_c": float(temp),
-                        "power_w": power_w,
-                        "compute_pids": pids,
-                    }
-                )
-            except Exception:
-                continue
+        for idx, s in enumerate(samples):
+            self._seen_gpu_pids.update(s.compute_pids)
+            out.append(
+                {
+                    "index": s.index,
+                    "util_gpu_percent": s.util_gpu_percent,
+                    "util_memory_percent": s.util_memory_percent,
+                    "memory_used_bytes": s.memory_used_bytes,
+                    "memory_total_bytes": s.memory_total_bytes,
+                    "temperature_c": s.temperature_c,
+                    "power_w": s.power_w,
+                    "compute_pids": s.compute_pids,
+                }
+            )
         return out
 
     def _sample(self) -> dict[str, Any]:
@@ -150,9 +127,8 @@ class ResourceMonitor:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=max(2.0, self.interval * 3))
-        if self._nvml:
-            with contextlib.suppress(Exception):
-                self._nvml.nvmlShutdown()
+        if self._provider:
+            self._provider.shutdown()
         return self.summary()
 
     def _foreign_processes(self) -> list[dict[str, Any]]:
@@ -216,7 +192,7 @@ class ResourceMonitor:
 
         return {
             "sample_count": len(self._samples),
-            "telemetry_source": "nvml" if self._nvml else "cpu_only",
+            "telemetry_source": "nvml" if self._provider and "NvidiaProvider" in str(type(self._provider)) else "cpu_only",
             "avg_cpu_percent": statistics.fmean(cpu),
             "max_cpu_percent": max(cpu),
             "avg_ram_used_bytes": statistics.fmean(ram),

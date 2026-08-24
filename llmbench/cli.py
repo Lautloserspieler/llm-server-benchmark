@@ -11,7 +11,7 @@ import yaml
 from . import __version__
 from .bootstrap import bootstrap_config
 from .compare import compare_summaries
-from .config import load_config, save_example, validate_config
+from .config import load_config, save_example, validate_config, apply_duration_preset
 from .doctor import doctor
 from .progress import make_reporter
 from .runner import run_suite
@@ -159,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Benchmark-Suite ausfuehren")
     run.add_argument("--config", default="benchmark.yaml")
     run.add_argument("--model", default=None, help="Nur ein benanntes Modell testen")
+    run.add_argument("--duration", choices=["short", "medium", "long"], default=None, help="Vordefinierte Dauer: short, medium oder long")
     run.add_argument("--skip-endpoint", action="store_true")
     run.add_argument(
         "--plain",
@@ -205,6 +206,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd in {"doctor", "run"}:
         cfg = load_config(args.config)
+
+        if args.cmd == "run" and args.duration:
+            cfg = apply_duration_preset(cfg, args.duration)
+
         errors = validate_config(cfg)
         if errors:
             print("Konfigurationsfehler:", file=sys.stderr)

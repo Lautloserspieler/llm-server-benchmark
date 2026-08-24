@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import concurrent.futures
+import asyncio
 import contextlib
 import json
 import math
@@ -17,7 +17,6 @@ from .config import normalize_flash_attention
 from .monitor import ResourceMonitor, strip_samples
 from .utils import kill_process_tree, resolve_executable, utc_now_iso, write_json
 
-
 def percentile(values: list[float], p: float) -> float | None:
     if not values:
         return None
@@ -31,26 +30,59 @@ def percentile(values: list[float], p: float) -> float | None:
         return xs[int(k)]
     return xs[f] * (c - k) + xs[c] * (k - f)
 
-
 def _auth_headers(cfg: dict[str, Any]) -> dict[str, str]:
     key = cfg.get("api_key")
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
-def wait_health(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> None:
-    deadline = time.time() + timeout_s
+async def run_sanity_check(
+    base_url: str,
+    cfg: dict[str, Any],
+    prompt: str = "1+1=",
+    expected: str = "2",
+) -> tuple[bool, str]:
+    """Prueft mit einem deterministischen Prompt, ob der Server korrekt antwortet."""
+    payload = {
+        "prompt": prompt,
+        "n_predict": 10,
+        "temperature": 0.0,
+        "stream": False,
+    }
+    try:
+        async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
+            r = await client.post(
+                base_url.rstrip("/") + "/completion",
+                json=payload,
+                timeout=30,
+            )
+            r.raise_for_status()
+            content = r.json().get("content", "").strip()
+            if expected in content:
+                return True, f"Sanity check bestanden: {content}"
+            return False, f"Sanity check fehlgeschlagen. Erwartet '{expected}', erhalten: {content!r}"
+    except Exception as exc:
+        return False, f"Sanity check Fehler: {exc}"
+
+
+async def wait_health_async(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
+    started = time.time()
+    deadline = started + timeout_s
     last_error = ""
-    while time.time() < deadline:
-        try:
-            r = httpx.get(base_url.rstrip("/") + "/health", timeout=5, headers=headers or {})
-            if r.status_code == 200:
-                return
-            last_error = f"HTTP {r.status_code}: {r.text[:200]}"
-        except Exception as exc:
-            last_error = str(exc)
-        time.sleep(1)
+    async with httpx.AsyncClient() as client:
+        while time.time() < deadline:
+            try:
+                r = await client.get(base_url.rstrip("/") + "/health", timeout=5, headers=headers or {})
+                if r.status_code == 200:
+                    return time.time() - started
+                last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+            except Exception as exc:
+                last_error = str(exc)
+            await asyncio.sleep(1)
     raise TimeoutError(f"llama-server wurde nicht bereit: {last_error}")
 
+def wait_health(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
+    """Synchronous wrapper for backward compatibility."""
+    return asyncio.run(wait_health_async(base_url, timeout_s, headers))
 
 def start_llama_server(
     exe: str,
@@ -60,11 +92,7 @@ def start_llama_server(
     bench_cfg: dict[str, Any],
     log_path: Path,
 ) -> tuple[subprocess.Popen[Any], str]:
-    """Startet llama-server mit denselben Kernparametern wie llama-bench.
-
-    Sonst entstehen im selben Bericht Zahlen aus zwei verschiedenen
-    Konfigurationen, die niemand mehr auseinanderhalten kann.
-    """
+    """Startet llama-server mit denselben Kernparametern wie llama-bench."""
     exe = resolve_executable(exe)
     parsed = urlparse(endpoint_cfg["base_url"])
     host = parsed.hostname or "127.0.0.1"
@@ -102,8 +130,6 @@ def start_llama_server(
     for item in endpoint_cfg.get("server_additional_args", []) or []:
         cmd.append(str(item))
 
-    # Kein Context-Manager: das Handle muss den Serverprozess ueberleben
-    # und wird in stop_llama_server geschlossen.
     log_f = open(log_path, "w", encoding="utf-8")  # noqa: SIM115
     try:
         proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT, text=True)
@@ -111,20 +137,18 @@ def start_llama_server(
         log_f.close()
         raise
     proc._llmbench_log_file = log_f  # type: ignore[attr-defined]
-    # api_key nicht in die Ergebnisdatei schreiben
     printable = list(cmd)
     if "--api-key" in printable:
         printable[printable.index("--api-key") + 1] = "***"
     return proc, " ".join(printable)
-
 
 def stop_llama_server(proc: subprocess.Popen[Any]) -> None:
     kill_process_tree(proc)
     with contextlib.suppress(Exception):
         proc._llmbench_log_file.close()  # type: ignore[attr-defined]
 
-
-def _one_completion(
+async def _one_completion_async(
+    client: httpx.AsyncClient,
     base_url: str,
     prompt: str,
     cfg: dict[str, Any],
@@ -139,8 +163,6 @@ def _one_completion(
         "return_tokens": True,
         "cache_prompt": False,
     }
-    # Feste Tokenzahl und fester Seed: sonst misst System-TPS teilweise,
-    # wie frueh das Modell aufhoert, statt wie schnell der Server ist.
     if cfg.get("ignore_eos", True):
         payload["ignore_eos"] = True
     if cfg.get("seed") is not None:
@@ -154,10 +176,9 @@ def _one_completion(
     final_data: dict[str, Any] = {}
     error: str | None = None
     try:
-        with httpx.Client(timeout=timeout, headers=_auth_headers(cfg)) as client, \
-                client.stream("POST", base_url.rstrip("/") + "/completion", json=payload) as resp:
+        async with client.stream("POST", base_url.rstrip("/") + "/completion", json=payload, timeout=timeout) as resp:
             resp.raise_for_status()
-            for line in resp.iter_lines():
+            async for line in resp.aiter_lines():
                 if not line:
                     continue
                 text = line.strip()
@@ -199,17 +220,17 @@ def _one_completion(
         "server_timings": timings,
     }
 
+async def _run_level_async(base_url: str, cfg: dict[str, Any], concurrency: int, count: int) -> list[dict[str, Any]]:
+    semaphore = asyncio.Semaphore(concurrency)
+    async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
+        async def wrapped_task(i):
+            async with semaphore:
+                return await _one_completion_async(client, base_url, str(cfg["prompt"]), cfg, i)
 
-def _run_level(base_url: str, cfg: dict[str, Any], concurrency: int, count: int) -> list[dict[str, Any]]:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [
-            pool.submit(_one_completion, base_url, str(cfg["prompt"]), cfg, i)
-            for i in range(count)
-        ]
-        return [f.result() for f in futures]
+        tasks = [wrapped_task(i) for i in range(count)]
+        return await asyncio.gather(*tasks)
 
-
-def run_endpoint_load(
+async def _run_endpoint_load_async(
     base_url: str,
     cfg: dict[str, Any],
     telemetry_interval: float,
@@ -220,11 +241,9 @@ def run_endpoint_load(
     warmup_n = int(cfg.get("warmup_requests", 0) or 0)
     warmup_info: dict[str, Any] = {"requests": warmup_n}
 
-    # Aufwaermen vor der Messung: der erste Request traegt sonst den
-    # Aufbau des Compute-Graphen und verzerrt ausgerechnet Concurrency 1.
     if warmup_n > 0:
         w_started = time.perf_counter()
-        w_results = _run_level(base_url, cfg, 1, warmup_n)
+        w_results = await _run_level_async(base_url, cfg, 1, warmup_n)
         warmup_info.update({
             "duration_seconds": time.perf_counter() - w_started,
             "successful": sum(1 for x in w_results if x["ok"]),
@@ -241,7 +260,7 @@ def run_endpoint_load(
     for concurrency in levels:
         requests_n = max(int(cfg["requests_per_level"]), concurrency)
         level_started = time.perf_counter()
-        results = _run_level(base_url, cfg, concurrency, requests_n)
+        results = await _run_level_async(base_url, cfg, concurrency, requests_n)
         wall = time.perf_counter() - level_started
 
         ok = [x for x in results if x["ok"]]
@@ -270,7 +289,7 @@ def run_endpoint_load(
                 "Ohne ignore_eos sind die Tokenzahlen zwischen Laeufen nicht vergleichbar."
             )
         all_levels.append(level)
-        time.sleep(1)
+        await asyncio.sleep(1)
 
     telemetry = monitor.stop()
     result = {
@@ -298,3 +317,13 @@ def run_endpoint_load(
     light["levels"] = [{k: v for k, v in lv.items() if k != "request_details"} for lv in all_levels]
     light["details_stored_in"] = "endpoint_load.json"
     return light
+
+def run_endpoint_load(
+    base_url: str,
+    cfg: dict[str, Any],
+    telemetry_interval: float,
+    out_dir: Path,
+    target_pid: int | None = None,
+) -> dict[str, Any]:
+    """Synchronous wrapper to run the async load test."""
+    return asyncio.run(_run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid))

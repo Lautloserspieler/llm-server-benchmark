@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import traceback
 from pathlib import Path
@@ -7,12 +8,20 @@ from typing import Any
 
 from . import __version__
 from .config import config_fingerprint, public_config, resolve_path
-from .endpoint import run_endpoint_load, start_llama_server, stop_llama_server, wait_health
+from .endpoint import (
+    run_endpoint_load,
+    start_llama_server,
+    stop_llama_server,
+    wait_health,
+    run_sanity_check,
+)
 from .hardware import collect_hardware
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build, run_llama_bench
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html
+from .tuner import tune_gpu_layers
+from .backends.llama_cpp import LlamaCppBackend
 from .utils import (
     ensure_dir,
     file_fingerprint,
@@ -93,6 +102,9 @@ def run_suite(
     write_json(run_dir / "hardware.json", hardware)
     tools = _tool_info(cfg)
 
+    # Backend Initialisierung
+    backend = LlamaCppBackend(cfg["tools"]["llama_bench"], cfg["tools"]["llama_server"])
+
     summary: dict[str, Any] = {
         "schema_version": 2,
         "llmbench_version": __version__,
@@ -118,6 +130,27 @@ def run_suite(
             continue
         meta = _model_meta(model, cfg)
         model_dir = ensure_dir(run_dir / safe_name(model["name"]))
+
+        # Auto-Tuning: Suche optimalen Layer-Count, falls aktiviert.
+        if cfg["benchmark"].get("auto_tune"):
+            reporter.note(f"Auto-Tuning fuer {model['name']} ...")
+            endpoint_cfg_tune = dict(cfg.get("endpoint", {}))
+            endpoint_cfg_tune.update(model.get("endpoint", {}) or {})
+            best_layers = tune_gpu_layers(
+                cfg["tools"]["llama_server"],
+                meta["path"],
+                endpoint_cfg_tune,
+                cfg["benchmark"],
+                model_dir,
+            )
+            reporter.note(f"Optimal layers gefunden: {best_layers}")
+            # Das Ergebnis in das erste Profil ueberschreiben oder neues Profil anlegen.
+            if model.get("profiles"):
+                model["profiles"][0]["gpu_layers"] = best_layers
+                model["profiles"][0]["name"] = f"Auto-Tuned ({best_layers})"
+            else:
+                model["profiles"] = [{"name": f"Auto-Tuned ({best_layers})", "gpu_layers": best_layers}]
+
         model_result: dict[str, Any] = {"model": meta, "profiles": []}
         if not meta["exists"]:
             model_result["status"] = "failed"
@@ -138,13 +171,12 @@ def run_suite(
             for kind in BENCH_KINDS:
                 reporter.test_started(model["name"], profile["name"], kind)
                 try:
-                    result = run_llama_bench(
-                        cfg["tools"]["llama_bench"],
+                    result = backend.run_benchmark(
                         meta["path"],
-                        cfg["benchmark"],
                         profile,
                         kind,
                         profile_dir,
+                        cfg["benchmark"],
                         on_progress=reporter.progress,
                     )
                 except Exception as exc:
@@ -177,21 +209,27 @@ def run_suite(
             proc = None
             try:
                 if endpoint_cfg.get("auto_start", True):
-                    proc, command = start_llama_server(
-                        cfg["tools"]["llama_server"],
+                    proc, command = backend.start_server(
                         meta["path"],
                         profile,
                         endpoint_cfg,
                         cfg["benchmark"],
                         endpoint_dir / "llama-server.log",
                     )
-                    wait_health(
+                    cold_start_s = backend.wait_health(
                         endpoint_cfg["base_url"],
                         float(endpoint_cfg.get("startup_timeout_seconds", 300)),
                     )
                 else:
                     command = None
-                    wait_health(endpoint_cfg["base_url"], 10)
+                    cold_start_s = backend.wait_health(endpoint_cfg["base_url"], 10)
+
+                # Sanity Check: Sicherstellen, dass der Server korrekt generiert.
+                passed, msg = asyncio.run(run_sanity_check(endpoint_cfg["base_url"], endpoint_cfg))
+                if not passed:
+                    summary["warnings"].append(f"{model['name']}: {msg}")
+                    reporter.note(f"Warnung: {msg}")
+
                 ep = run_endpoint_load(
                     endpoint_cfg["base_url"],
                     endpoint_cfg,
@@ -201,6 +239,8 @@ def run_suite(
                 )
                 ep["server_command"] = command
                 ep["profile"] = profile.get("name")
+                ep["cold_start_seconds"] = cold_start_s
+                ep["sanity_check"] = {"passed": passed, "message": msg}
                 model_result["endpoint"] = ep
                 for warn in (ep.get("telemetry") or {}).get("warnings", []):
                     summary["warnings"].append(f"{model['name']}/endpoint: {warn}")
@@ -213,7 +253,7 @@ def run_suite(
                 summary["warnings"].append(f"{model['name']}: Endpoint-Test fehlgeschlagen: {exc}")
             finally:
                 if proc is not None:
-                    stop_llama_server(proc)
+                    backend.stop_server(proc)
 
         summary["models"].append(model_result)
         write_json(run_dir / "summary.partial.json", summary)

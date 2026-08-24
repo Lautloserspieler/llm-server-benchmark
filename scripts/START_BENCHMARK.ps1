@@ -15,6 +15,7 @@ $CoreScript = Join-Path $PSScriptRoot "START_BENCHMARK_CORE.ps1"
 $RuntimeRoot = Join-Path $Root ".runtime"
 $LocalPythonDir = Join-Path $RuntimeRoot "python"
 $PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
+$BuildToolsVenv = Join-Path $RuntimeRoot "build-tools"
 
 if (-not (Test-Path $EnsurePython)) {
     throw "Python-Bootstrap fehlt: $EnsurePython"
@@ -41,10 +42,48 @@ if ($ResolvedPython -and (Test-Path $ResolvedPython)) {
     $env:PATH = "$PythonDir;$PythonDir\Scripts;$env:PATH"
     Write-Host "Python für Benchmark: $ResolvedPython"
 } elseif (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
+    $ResolvedPython = Join-Path $LocalPythonDir "python.exe"
     $env:PATH = "$LocalPythonDir;$LocalPythonDir\Scripts;$env:PATH"
 } else {
     throw "Python-Bootstrap war erfolgreich, aber es wurde kein nutzbarer Interpreterpfad übergeben."
 }
+
+# Source-Build-Toolchain vorab projektlokal bereitstellen.
+# CMake 3.31.8 ist nicht als PyPI-Wheel für alle Windows/Python-Kombinationen
+# verfügbar. llama.cpp benötigt für Blackwell einen ausreichend neuen CMake;
+# daher verwenden wir die verfügbare 3.31.x-Serie ab 3.31.10.
+$BuildToolsPython = Join-Path $BuildToolsVenv "Scripts\python.exe"
+$BuildToolsCMake = Join-Path $BuildToolsVenv "Scripts\cmake.exe"
+$BuildToolsNinja = Join-Path $BuildToolsVenv "Scripts\ninja.exe"
+
+if (-not (Test-Path $BuildToolsPython)) {
+    Write-Host ""
+    Write-Host "=== Projektlokale Build-Tools ===" -ForegroundColor Cyan
+    Write-Host "Erstelle .runtime\build-tools ..."
+    & $ResolvedPython -m venv $BuildToolsVenv
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build-Tool-Venv konnte nicht erstellt werden."
+    }
+}
+
+if (-not (Test-Path $BuildToolsCMake) -or -not (Test-Path $BuildToolsNinja)) {
+    Write-Host ""
+    Write-Host "=== Projektlokale Build-Tools ===" -ForegroundColor Cyan
+    Write-Host "Installiere CMake >=3.31.10,<4 und Ninja projektlokal..."
+    & $BuildToolsPython -m pip install --disable-pip-version-check --upgrade "cmake>=3.31.10,<4" "ninja>=1.11"
+    if ($LASTEXITCODE -ne 0) {
+        throw "CMake/Ninja konnten nicht installiert werden."
+    }
+}
+
+if (-not (Test-Path $BuildToolsCMake) -or -not (Test-Path $BuildToolsNinja)) {
+    throw "Projektlokale Build-Tools wurden installiert, aber cmake.exe oder ninja.exe fehlen."
+}
+
+$BuildToolsBin = Split-Path -Parent $BuildToolsCMake
+$env:PATH = "$BuildToolsBin;$env:PATH"
+Write-Host "CMake: $((& $BuildToolsCMake --version | Select-Object -First 1))"
+Write-Host "Ninja: $(& $BuildToolsNinja --version)"
 
 # CUDA-/llama.cpp-Setup separat vor dem Core ausführen. Bei einem nativen
 # Windows-Crash automatisch Eventlog, Exitcode, DLLs und CUDA-Umgebung sammeln.

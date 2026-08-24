@@ -33,9 +33,10 @@ def _print_doctor(data: dict) -> int:
         flags = x.get("flags") or {}
         if flags.get("missing_optional"):
             print(f"          Optionale Flags fehlen: {', '.join(flags['missing_optional'])}")
-        build = (x.get("build") or {}).get("version_output")
-        if build:
-            print(f"          {build.splitlines()[0][:120]}")
+        devices = (x.get("build") or {}).get("devices_output") or ""
+        for line in devices.splitlines():
+            if "Device" in line or "load_backend" in line:
+                print(f"          {line.strip()[:120]}")
         failed = failed or not x["ok"]
 
     print("\nModelle")

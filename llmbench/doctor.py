@@ -8,10 +8,26 @@ from .hardware import collect_hardware
 from .llama_bench import probe_build
 from .utils import command_exists, resolve_executable, run_capture
 
-# Flags, die llmbench an llama-bench uebergibt. Fehlt eines im installierten
+# Optionen, die llmbench an llama-bench uebergibt. Fehlt eine im installierten
 # Build, scheitert der Lauf erst nach der ersten langen Messung.
-REQUIRED_BENCH_FLAGS = ["-fa", "-ctk", "-ctv", "-d", "-ub", "-ngl"]
-OPTIONAL_BENCH_FLAGS = ["-ncmoe", "-nkvo", "-ts", "-dev"]
+# Geprueft wird die Langform: "-d" allein kaeme auch in "-dev" oder "--delay"
+# vor und wuerde nie als fehlend erkannt.
+REQUIRED_BENCH_FLAGS = {
+    "-fa": "--flash-attn",
+    "-ctk": "--cache-type-k",
+    "-ctv": "--cache-type-v",
+    "-d": "--n-depth",
+    "-b": "--batch-size",
+    "-ub": "--ubatch-size",
+    "-ngl": "--n-gpu-layers",
+    "-r": "--repetitions",
+}
+OPTIONAL_BENCH_FLAGS = {
+    "-ncmoe": "--n-cpu-moe",
+    "-nkvo": "--no-kv-offload",
+    "-ts": "--tensor-split",
+    "-dev": "--device",
+}
 
 
 def _check_flags(exe: str) -> dict[str, Any]:
@@ -22,13 +38,18 @@ def _check_flags(exe: str) -> dict[str, Any]:
     text = (cp.stdout or "") + (cp.stderr or "")
     if not text.strip():
         return {"ok": True, "note": "Hilfetext leer, Flags nicht pruefbar"}
-    missing = [f for f in REQUIRED_BENCH_FLAGS if f not in text]
-    missing_optional = [f for f in OPTIONAL_BENCH_FLAGS if f not in text]
-    return {
+    missing = [short for short, long in REQUIRED_BENCH_FLAGS.items() if long not in text]
+    missing_optional = [short for short, long in OPTIONAL_BENCH_FLAGS.items() if long not in text]
+    result = {
         "ok": not missing,
         "missing_required": missing,
         "missing_optional": missing_optional,
     }
+    # Der Wertebereich von -fa hat sich in llama.cpp geaendert (frueher 0/1,
+    # heute on/off/auto). llmbench normalisiert darauf - hier nur vermerken.
+    if "--flash-attn" in text:
+        result["flash_attn_values"] = "on|off|auto" if "on|off|auto" in text else "unbekannt"
+    return result
 
 
 def _vram_total_bytes(hardware: dict[str, Any]) -> int | None:

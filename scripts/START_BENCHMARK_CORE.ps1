@@ -286,31 +286,49 @@ function Install-LlamaCpp {
         # Sofort ausprobieren, ob der Build auf diesem Rechner ueberhaupt
         # startet. Ein zum Treiber unpassendes CUDA-Paket faellt sonst erst
         # nach dem Modell-Laden auf, also womoeglich erst Stunden spaeter.
+        # Startprobe: laedt der Build auf diesem Rechner seine Backends?
+        # Ein zum Treiber unpassendes CUDA-Paket faellt sonst erst beim
+        # ersten Benchmark auf, also womoeglich erst Stunden spaeter.
+        # --list-devices statt --version: llama-bench kennt kein --version.
         $benchExe = Join-Path $LlamaDir "llama-bench.exe"
+        $outFile = [System.IO.Path]::GetTempFileName()
+        $errFile = [System.IO.Path]::GetTempFileName()
         $probe = ""
-        # llama-bench schreibt seine Version auf stderr. Mit
-        # ErrorActionPreference = "Stop" wuerde 2>&1 daraus einen
-        # abbrechenden Fehler machen, deshalb hier kurz umgestellt.
-        $previousEap = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
+        $probeExit = 1
         try {
-            $probe = (& $benchExe --version 2>&1 | Out-String)
+            # Start-Process statt 2>&1: PowerShell macht aus stderr sonst
+            # NativeCommandError-Objekte, die die Ausgabe unlesbar machen.
+            $proc = Start-Process -FilePath $benchExe -ArgumentList "--list-devices" `
+                -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            $probeExit = $proc.ExitCode
+            $probe = ((Get-Content $outFile -Raw -ErrorAction SilentlyContinue) + "`n" +
+                      (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)).Trim()
         } catch {
             $probe = $_.Exception.Message
         } finally {
-            $ErrorActionPreference = $previousEap
+            Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
         }
 
-        if ($LASTEXITCODE -ne 0) {
+        # Erfolg, wenn der Prozess sauber endet oder die Backends erkennbar
+        # geladen wurden. Damit bleibt die Probe gueltig, falls llama.cpp
+        # das Flag spaeter umbenennt.
+        $backendsLoaded = $probe -match 'load_backend|ggml_cuda_init|Device \d+:'
+        if ($probeExit -ne 0 -and -not $backendsLoaded) {
             $hint = ""
-            if ($backend -like "cuda-*") {
-                $hint = "`nVermutlich passt das Paket '$backend' nicht zum installierten Treiber ($($nvidia.Driver)). Entweder mit -LlamaCppTag einen anderen Build waehlen oder den CPU-Build verwenden."
+            if ($probe -match 'invalid parameter|unknown argument') {
+                $hint = "`nDer Build kennt die Option --list-devices nicht. Das ist kein Installationsfehler; bitte melden."
+            } elseif ($backend -like "cuda-*") {
+                $hint = "`nVermutlich passt das Paket '$backend' nicht zum Treiber ($($nvidia.Driver)). Mit -LlamaCppTag einen anderen Build waehlen oder den CPU-Build verwenden."
             }
-            throw "llama-bench.exe laesst sich nach der Installation nicht starten (Exitcode $LASTEXITCODE).$hint`nAusgabe:`n$probe"
+            throw "llama-bench.exe laesst sich nach der Installation nicht starten (Exitcode $probeExit).$hint`nAusgabe:`n$probe"
         }
 
-        $firstLine = ($probe -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
-        Write-Host "Startprobe erfolgreich: $firstLine"
+        $deviceLine = ($probe -split "`r?`n" | Where-Object { $_ -match 'Device \d+:' } | Select-Object -First 1)
+        if (-not $deviceLine) {
+            $deviceLine = "Backends geladen, keine GPU gemeldet (CPU-Betrieb)"
+        }
+        Write-Host "Startprobe erfolgreich: $($deviceLine.Trim())"
 
         $state = [ordered]@{
             tag = $release.tag_name

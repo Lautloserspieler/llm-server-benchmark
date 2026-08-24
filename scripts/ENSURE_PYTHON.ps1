@@ -10,15 +10,41 @@ $PythonExe = Join-Path $PythonHome "python.exe"
 $PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
 $PythonVersion = "3.12.10"
 
-function Test-Python([string]$Exe, [string[]]$PrefixArgs = @()) {
+function Invoke-PythonProbe([string]$Exe, [string[]]$PrefixArgs = @(), [switch]$VerboseFailure) {
+    if (-not $Exe -or -not (Test-Path $Exe)) { return $null }
+
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
     try {
-        if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
-        $testArgs = @($PrefixArgs) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
-        $out = & $Exe @testArgs 2>$null
-        return ($LASTEXITCODE -eq 0 -and $out)
+        $probeArgs = @($PrefixArgs) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
+        $proc = Start-Process -FilePath $Exe -ArgumentList $probeArgs -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+
+        $stdout = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue).Trim()
+        $stderr = (Get-Content $errFile -Raw -ErrorAction SilentlyContinue).Trim()
+        if ($proc.ExitCode -eq 0 -and $stdout) {
+            return ($stdout -split "`r?`n" | Select-Object -Last 1).Trim()
+        }
+
+        if ($VerboseFailure) {
+            Write-Warning "Python-Kandidat konnte nicht gestartet werden: $Exe (Exitcode $($proc.ExitCode))"
+            if ($stderr) { Write-Host "  Fehler: $stderr" -ForegroundColor Yellow }
+            elseif ($stdout) { Write-Host "  Ausgabe: $stdout" -ForegroundColor Yellow }
+        }
+        return $null
     } catch {
-        return $false
+        if ($VerboseFailure) {
+            Write-Warning "Python-Kandidat konnte nicht gestartet werden: $Exe"
+            Write-Host "  Fehler: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        return $null
+    } finally {
+        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Test-Python([string]$Exe, [string[]]$PrefixArgs = @()) {
+    return [bool](Invoke-PythonProbe $Exe $PrefixArgs)
 }
 
 function Save-PythonPath([string]$Exe) {
@@ -40,10 +66,8 @@ function Add-PythonCandidatesFromDirectory($List, [string]$Base, [int]$Depth = 3
     } catch { }
 }
 
-function Find-Python {
-    $seen = @{}
+function Get-PythonCandidates {
     $paths = New-Object System.Collections.Generic.List[string]
-
     if (Test-Path $PythonExe) { $paths.Add($PythonExe) }
 
     $known = @(
@@ -54,11 +78,8 @@ function Find-Python {
         "$env:ProgramFiles\Python311\python.exe",
         "$env:ProgramFiles\Python310\python.exe"
     )
-    foreach ($p in $known) {
-        if ($p -and (Test-Path $p)) { $paths.Add($p) }
-    }
+    foreach ($p in $known) { if ($p -and (Test-Path $p)) { $paths.Add($p) } }
 
-    # PEP-514: zuverlässigste Quelle für regulär installierte CPython-Versionen.
     $registryRoots = @(
         "HKCU:\Software\Python\PythonCore",
         "HKLM:\Software\Python\PythonCore",
@@ -82,36 +103,42 @@ function Find-Python {
         }
     }
 
-    # Fallback für Installer, die trotz erfolgreichem Exitcode einen anderen
-    # Zielordner gewählt haben. Die Suche bleibt auf typische Python-Wurzeln
-    # beschränkt und läuft nicht über die gesamte Festplatte.
     Add-PythonCandidatesFromDirectory $paths (Join-Path $env:LOCALAPPDATA "Programs\Python") 4
     Add-PythonCandidatesFromDirectory $paths (Join-Path $env:LOCALAPPDATA "Python") 4
     Add-PythonCandidatesFromDirectory $paths $PythonHome 4
     if ($env:ProgramFiles) { Add-PythonCandidatesFromDirectory $paths $env:ProgramFiles 2 }
 
+    $seen = @{}
+    $unique = New-Object System.Collections.Generic.List[string]
     foreach ($p in $paths) {
         if (-not $p) { continue }
         $key = $p.ToLowerInvariant()
         if ($seen.ContainsKey($key)) { continue }
         $seen[$key] = $true
-        if (Test-Python $p) { return (Resolve-Path $p).Path }
+        $unique.Add($p)
+    }
+    return $unique
+}
+
+function Find-Python([switch]$ShowFailures) {
+    foreach ($p in (Get-PythonCandidates)) {
+        $actual = Invoke-PythonProbe $p @() -VerboseFailure:$ShowFailures
+        if ($actual -and (Test-Path $actual)) { return (Resolve-Path $actual).Path }
+        if ($actual -and (Test-Path $p)) { return (Resolve-Path $p).Path }
     }
 
     $commands = @(
-        @{ Exe = "py"; Args = @("-3.12") },
-        @{ Exe = "py"; Args = @("-3") },
-        @{ Exe = "python"; Args = @() }
+        @{ Exe = "py.exe"; Args = @("-3.12") },
+        @{ Exe = "py.exe"; Args = @("-3") },
+        @{ Exe = "python.exe"; Args = @() }
     )
     foreach ($candidate in $commands) {
         try {
             $cmd = Get-Command $candidate.Exe -ErrorAction Stop
-            $testArgs = @($candidate.Args) + @("-c", "import sys; print(sys.executable)")
-            $actual = (& $cmd.Source @testArgs 2>$null | Select-Object -Last 1)
-            if ($LASTEXITCODE -eq 0 -and $actual) {
-                $actual = $actual.ToString().Trim()
-                if ($actual -and (Test-Python $actual)) { return (Resolve-Path $actual).Path }
-            }
+            # WindowsApps-Aliase sind keine echte Python-Installation.
+            if ($cmd.Source -like "*\Microsoft\WindowsApps\python*.exe") { continue }
+            $actual = Invoke-PythonProbe $cmd.Source $candidate.Args -VerboseFailure:$ShowFailures
+            if ($actual -and (Test-Path $actual)) { return (Resolve-Path $actual).Path }
         } catch { }
     }
     return $null
@@ -160,9 +187,6 @@ try {
     }
     Write-Host "SHA256-Prüfung erfolgreich."
 
-    # Keine erzwungene TargetDir mehr. Der offizielle Installer entscheidet über
-    # seinen normalen per-user-Pfad. Das vermeidet den Maintenance/Repair-Fall,
-    # bei dem Exitcode 0 geliefert wird, .runtime\python aber leer bleibt.
     $installArgs = @(
         "/quiet",
         "/log", "`"$logFile`"",
@@ -183,24 +207,34 @@ try {
         throw "Der offizielle Python-Installer ist mit Exitcode $($proc.ExitCode) fehlgeschlagen. Installationslog: $logFile"
     }
 
-    # Registry-/Dateisystem-Updates können direkt nach Installer-Ende kurz
-    # verzögert sichtbar werden. Bis zu 15 Sekunden erneut suchen.
     $installed = $null
-    foreach ($attempt in 1..15) {
+    foreach ($attempt in 1..20) {
         $installed = Find-Python
         if ($installed) { break }
         Start-Sleep -Seconds 1
     }
 
     if (-not $installed) {
+        Write-Host "" 
+        Write-Host "Python-Dateien wurden nach Installer-Erfolg gefunden/geprüft:" -ForegroundColor Yellow
+        $candidates = @(Get-PythonCandidates)
+        if ($candidates.Count -eq 0) {
+            Write-Host "  Kein python.exe in den erwarteten Installationsorten gefunden." -ForegroundColor Yellow
+        } else {
+            foreach ($candidate in $candidates) {
+                Write-Host "  $candidate"
+                [void](Invoke-PythonProbe $candidate @() -VerboseFailure)
+            }
+        }
         Write-Host "Installationslog: $logFile" -ForegroundColor Yellow
-        throw "Python-Installer meldete Erfolg, aber kein startbarer Python-Interpreter wurde gefunden."
+        throw "Python-Installer meldete Erfolg, aber kein startbarer Python-Interpreter wurde gefunden. Siehe die konkrete Kandidaten-/Fehlerausgabe oben."
     }
 
     $installed = Save-PythonPath $installed
     Write-Host "Python wurde erfolgreich erkannt:" -ForegroundColor Green
     Write-Host "  $installed" -ForegroundColor Green
 
+    $pipOut = Invoke-PythonProbe $installed @("-m", "pip", "--version")
     & $installed -m pip --version *> $null
     if ($LASTEXITCODE -ne 0) {
         & $installed -m ensurepip --upgrade

@@ -13,13 +13,31 @@ Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingun
 - parallele Requests / Multi-User-Tests
 - TTFT P50 / P95
 - System-TPS und Interactivity-TPS
-- HTML-, CSV- und JSON-Berichte
+- Live-Anzeige im Terminal während des Laufs
+- PDF-, HTML-, CSV- und JSON-Berichte
 - SHA256-Prüfung der GGUF-Dateien **und** der llama.cpp-Programmdateien
 - automatische Konsistenzprüfung beim Vergleich mehrerer Serverläufe
 
+## Version 1.3.0
+
+Während eines Laufs war bisher nichts zu sehen. Neu ist deshalb eine Statuszeile im Terminal, die laufend zeigt, welcher Test gerade läuft, wie weit er ist, was die Hardware dabei tut und wie lange der Gesamtlauf noch dauert:
+
+```text
+[3/9] qwen-27b-q4_0 · Full-GPU · long_context
+    pp512                     1284.30 t/s   ±12.10
+    tg128                       58.70 t/s   ±0.40
+  laeuft 04:12 · run 2/5 · CPU 18% · GPU 98% · 11.4/12.0 GiB · 187 W · 71 °C · noch ca. 23:41
+```
+
+Fertige Einzelergebnisse bleiben als feste Zeilen stehen, die Statuszeile darunter aktualisiert sich. Ohne Terminal, etwa bei Umleitung in eine Datei, schaltet die Ausgabe selbsttätig auf einzelne Zeilen um; erzwingen lässt sich das mit `--plain`.
+
+Am Ende steht eine Ergebnistabelle direkt im Terminal, und jeder Lauf erzeugt zusätzlich einen PDF-Bericht mit Diagrammen.
+
+Das Web-Dashboard ist entfallen — die Live-Anzeige ersetzt es.
+
 ## Version 1.2.0
 
-Der Schwerpunkt dieser Version ist der Nachweis der Vergleichbarkeit. Bis 1.1.1 hat das Werkzeug korrekt gemessen, aber nicht festgehalten, *unter welchen Bedingungen*. Zwei Server konnten unbemerkt mit verschiedenen Einstellungen, verschiedenen llama.cpp-Builds oder verschiedenen Modelldateien verglichen werden.
+Der Schwerpunkt dieser Version war der Nachweis der Vergleichbarkeit. Bis 1.1.1 hat das Werkzeug korrekt gemessen, aber nicht festgehalten, *unter welchen Bedingungen*. Zwei Server konnten unbemerkt mit verschiedenen Einstellungen, verschiedenen llama.cpp-Builds oder verschiedenen Modelldateien verglichen werden.
 
 Neu:
 
@@ -27,7 +45,7 @@ Neu:
 - `llmbench compare` prüft vor dem Vergleich, ob die Läufe überhaupt vergleichbar sind, und stellt Abweichungen an den Anfang des Berichts.
 - Die automatische Erkennung durchsucht nur noch das Projekt, nicht mehr PATH und Systemordner.
 - Endpoint-Tests laufen mit denselben Parametern wie `llama-bench`, mit festem Seed, fester Antwortlänge und Aufwärmläufen.
-- Jeder Einzeltest hat ein Zeitlimit; das Web-Dashboard ist gegen Zugriffe von fremden Webseiten abgesichert.
+- Jeder Einzeltest hat ein Zeitlimit.
 
 Die vollständige Liste steht in `CHANGELOG.md`.
 
@@ -49,24 +67,9 @@ Die vollständige Liste steht in `CHANGELOG.md`.
 ./setup.sh
 ```
 
-`setup.sh` legt `.venv` an und installiert `llmbench` samt Web-Dashboard.
+`setup.sh` legt `.venv` an und installiert `llmbench` mit allen Abhängigkeiten.
 
 > **Wichtig:** Unter Linux und macOS wird llama.cpp **nicht** automatisch heruntergeladen. Lade `llama-bench` und `llama-server` von den [offiziellen Releases](https://github.com/ggml-org/llama.cpp/releases) oder baue sie selbst, und lege beide unter `tools/llama.cpp/` ab. Für einen Serververgleich auf allen Servern denselben Build verwenden — `llmbench compare` meldet Abweichungen.
-
-### Web-Dashboard
-
-```bash
-pip install -e ".[web]"
-python -m llmbench serve
-```
-
-Erreichbar unter `http://127.0.0.1:8000`. Der Server bindet an localhost und akzeptiert nur Anfragen aus der eigenen Oberfläche. Für den Zugriff aus dem Netz:
-
-```bash
-python -m llmbench serve --allow-remote
-```
-
-Dann wird beim Start ein Zugriffstoken ausgegeben, das jede Anfrage mitbringen muss. Alternativ ein eigenes Token über die Umgebungsvariable `LLMBENCH_TOKEN` setzen.
 
 ## Modelle
 
@@ -213,11 +216,11 @@ llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml
 llmbench run --config benchmark.yaml --model "Qwen-27B-Q4_0"
 
+# Ohne sich aktualisierende Statuszeile, etwa für eine Protokolldatei
+llmbench run --config benchmark.yaml --plain
+
 # Modellerkennung erneut ausführen
 llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
-
-# Web-Dashboard
-llmbench serve
 ```
 
 Ohne Installation als Paket funktioniert auch `python -m llmbench ...` aus dem Projektordner.
@@ -235,6 +238,7 @@ results/
     summary.json          # Ergebnisse, Konfiguration, Build-Nachweis
     summary.partial.json  # Zwischenstand nach jedem Modell
     benchmarks.csv
+    report.pdf
     report.html
     MODELL/
       PROFIL/
@@ -247,6 +251,8 @@ results/
 ```
 
 Die `raw_*.json` enthalten den exakten Befehl, stdout, stderr, Laufzeit und die vollständige Telemetrie mit allen Einzelmesspunkten. `summary.json` enthält davon nur die Aggregate und bleibt dadurch auch nach mehrstündigen Läufen handhabbar.
+
+`report.pdf` ist der Bericht zum Weitergeben: Serverdaten, Nachweis der Testbedingungen, Ergebnistabellen und Balkendiagramme je Modell und Profil, Telemetrie und Endpoint-Werte. Prompt Processing und Text Generation bekommen dabei getrennte Diagramme, weil sie um eine Größenordnung auseinanderliegen. Lässt sich das PDF nicht erzeugen, etwa weil `reportlab` fehlt, bleibt der Lauf gültig und der Grund steht als Hinweis in `summary.json`.
 
 ## Mehrere Server vergleichen
 

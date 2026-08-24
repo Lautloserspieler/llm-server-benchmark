@@ -13,12 +13,8 @@ from .bootstrap import bootstrap_config
 from .compare import compare_summaries
 from .config import load_config, save_example, validate_config
 from .doctor import doctor
+from .progress import make_reporter
 from .runner import run_suite
-
-try:
-    from .server import start_server
-except ImportError:  # FastAPI/Uvicorn nicht installiert
-    start_server = None
 
 
 def _print_doctor(data: dict) -> int:
@@ -164,6 +160,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", default="benchmark.yaml")
     run.add_argument("--model", default=None, help="Nur ein benanntes Modell testen")
     run.add_argument("--skip-endpoint", action="store_true")
+    run.add_argument(
+        "--plain",
+        action="store_true",
+        help="Statt der sich aktualisierenden Statuszeile nur einfache Zeilen ausgeben",
+    )
 
     boot = sub.add_parser("bootstrap", help="Werkzeuge eintragen und GGUF-Modelle erkennen")
     boot.add_argument("--config", default="benchmark.yaml")
@@ -181,15 +182,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exitcode 1, wenn die Laeufe nicht unter gleichen Bedingungen entstanden sind",
     )
 
-    srv = sub.add_parser("serve", help="Web-Dashboard starten")
-    srv.add_argument("--host", default="127.0.0.1")
-    srv.add_argument("--port", type=int, default=8000)
-    srv.add_argument("--config", default="benchmark.yaml")
-    srv.add_argument(
-        "--allow-remote",
-        action="store_true",
-        help="Zugriff von anderen Rechnern erlauben (nur in vertrauenswuerdigen Netzen)",
-    )
     return p
 
 
@@ -228,8 +220,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _print_doctor(data)
 
-        out = run_suite(cfg, selected_model=args.model, skip_endpoint=args.skip_endpoint)
+        out = run_suite(
+            cfg,
+            selected_model=args.model,
+            skip_endpoint=args.skip_endpoint,
+            reporter=make_reporter(force_plain=args.plain),
+        )
         print(f"\nBenchmark abgeschlossen: {out}")
+        pdf = out / "report.pdf"
+        if pdf.exists():
+            print(f"PDF-Bericht: {pdf}")
         print(f"HTML-Bericht: {out / 'report.html'}")
         print(f"CSV: {out / 'benchmarks.csv'}")
         print(f"JSON: {out / 'summary.json'}")
@@ -246,16 +246,6 @@ def main(argv: list[str] | None = None) -> int:
             print("Vergleichbarkeit geprueft: Konfiguration, Build, Modelle und Profile stimmen ueberein.")
         if errors and args.strict:
             return 1
-        return 0
-
-    if args.cmd == "serve":
-        if start_server is None:
-            print(
-                "Web-Abhaengigkeiten fehlen. Installation: pip install -e \".[web]\"",
-                file=sys.stderr,
-            )
-            return 2
-        start_server(args.host, args.port, config_name=args.config, allow_remote=args.allow_remote)
         return 0
 
     return 2

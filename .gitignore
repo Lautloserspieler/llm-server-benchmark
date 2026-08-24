@@ -21,7 +21,5 @@ tools/
 models/*.gguf
 models/**/*.gguf
 
-# Web-Dashboard: Abhaengigkeiten nicht einchecken, gebauten Stand schon,
-# damit `llmbench serve` ohne installiertes npm funktioniert.
-web/node_modules/
-web/.vite/
+# Vom Werkzeug verschobene, zum Loeschen vorgesehene Dateien
+_to_delete/

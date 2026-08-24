@@ -66,6 +66,15 @@ class ResourceMonitor:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
+    def latest(self) -> dict[str, Any] | None:
+        """Juengstes Sample fuer die Live-Anzeige.
+
+        Der Sammel-Thread haengt nur an, deshalb genuegt der Zugriff auf das
+        letzte Element ohne zusaetzliche Sperre.
+        """
+        samples = self._samples
+        return samples[-1] if samples else self._baseline
+
     def set_target_pid(self, pid: int | None) -> None:
         """Prozess, dessen Last gemessen werden soll. Alles andere auf der GPU
         gilt danach als Fremdlast und wird im Ergebnis vermerkt."""

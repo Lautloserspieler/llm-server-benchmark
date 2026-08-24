@@ -16,8 +16,13 @@ function Invoke-PythonProbe([string]$Exe, [string[]]$PrefixArgs = @(), [switch]$
     $outFile = [System.IO.Path]::GetTempFileName()
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
-        $probeArgs = @($PrefixArgs) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
-        $proc = Start-Process -FilePath $Exe -ArgumentList $probeArgs -Wait -PassThru -NoNewWindow `
+        $code = "import sys; assert sys.version_info >= (3,10); print(sys.executable)"
+        $prefix = ""
+        if ($PrefixArgs -and $PrefixArgs.Count -gt 0) {
+            $prefix = (($PrefixArgs | ForEach-Object { '"' + ($_ -replace '"','\"') + '"' }) -join ' ') + ' '
+        }
+        $argumentLine = $prefix + '-c "' + $code + '"'
+        $proc = Start-Process -FilePath $Exe -ArgumentList $argumentLine -Wait -PassThru -NoNewWindow `
             -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 
         $stdout = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue).Trim()
@@ -135,7 +140,6 @@ function Find-Python([switch]$ShowFailures) {
     foreach ($candidate in $commands) {
         try {
             $cmd = Get-Command $candidate.Exe -ErrorAction Stop
-            # WindowsApps-Aliase sind keine echte Python-Installation.
             if ($cmd.Source -like "*\Microsoft\WindowsApps\python*.exe") { continue }
             $actual = Invoke-PythonProbe $cmd.Source $candidate.Args -VerboseFailure:$ShowFailures
             if ($actual -and (Test-Path $actual)) { return (Resolve-Path $actual).Path }
@@ -215,7 +219,7 @@ try {
     }
 
     if (-not $installed) {
-        Write-Host "" 
+        Write-Host ""
         Write-Host "Python-Dateien wurden nach Installer-Erfolg gefunden/geprüft:" -ForegroundColor Yellow
         $candidates = @(Get-PythonCandidates)
         if ($candidates.Count -eq 0) {
@@ -234,7 +238,6 @@ try {
     Write-Host "Python wurde erfolgreich erkannt:" -ForegroundColor Green
     Write-Host "  $installed" -ForegroundColor Green
 
-    $pipOut = Invoke-PythonProbe $installed @("-m", "pip", "--version")
     & $installed -m pip --version *> $null
     if ($LASTEXITCODE -ne 0) {
         & $installed -m ensurepip --upgrade

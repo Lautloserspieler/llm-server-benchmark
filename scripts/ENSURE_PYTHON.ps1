@@ -12,9 +12,9 @@ $PythonVersion = "3.12.10"
 
 function Test-Python([string]$Exe, [string[]]$PrefixArgs = @()) {
     try {
-        if (-not $Exe) { return $false }
-        $args = @($PrefixArgs) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
-        $out = & $Exe @args 2>$null
+        if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
+        $testArgs = @($PrefixArgs) + @("-c", "import sys; assert sys.version_info >= (3,10); print(sys.executable)")
+        $out = & $Exe @testArgs 2>$null
         return ($LASTEXITCODE -eq 0 -and $out)
     } catch {
         return $false
@@ -24,19 +24,28 @@ function Test-Python([string]$Exe, [string[]]$PrefixArgs = @()) {
 function Save-PythonPath([string]$Exe) {
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     $resolved = (Resolve-Path $Exe).Path
-    Set-Content -Path $PythonPathFile -Value $resolved -Encoding UTF8
+    [System.IO.File]::WriteAllText($PythonPathFile, $resolved, [System.Text.UTF8Encoding]::new($false))
     return $resolved
+}
+
+function Add-PythonCandidatesFromDirectory($List, [string]$Base, [int]$Depth = 3) {
+    if (-not $Base -or -not (Test-Path $Base)) { return }
+    try {
+        Get-ChildItem -Path $Base -Filter "python.exe" -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                $relative = $_.FullName.Substring($Base.Length).TrimStart('\')
+                (($relative -split '\\').Count -le $Depth)
+            } |
+            ForEach-Object { $List.Add($_.FullName) }
+    } catch { }
 }
 
 function Find-Python {
     $seen = @{}
     $paths = New-Object System.Collections.Generic.List[string]
 
-    # Projektlokale Runtime zuerst.
     if (Test-Path $PythonExe) { $paths.Add($PythonExe) }
 
-    # Übliche Installationsorte. Wichtig für Maschinen, auf denen Python zwar
-    # installiert, aber nicht in PATH eingetragen ist.
     $known = @(
         "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
         "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
@@ -45,11 +54,11 @@ function Find-Python {
         "$env:ProgramFiles\Python311\python.exe",
         "$env:ProgramFiles\Python310\python.exe"
     )
-    foreach ($p in $known) { if ($p -and (Test-Path $p)) { $paths.Add($p) } }
+    foreach ($p in $known) {
+        if ($p -and (Test-Path $p)) { $paths.Add($p) }
+    }
 
-    # PEP-514-Registry auslesen. Der Python-Installer kann eine vorhandene
-    # Installation reparieren statt TargetDir neu anzulegen; dann steht der
-    # echte Interpreter hier, auch wenn PATH noch nicht aktualisiert wurde.
+    # PEP-514: zuverlässigste Quelle für regulär installierte CPython-Versionen.
     $registryRoots = @(
         "HKCU:\Software\Python\PythonCore",
         "HKLM:\Software\Python\PythonCore",
@@ -73,14 +82,22 @@ function Find-Python {
         }
     }
 
+    # Fallback für Installer, die trotz erfolgreichem Exitcode einen anderen
+    # Zielordner gewählt haben. Die Suche bleibt auf typische Python-Wurzeln
+    # beschränkt und läuft nicht über die gesamte Festplatte.
+    Add-PythonCandidatesFromDirectory $paths (Join-Path $env:LOCALAPPDATA "Programs\Python") 4
+    Add-PythonCandidatesFromDirectory $paths (Join-Path $env:LOCALAPPDATA "Python") 4
+    Add-PythonCandidatesFromDirectory $paths $PythonHome 4
+    if ($env:ProgramFiles) { Add-PythonCandidatesFromDirectory $paths $env:ProgramFiles 2 }
+
     foreach ($p in $paths) {
+        if (-not $p) { continue }
         $key = $p.ToLowerInvariant()
         if ($seen.ContainsKey($key)) { continue }
         $seen[$key] = $true
         if (Test-Python $p) { return (Resolve-Path $p).Path }
     }
 
-    # Zuletzt PATH/py-Launcher prüfen.
     $commands = @(
         @{ Exe = "py"; Args = @("-3.12") },
         @{ Exe = "py"; Args = @("-3") },
@@ -89,10 +106,11 @@ function Find-Python {
     foreach ($candidate in $commands) {
         try {
             $cmd = Get-Command $candidate.Exe -ErrorAction Stop
-            if (Test-Python $cmd.Source $candidate.Args) {
-                $args = @($candidate.Args) + @("-c", "import sys; print(sys.executable)")
-                $actual = (& $cmd.Source @args 2>$null | Select-Object -Last 1).Trim()
-                if ($actual -and (Test-Path $actual)) { return (Resolve-Path $actual).Path }
+            $testArgs = @($candidate.Args) + @("-c", "import sys; print(sys.executable)")
+            $actual = (& $cmd.Source @testArgs 2>$null | Select-Object -Last 1)
+            if ($LASTEXITCODE -eq 0 -and $actual) {
+                $actual = $actual.ToString().Trim()
+                if ($actual -and (Test-Python $actual)) { return (Resolve-Path $actual).Path }
             }
         } catch { }
     }
@@ -102,7 +120,7 @@ function Find-Python {
 $existing = Find-Python
 if ($existing) {
     $existing = Save-PythonPath $existing
-    Write-Host "Geeignetes Python vorhanden: $existing"
+    Write-Host "Geeignetes Python vorhanden: $existing" -ForegroundColor Green
     exit 0
 }
 
@@ -126,7 +144,7 @@ switch ($arch) {
 $url = "https://www.python.org/ftp/python/$PythonVersion/$fileName"
 $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("llmbench-python-" + [guid]::NewGuid().ToString("N"))
 $installer = Join-Path $tmpDir $fileName
-$logFile = Join-Path $tmpDir "python-install.log"
+$logFile = Join-Path $RuntimeRoot "python-install.log"
 New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
@@ -142,46 +160,52 @@ try {
     }
     Write-Host "SHA256-Prüfung erfolgreich."
 
-    if (Test-Path $PythonHome) { Remove-Item -Recurse -Force $PythonHome }
-    New-Item -ItemType Directory -Force -Path $PythonHome | Out-Null
-
+    # Keine erzwungene TargetDir mehr. Der offizielle Installer entscheidet über
+    # seinen normalen per-user-Pfad. Das vermeidet den Maintenance/Repair-Fall,
+    # bei dem Exitcode 0 geliefert wird, .runtime\python aber leer bleibt.
     $installArgs = @(
         "/quiet",
         "/log", "`"$logFile`"",
         "InstallAllUsers=0",
-        "TargetDir=`"$PythonHome`"",
         "PrependPath=0",
         "AppendPath=0",
-        "Include_launcher=0",
+        "Include_launcher=1",
         "InstallLauncherAllUsers=0",
         "Include_pip=1",
         "Include_test=0",
         "Include_doc=0",
         "Shortcuts=0"
     )
+
+    Write-Host "Python-Installer wird ausgeführt..."
     $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         throw "Der offizielle Python-Installer ist mit Exitcode $($proc.ExitCode) fehlgeschlagen. Installationslog: $logFile"
     }
 
-    # Nicht mehr blind TargetDir voraussetzen. Bei einer bereits registrierten
-    # Python-Version kann der Installer erfolgreich enden und die bestehende
-    # Installation verwenden/reparieren.
-    $installed = Find-Python
-    if (-not $installed) {
-        throw "Python-Installer meldete Erfolg, aber kein funktionsfähiger Python-Interpreter wurde gefunden."
+    # Registry-/Dateisystem-Updates können direkt nach Installer-Ende kurz
+    # verzögert sichtbar werden. Bis zu 15 Sekunden erneut suchen.
+    $installed = $null
+    foreach ($attempt in 1..15) {
+        $installed = Find-Python
+        if ($installed) { break }
+        Start-Sleep -Seconds 1
     }
-    $installed = Save-PythonPath $installed
 
-    if ($installed -ieq $PythonExe) {
-        & $installed -m ensurepip --upgrade | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "pip konnte nicht initialisiert werden." }
-        Write-Host "Python $PythonVersion wurde projektlokal installiert:"
-    } else {
-        Write-Warning "Der Python-Installer hat eine bestehende Installation verwendet. Diese wird für den Benchmark genutzt."
-        Write-Host "Python gefunden:"
+    if (-not $installed) {
+        Write-Host "Installationslog: $logFile" -ForegroundColor Yellow
+        throw "Python-Installer meldete Erfolg, aber kein startbarer Python-Interpreter wurde gefunden."
     }
+
+    $installed = Save-PythonPath $installed
+    Write-Host "Python wurde erfolgreich erkannt:" -ForegroundColor Green
     Write-Host "  $installed" -ForegroundColor Green
+
+    & $installed -m pip --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        & $installed -m ensurepip --upgrade
+        if ($LASTEXITCODE -ne 0) { throw "Python wurde gefunden, aber pip konnte nicht initialisiert werden." }
+    }
     exit 0
 }
 finally {

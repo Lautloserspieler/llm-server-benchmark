@@ -89,16 +89,12 @@ function Get-NvidiaInfo {
     $cuda = $null
     $source = "nicht ermittelbar"
 
-    # 1. Bevorzugt die Angabe aus dem nvidia-smi-Kopf. Die Schreibweise hat
-    #    sich zwischen Treiberversionen geaendert, daher toleranter Ausdruck.
     $text = (& $nvsmi.Source 2>$null | Out-String)
     if ($text -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
         $cuda = ConvertTo-Version $Matches[1]
         if ($cuda) { $source = "nvidia-smi" }
     }
 
-    # 2. Sonst aus der Treiberversion ableiten. CUDA 13 kam mit dem Treiberzweig
-    #    r580, CUDA 12 mit r525; neuere Treiber unterstuetzen den jeweiligen Stand.
     if (-not $cuda -and $driver -match '^([0-9]+)') {
         $major = [int]$Matches[1]
         if ($major -ge 580) { $cuda = [version]"13.0"; $source = "Treiberversion $driver" }
@@ -125,8 +121,6 @@ function Invoke-GitHubApi([string]$Url, [switch]$AllowMissing) {
 }
 
 function Assert-LlamaTag([string]$Value, [string]$Origin) {
-    # llama.cpp-Tags sehen aus wie "b10456" oder "v0.2.0". Alles andere ist
-    # fast sicher ein versehentlich hier gelandeter Wert.
     if ($Value -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $Value -match '\.(ya?ml|txt|json|exe|bat|ps1)$') {
         throw "'$Value' ist keine gueltige llama.cpp-Release-Kennung (Quelle: $Origin). Erwartet wird ein Tag wie 'b10456'. Die verfuegbaren Tags stehen unter https://github.com/ggml-org/llama.cpp/releases"
     }
@@ -155,10 +149,56 @@ function Test-ReleaseHasAssets($Release, [string]$MainPattern, [string]$RuntimeP
     return $true
 }
 
-function Resolve-LlamaCppRelease([string]$MainPattern, [string]$RuntimePattern) {
-    # Ein fest vorgegebener Tag hat Vorrang. Nur so bekommen alle Server
-    # denselben Build - ohne ihn haengt die Version davon ab, wann jemand
-    # das Setup gestartet hat.
+function Get-AvailableCudaBackends($Release) {
+    if (-not $Release -or -not $Release.assets) { return @() }
+
+    $mainVersions = @{}
+    $runtimeVersions = @{}
+
+    foreach ($asset in @($Release.assets)) {
+        $name = [string]$asset.name
+        if ($name -match '^llama-.*-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
+            $mainVersions[$Matches[1]] = $true
+        }
+        elseif ($name -match '^cudart-llama-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
+            $runtimeVersions[$Matches[1]] = $true
+        }
+    }
+
+    $result = foreach ($versionText in $mainVersions.Keys) {
+        if (-not $runtimeVersions.ContainsKey($versionText)) { continue }
+        $parsed = ConvertTo-Version $versionText
+        if (-not $parsed) { continue }
+        [pscustomobject]@{
+            Version = $parsed
+            VersionText = $versionText
+            Backend = "cuda-$versionText"
+        }
+    }
+
+    return @($result | Sort-Object Version -Descending)
+}
+
+function Select-CompatibleCudaBackend($Release, $Nvidia) {
+    $available = @(Get-AvailableCudaBackends $Release)
+    if ($available.Count -eq 0) { return $null }
+
+    if (-not $Nvidia -or -not $Nvidia.Cuda) {
+        # Wenn nur erkannt wurde, dass eine NVIDIA-GPU vorhanden ist, aber die
+        # vom Treiber gemeldete CUDA-Kompatibilitaet fehlt, nehmen wir bewusst
+        # den aeltesten angebotenen CUDA-Build. Das ist die robusteste Wahl.
+        return ($available | Sort-Object Version | Select-Object -First 1)
+    }
+
+    $compatible = @($available | Where-Object { $_.Version -le $Nvidia.Cuda })
+    if ($compatible.Count -gt 0) {
+        return ($compatible | Sort-Object Version -Descending | Select-Object -First 1)
+    }
+
+    return $null
+}
+
+function Get-ReleaseCandidates {
     $pinned = Get-PinnedLlamaTag
     if ($pinned) {
         Write-Host "Vorgegebener llama.cpp-Build: $pinned"
@@ -166,28 +206,57 @@ function Resolve-LlamaCppRelease([string]$MainPattern, [string]$RuntimePattern) 
         if (-not $release) {
             throw "Das llama.cpp-Release '$pinned' existiert nicht. Verfuegbare Tags: https://github.com/ggml-org/llama.cpp/releases"
         }
-        if (-not (Test-ReleaseHasAssets $release $MainPattern $RuntimePattern)) {
-            $names = ($release.assets | ForEach-Object { $_.name }) -join "`n  - "
-            throw "Im vorgegebenen Release $pinned gibt es kein passendes Windows-Paket.`nVorhandene Dateien:`n  - $names"
-        }
-        return $release
+        return @($release)
     }
 
-    # llama.cpp veroeffentlicht fortlaufende Builds (b10456, b10455, ...).
-    # /releases/latest liefert dabei nicht den neuesten Build, sondern das
-    # neueste als "stabil" markierte Release - und das kann ein alter Tag
-    # ohne jedes Windows-Paket sein. Deshalb wird die Liste durchgegangen
-    # und das neueste Release genommen, das die noetigen Dateien enthaelt.
+    $all = @()
     foreach ($page in 1..3) {
         $releases = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30&page=$page"
         if (-not $releases -or @($releases).Count -eq 0) { break }
-        foreach ($release in @($releases)) {
-            if ($release.draft) { continue }
-            if (Test-ReleaseHasAssets $release $MainPattern $RuntimePattern) { return $release }
+        $all += @($releases | Where-Object { -not $_.draft })
+    }
+    return @($all)
+}
+
+function Resolve-LlamaCppPackage($Nvidia) {
+    $releases = @(Get-ReleaseCandidates)
+    if ($releases.Count -eq 0) {
+        throw "Keine llama.cpp-Releases konnten von GitHub geladen werden."
+    }
+
+    foreach ($release in $releases) {
+        if ($Nvidia) {
+            $cuda = Select-CompatibleCudaBackend $release $Nvidia
+            if ($cuda) {
+                $escaped = [regex]::Escape($cuda.Backend)
+                $mainPattern = "^llama-.*-bin-win-$escaped-x64\.zip$"
+                $runtimePattern = "^cudart-llama-bin-win-$escaped-x64\.zip$"
+                if (Test-ReleaseHasAssets $release $mainPattern $runtimePattern) {
+                    return [pscustomobject]@{
+                        Release = $release
+                        Backend = $cuda.Backend
+                        MainPattern = $mainPattern
+                        RuntimePattern = $runtimePattern
+                    }
+                }
+            }
+        }
+
+        $cpuPattern = '^llama-.*-bin-win-cpu-x64\.zip$'
+        if (Test-ReleaseHasAssets $release $cpuPattern $null) {
+            return [pscustomobject]@{
+                Release = $release
+                Backend = "cpu"
+                MainPattern = $cpuPattern
+                RuntimePattern = $null
+            }
         }
     }
 
-    throw "In den letzten 90 llama.cpp-Releases wurde kein Paket gefunden, das zu '$MainPattern' passt. Bitte llama-bench.exe und llama-server.exe von Hand nach tools\llama.cpp kopieren."
+    if ($Nvidia) {
+        throw "Es wurde weder ein mit dem NVIDIA-Treiber kompatibles CUDA-Paket noch ein CPU-Paket in den letzten llama.cpp-Releases gefunden."
+    }
+    throw "In den letzten llama.cpp-Releases wurde kein Windows-x64-CPU-Paket gefunden."
 }
 
 function Install-LlamaCpp {
@@ -206,30 +275,27 @@ function Install-LlamaCpp {
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
     $nvidia = Get-NvidiaInfo
-    $backend = "cpu"
-    $mainPattern = '^llama-.*-bin-win-cpu-x64\.zip$'
-    $runtimePattern = $null
-
     if ($nvidia) {
-        if ($nvidia.Cuda -and $nvidia.Cuda.Major -ge 13) {
-            $backend = "cuda-13.3"
-        } else {
-            $backend = "cuda-12.4"
-        }
-        $escaped = [regex]::Escape($backend)
-        $mainPattern = "^llama-.*-bin-win-$escaped-x64\.zip$"
-        $runtimePattern = "^cudart-llama-bin-win-$escaped-x64\.zip$"
         if ($nvidia.Cuda) {
             Write-Host "NVIDIA erkannt: Treiber $($nvidia.Driver), CUDA-Kompatibilität $($nvidia.Cuda) (ermittelt über $($nvidia.CudaSource))"
         } else {
-            Write-Warning "NVIDIA erkannt (Treiber $($nvidia.Driver)), die unterstützte CUDA-Version war nicht ermittelbar. Es wird der konservative Build cuda-12.4 verwendet, der auch auf neueren Treibern läuft."
+            Write-Warning "NVIDIA erkannt (Treiber $($nvidia.Driver)), die CUDA-Kompatibilität konnte nicht sicher ermittelt werden. Das Setup wählt automatisch den konservativsten verfügbaren CUDA-Build."
         }
-        Write-Host "Ausgewähltes llama.cpp-Paket: $backend"
     } else {
-        Write-Warning "nvidia-smi wurde nicht gefunden. Es wird automatisch der CPU-Build installiert."
+        Write-Warning "nvidia-smi wurde nicht gefunden. Es wird automatisch ein CPU-Build installiert."
     }
 
-    $release = Resolve-LlamaCppRelease $mainPattern $runtimePattern
+    $package = Resolve-LlamaCppPackage $nvidia
+    $release = $package.Release
+    $backend = $package.Backend
+    $mainPattern = $package.MainPattern
+    $runtimePattern = $package.RuntimePattern
+
+    if ($nvidia -and $backend -eq "cpu") {
+        Write-Warning "Für den erkannten NVIDIA-Treiber wurde in den verfügbaren Releases kein kompatibles CUDA-Paket gefunden. Das Setup fällt deshalb auf den CPU-Build zurück, statt mit einer fehlerhaften CUDA-Installation abzubrechen."
+    }
+
+    Write-Host "Ausgewähltes llama.cpp-Paket: $backend"
     Write-Host "Verwendetes llama.cpp-Release: $($release.tag_name)"
 
     $main = $release.assets | Where-Object { $_.name -match $mainPattern } | Select-Object -First 1
@@ -283,21 +349,12 @@ function Install-LlamaCpp {
             throw "llama-server.exe wurde nach dem Entpacken nicht gefunden."
         }
 
-        # Sofort ausprobieren, ob der Build auf diesem Rechner ueberhaupt
-        # startet. Ein zum Treiber unpassendes CUDA-Paket faellt sonst erst
-        # nach dem Modell-Laden auf, also womoeglich erst Stunden spaeter.
-        # Startprobe: laedt der Build auf diesem Rechner seine Backends?
-        # Ein zum Treiber unpassendes CUDA-Paket faellt sonst erst beim
-        # ersten Benchmark auf, also womoeglich erst Stunden spaeter.
-        # --list-devices statt --version: llama-bench kennt kein --version.
         $benchExe = Join-Path $LlamaDir "llama-bench.exe"
         $outFile = [System.IO.Path]::GetTempFileName()
         $errFile = [System.IO.Path]::GetTempFileName()
         $probe = ""
         $probeExit = 1
         try {
-            # Start-Process statt 2>&1: PowerShell macht aus stderr sonst
-            # NativeCommandError-Objekte, die die Ausgabe unlesbar machen.
             $proc = Start-Process -FilePath $benchExe -ArgumentList "--list-devices" `
                 -NoNewWindow -Wait -PassThru `
                 -RedirectStandardOutput $outFile -RedirectStandardError $errFile
@@ -310,16 +367,13 @@ function Install-LlamaCpp {
             Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
         }
 
-        # Erfolg, wenn der Prozess sauber endet oder die Backends erkennbar
-        # geladen wurden. Damit bleibt die Probe gueltig, falls llama.cpp
-        # das Flag spaeter umbenennt.
         $backendsLoaded = $probe -match 'load_backend|ggml_cuda_init|Device \d+:'
         if ($probeExit -ne 0 -and -not $backendsLoaded) {
             $hint = ""
             if ($probe -match 'invalid parameter|unknown argument') {
                 $hint = "`nDer Build kennt die Option --list-devices nicht. Das ist kein Installationsfehler; bitte melden."
             } elseif ($backend -like "cuda-*") {
-                $hint = "`nVermutlich passt das Paket '$backend' nicht zum Treiber ($($nvidia.Driver)). Mit -LlamaCppTag einen anderen Build waehlen oder den CPU-Build verwenden."
+                $hint = "`nDas automatisch gewählte Paket '$backend' konnte nicht gestartet werden. Prüfe den installierten NVIDIA-Treiber oder erzwinge mit -ForceUpdateLlamaCpp eine Neuinstallation."
             }
             throw "llama-bench.exe laesst sich nach der Installation nicht starten (Exitcode $probeExit).$hint`nAusgabe:`n$probe"
         }

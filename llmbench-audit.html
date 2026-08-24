@@ -1,0 +1,828 @@
+<title>llmbench Code-Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+:root {
+  --ground:        #f6f8f9;
+  --surface:       #ffffff;
+  --surface-sunk:  #eef2f4;
+  --ink:           #16212b;
+  --ink-soft:      #4a5b68;
+  --ink-faint:     #74858f;
+  --line:          #d3dde2;
+  --line-soft:     #e4ebee;
+  --signal:        #0d6f80;
+  --signal-soft:   #e0eef0;
+  --crit:          #9e3320;
+  --crit-soft:     #f7e6e2;
+  --high:          #a3651a;
+  --high-soft:     #f9edda;
+  --med:           #2f5f96;
+  --med-soft:      #e5edf6;
+  --low:           #5a6b78;
+  --low-soft:      #eaeef0;
+  --good:          #2c6b4a;
+
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:        #0f161b;
+    --surface:       #161f26;
+    --surface-sunk:  #1b262e;
+    --ink:           #e2eaef;
+    --ink-soft:      #a8b8c2;
+    --ink-faint:     #7d8f9a;
+    --line:          #2a3841;
+    --line-soft:     #202c34;
+    --signal:        #48b6c7;
+    --signal-soft:   #14323a;
+    --crit:          #e07a63;
+    --crit-soft:     #351c17;
+    --high:          #d9a94f;
+    --high-soft:     #33280f;
+    --med:           #7aabe0;
+    --med-soft:      #17273a;
+    --low:           #93a4af;
+    --low-soft:      #1d262c;
+    --good:          #63b98c;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:        #0f161b;
+  --surface:       #161f26;
+  --surface-sunk:  #1b262e;
+  --ink:           #e2eaef;
+  --ink-soft:      #a8b8c2;
+  --ink-faint:     #7d8f9a;
+  --line:          #2a3841;
+  --line-soft:     #202c34;
+  --signal:        #48b6c7;
+  --signal-soft:   #14323a;
+  --crit:          #e07a63;
+  --crit-soft:     #351c17;
+  --high:          #d9a94f;
+  --high-soft:     #33280f;
+  --med:           #7aabe0;
+  --med-soft:      #17273a;
+  --low:           #93a4af;
+  --low-soft:      #1d262c;
+  --good:          #63b98c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  border-bottom: 2px solid var(--ink);
+  padding: 56px 0 20px;
+  margin-bottom: 40px;
+}
+
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--signal);
+  margin: 0 0 14px;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: clamp(30px, 5.2vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  margin: 0 0 18px;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-size: 19px;
+  color: var(--ink-soft);
+  max-width: 62ch;
+  margin: 0 0 26px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+.meta b { color: var(--ink-soft); font-weight: 500; }
+
+/* ---------- section headers ---------- */
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 64px 0 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+h2 .count {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-faint);
+}
+
+.section-note {
+  color: var(--ink-soft);
+  font-size: 16px;
+  margin: 14px 0 28px;
+  max-width: 66ch;
+}
+
+p { margin: 0 0 14px; max-width: 68ch; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.855em;
+  background: var(--surface-sunk);
+  border-radius: 3px;
+  padding: 1.5px 5px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+/* ---------- instrument panel ---------- */
+
+.panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 32px 0 0;
+}
+
+.tile {
+  background: var(--surface);
+  padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tile .n {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tile .l {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.tile.k .n { color: var(--crit); }
+.tile.h .n { color: var(--high); }
+.tile.m .n { color: var(--med); }
+.tile.n .n { color: var(--low); }
+
+/* ---------- priority list ---------- */
+
+.queue {
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.queue li {
+  background: var(--surface);
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 14px 18px;
+}
+.queue .rank {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.queue .what { font-size: 16px; }
+.queue .ref {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--signal);
+  white-space: nowrap;
+}
+
+/* ---------- findings ---------- */
+
+.finding {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--sev, var(--low));
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 20px 22px 18px;
+  margin: 0 0 14px;
+}
+.finding.k { --sev: var(--crit); }
+.finding.h { --sev: var(--high); }
+.finding.m { --sev: var(--med); }
+.finding.n { --sev: var(--low); }
+
+.f-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.f-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sev);
+  background: var(--sev-soft, var(--low-soft));
+  padding: 2px 7px;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
+}
+.finding.k .f-id { --sev-soft: var(--crit-soft); }
+.finding.h .f-id { --sev-soft: var(--high-soft); }
+.finding.m .f-id { --sev-soft: var(--med-soft); }
+.finding.n .f-id { --sev-soft: var(--low-soft); }
+
+.f-title {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
+  margin: 0;
+  flex: 1 1 340px;
+  text-wrap: balance;
+}
+
+.f-where {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin: 0 0 10px;
+  word-break: break-word;
+}
+.f-where span { color: var(--signal); }
+
+.finding p { font-size: 16px; margin: 0 0 10px; max-width: none; }
+.finding p:last-child { margin-bottom: 0; }
+
+.effect {
+  font-family: var(--sans);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+  margin-top: 12px;
+}
+.effect b {
+  font-weight: 600;
+  color: var(--sev);
+  letter-spacing: 0.04em;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 3px;
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: var(--surface-sunk);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.f-fix {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--good);
+  border: 1px solid var(--good);
+  border-radius: 2px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.resolved-band {
+  border: 1px solid var(--good);
+  border-left: 3px solid var(--good);
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 18px 22px;
+  margin: 30px 0 0;
+}
+.resolved-band .lede {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--good);
+  margin: 0 0 8px;
+}
+.resolved-band p { margin: 0; font-size: 16px; color: var(--ink-soft); }
+
+.ship {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ship li {
+  background: var(--surface);
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 18px;
+  padding: 14px 18px;
+  align-items: baseline;
+}
+.ship .area {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+.ship .what { font-size: 16px; }
+
+@media (max-width: 620px) {
+  .ship li { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ---------- keeps ---------- */
+
+.keeps {
+  list-style: none;
+  padding: 0;
+  margin: 22px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px 28px;
+}
+.keeps li {
+  font-size: 16px;
+  padding-left: 20px;
+  position: relative;
+  color: var(--ink-soft);
+}
+.keeps li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0.62em;
+  width: 9px; height: 2px;
+  background: var(--good);
+}
+.keeps b { color: var(--ink); font-weight: 600; font-family: var(--sans); font-size: 15px; }
+
+/* ---------- method ---------- */
+
+.method {
+  background: var(--surface-sunk);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 22px 24px;
+  margin-top: 26px;
+}
+.method p { font-size: 15.5px; color: var(--ink-soft); }
+.method p:last-child { margin-bottom: 0; }
+
+footer {
+  margin-top: 72px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+a { color: var(--signal); }
+a:focus-visible, li:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+  .queue li { grid-template-columns: 30px 1fr; }
+  .queue .ref { grid-column: 2; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Code-Audit · llm-server-benchmark · abgeschlossen</p>
+  <h1>Die Messkette ist gut — der Nachweis fehlt</h1>
+  <p class="standfirst">Das Werkzeug misst sauber. Was es nicht tat: belegen, dass zwei Server tatsächlich unter denselben Bedingungen gemessen haben. Genau das war der Zweck des Projekts — und ist jetzt nachgerüstet.</p>
+  <div class="meta">
+    <span><b>Stand</b> v1.2.0, Branch audit-fixes</span>
+    <span><b>Commit</b> d139458</span>
+    <span><b>Umfang</b> 15 Module, +4.408/−1.953</span>
+    <span><b>Tests</b> 60 grün · ruff sauber</span>
+  </div>
+</header>
+
+<p>Der Aufbau stimmt: <code>llama-bench</code> als Messinstrument, Telemetrie im Nebenthread, Rohdaten je Lauf, HTML/CSV/JSON, ein Vergleichsmodus. Das ist mehr Substanz als die meisten selbstgebauten Benchmark-Skripte haben.</p>
+
+<p>Die Befunde unten drehten sich fast alle um denselben Punkt. Das Projekt versprach Vergleichbarkeit unter identischen Bedingungen — aber an keiner Stelle wurde geprüft, ob die Bedingungen identisch <em>waren</em>. Die verwendete Konfiguration landete nicht in den Ergebnissen, der Vergleich stellte keine Gegenprobe an, und die automatische Erkennung von llama.cpp und Modellen konnte auf jedem Server ein anderes Setup einrichten, ohne dass es jemandem auffiel.</p>
+
+<div class="panel">
+  <div class="tile k"><span class="n">5</span><span class="l">Kritisch</span></div>
+  <div class="tile h"><span class="n">5</span><span class="l">Hoch</span></div>
+  <div class="tile m"><span class="n">10</span><span class="l">Mittel</span></div>
+  <div class="tile n"><span class="n">14</span><span class="l">Niedrig</span></div>
+</div>
+
+<div class="resolved-band">
+  <p class="lede">Alle 34 Befunde sind umgesetzt.</p>
+  <p>Der Stand vor den Änderungen liegt als Commit <code>131c6cb</code> auf dem Branch <code>audit-fixes</code>. Die Umsetzung ist Commit <code>d139458</code>. Die Testsuite ist von 6 auf 60 Tests gewachsen und läuft grün, <code>ruff</code> meldet nichts mehr. Zusätzlich wurde die gesamte Kette — <code>bootstrap → doctor → run → compare</code> — mit einem simulierten llama-bench durchgespielt, inklusive der Fälle „Server hat heimlich die Einstellungen geändert" und „Testlauf abgestürzt".</p>
+</div>
+
+<h2>Was zuerst gemacht wurde <span class="count">Reihenfolge nach Wirkung</span></h2>
+<p class="section-note">Die ersten drei Punkte schließen die Lücke zwischen dem, was das Werkzeug verspricht, und dem, was es beweist.</p>
+
+<ol class="queue">
+  <li><span class="rank">1</span><span class="what">Effektive Konfiguration und llama.cpp-Build in <code>summary.json</code> schreiben</span><span class="ref">K1</span></li>
+  <li><span class="rank">2</span><span class="what"><code>compare</code> soll Hash, Build und Einstellungen gegenprüfen und Abweichungen melden</span><span class="ref">K2</span></li>
+  <li><span class="rank">3</span><span class="what">Automatische Erkennung an <code>tools/llama.cpp</code> und <code>models/</code> binden</span><span class="ref">K3 · K4</span></li>
+  <li><span class="rank">4</span><span class="what">Endpoint-Test mit denselben Parametern fahren wie llama-bench</span><span class="ref">H1</span></li>
+  <li><span class="rank">5</span><span class="what">CORS-Wildcard und GET-Aktionen im Dashboard schließen</span><span class="ref">M1</span></li>
+</ol>
+
+<h2>Kritisch <span class="count">Untergräbt die Vergleichbarkeit</span></h2>
+<p class="section-note">Diese fünf Punkte führten dazu, dass ein Vergleich zwischen zwei Servern falsch sein konnte, ohne dass es sichtbar wurde. Das ist schlimmer als ein Absturz.</p>
+
+<article class="finding k">
+  <div class="f-head"><span class="f-id">K1</span><span class="f-fix">behoben</span><h3 class="f-title">Die verwendeten Messparameter stehen nicht im Ergebnis</h3></div>
+  <p class="f-where"><span>llmbench/runner.py:31</span></p>
+  <p><code>summary.json</code> enthält nur <code>config_path</code> — einen Pfad, der auf jedem Server auf eine andere Datei zeigt. Wiederholungen, Batchgröße, <code>cache_type_k/v</code>, Flash Attention, Kontexttiefen: nichts davon wird gespeichert. Die tatsächlichen Kommandozeilen liegen nur in den <code>raw_*.json</code> tief im Lauf-Ordner, und die liest weder der Report noch <code>compare</code>.</p>
+  <p>Dazu kommt: <code>benchmark.yaml</code> ist per <code>.gitignore</code> ausgeschlossen und wird von <code>bootstrap</code> bei jedem Start neu geschrieben. Es gibt also keine versionierte, geteilte Referenz — und keine Aufzeichnung dessen, was gelaufen ist.</p>
+  <div class="effect"><b>Folge</b>Server A läuft mit <code>repetitions: 5</code>, Server B mit <code>repetitions: 1</code> und <code>cache_type_k: q8_0</code>. Die Vergleichstabelle zeigt beide nebeneinander, als wäre nichts. Das Kernversprechen des Projekts ist damit unbelegt.</div>
+</article>
+
+<article class="finding k">
+  <div class="f-head"><span class="f-id">K2</span><span class="f-fix">behoben</span><h3 class="f-title">Der Vergleich prüft nichts nach</h3></div>
+  <p class="f-where"><span>llmbench/compare.py:42</span> — Gruppierung nach <code>(model, profile, kind, test)</code></p>
+  <p>Zusammengeführt wird über den <em>Modellnamen</em>. Der SHA256, den <code>runner.py</code> extra berechnet, wird nie ausgewertet. Der <code>build_commit</code>, der in jeder llama-bench-Zeile steht, ebenso wenig. Auch Modellgröße und Quantisierung bleiben ungeprüft.</p>
+  <p>Die README sagt: „So kann nachgewiesen werden, dass auf mehreren Servern wirklich dieselbe Datei getestet wurde." Berechnet wird der Hash — nachgewiesen wird damit nichts, solange niemand die beiden <code>summary.json</code> von Hand aufmacht.</p>
+  <div class="effect"><b>Folge</b>Ein <code>qwen-27b-q4_0.gguf</code> auf Server A und ein gleichnamiges, aber anders quantisiertes auf Server B landen kommentarlos in derselben Zeile. Der Vergleich sieht überzeugend aus und ist wertlos.</div>
+</article>
+
+<article class="finding k">
+  <div class="f-head"><span class="f-id">K3</span><span class="f-fix">behoben</span><h3 class="f-title">Die Erkennung kann die eingefrorene llama.cpp umgehen</h3></div>
+  <p class="f-where"><span>llmbench/bootstrap.py:24–47</span></p>
+<pre>search_paths = [
+    Path("."),                 # &lt;- wird VOR tools/llama.cpp geprüft
+    Path("tools/llama.cpp"),
+    Path("bin"),
+    Path("C:/llama.cpp"),      # Windows
+    Path("/usr/local/bin"),    # Linux/macOS
+    Path("/usr/bin"),
+]
+# danach zusätzlich: shutil.which("llama-bench")</pre>
+  <p>Liegt auf einem der Server eine <code>llama-bench</code> im Arbeitsverzeichnis, unter <code>C:\llama.cpp</code>, in <code>/usr/bin</code> oder einfach im PATH, wird die genommen — nicht die bewusst eingefrorene unter <code>tools/llama.cpp</code>. Ohne Meldung.</p>
+  <div class="effect"><b>Folge</b>Genau das Szenario, gegen das die README ein eigenes Kapitel schreibt („llama.cpp wird bewusst eingefroren"), tritt still ein. Zwei Server messen mit verschiedenen Builds.</div>
+</article>
+
+<article class="finding k">
+  <div class="f-head"><span class="f-id">K4</span><span class="f-fix">behoben</span><h3 class="f-title">Die Modellerkennung greift auf systemweite Verzeichnisse zu</h3></div>
+  <p class="f-where"><span>llmbench/bootstrap.py:50–69</span></p>
+  <p><code>discover_models()</code> durchsucht immer zusätzlich <code>C:/llm_models</code> beziehungsweise <code>~/.cache/llama.cpp/models</code> — unabhängig davon, was als <code>--models-dir</code> übergeben wurde. Gefundene Dateien werden ungefragt in <code>benchmark.yaml</code> eingetragen.</p>
+  <div class="effect"><b>Folge</b>Jeder Server bekommt das Modellset, das dort zufällig herumliegt. Die Konfigurationen driften auseinander, und es gibt keinen Schritt, der das bemerkt.</div>
+</article>
+
+<article class="finding k">
+  <div class="f-head"><span class="f-id">K5</span><span class="f-fix">behoben</span><h3 class="f-title">Gleichnamige Modelle überschreiben sich gegenseitig</h3></div>
+  <p class="f-where"><span>llmbench/bootstrap.py:74</span> (<code>name = path.stem</code>) → <span>llmbench/runner.py:37</span> (<code>run_dir / safe_name(name)</code>)</p>
+  <p>Der Modellname wird aus dem Dateinamen ohne Endung abgeleitet, und der Ergebnisordner aus dem Modellnamen. <code>models/q4/mixtral.gguf</code> und <code>models/q8/mixtral.gguf</code> ergeben beide den Namen <code>mixtral</code> und damit denselben Zielordner. Eine Eindeutigkeitsprüfung gibt es nicht.</p>
+  <div class="effect"><b>Folge</b>Der zweite Lauf überschreibt die Rohdaten des ersten. Zusätzlich wird <code>run --model mixtral</code> mehrdeutig und testet beide.</div>
+</article>
+
+<h2>Hoch <span class="count">Verfälscht die Messwerte</span></h2>
+
+<article class="finding h">
+  <div class="f-head"><span class="f-id">H1</span><span class="f-fix">behoben</span><h3 class="f-title">Der Endpoint-Test läuft mit anderen Einstellungen als llama-bench</h3></div>
+  <p class="f-where"><span>llmbench/endpoint.py:55</span></p>
+<pre>cmd = [exe, "-m", model_path, "--host", host, "--port", str(port),
+       "-c", ..., "-np", ..., "-ngl", server_ngl,
+       "--no-cache-prompt", "--metrics", "-fa", "auto"]
+       # kein -ctk / -ctv / -b / -ub</pre>
+  <p><code>-fa auto</code> steht fest verdrahtet und ignoriert <code>benchmark.flash_attention</code>. <code>cache_type_k</code>, <code>cache_type_v</code>, <code>batch_size</code> und <code>ubatch_size</code> werden gar nicht durchgereicht — der Server läuft mit llama.cpp-Standardwerten.</p>
+  <div class="effect"><b>Folge</b>Im selben Report stehen llama-bench-Zahlen und Endpoint-Zahlen nebeneinander, die unter verschiedenen KV-Cache- und Batch-Einstellungen entstanden sind. Wer aus beiden ein Bild bauen will, vergleicht Äpfel mit Birnen.</div>
+</article>
+
+<article class="finding h">
+  <div class="f-head"><span class="f-id">H2</span><span class="f-fix">behoben</span><h3 class="f-title">Kein <code>ignore_eos</code> — die Tokenzahl pro Request schwankt</h3></div>
+  <p class="f-where"><span>llmbench/endpoint.py:78</span></p>
+  <p>Jeder Request bekommt einen leicht anderen Prompt (<code>Benchmark request id: {i}</code>, um Caching zu verhindern) und darf jederzeit per EOS stoppen. Weder <code>ignore_eos</code> noch ein fester Seed sind gesetzt.</p>
+  <div class="effect"><b>Folge</b>System-TPS misst zum Teil, wie früh das Modell aufhört zu schreiben — nicht, wie schnell der Server ist. Zwischen zwei Läufen auf derselben Maschine entsteht Rauschen, das wie ein Hardwareunterschied aussieht.</div>
+</article>
+
+<article class="finding h">
+  <div class="f-head"><span class="f-id">H3</span><span class="f-fix">behoben</span><h3 class="f-title">Kein Warmup vor dem ersten Concurrency-Level</h3></div>
+  <p class="f-where"><span>llmbench/endpoint.py:122–140</span></p>
+  <p>Nach <code>wait_health()</code> geht es direkt in Level 1. Compute-Graph-Aufbau, erste KV-Allokation und CUDA-Kernel-Autotuning fallen damit vollständig auf die erste Messung.</p>
+  <div class="effect"><b>Folge</b>Ausgerechnet Concurrency 1 — der Referenzwert für Interaktivität und TTFT — ist systematisch zu langsam, und zwar unterschiedlich stark je nach Maschine.</div>
+</article>
+
+<article class="finding h">
+  <div class="f-head"><span class="f-id">H4</span><span class="f-fix">behoben</span><h3 class="f-title">llama-bench läuft ohne Timeout</h3></div>
+  <p class="f-where"><span>llmbench/llama_bench.py:63</span></p>
+<pre>cp = subprocess.run(args, stdout=PIPE, stderr=PIPE,
+                    text=True, check=False)   # kein timeout=</pre>
+  <p>Bei <code>context_depths: [..., 130000]</code> auf einer Maschine, die den KV-Cache nicht mehr unterbringt, kann der Prozess ins Swapping laufen und praktisch stehenbleiben. Es gibt keine Obergrenze und keinen konfigurierbaren Abbruch.</p>
+  <div class="effect"><b>Folge</b>Ein unbeaufsichtigter Serverlauf hängt über Nacht, statt den Test als fehlgeschlagen zu markieren und weiterzumachen.</div>
+</article>
+
+<article class="finding h">
+  <div class="f-head"><span class="f-id">H5</span><span class="f-fix">behoben</span><h3 class="f-title">GPU-Telemetrie ist systemweit, nicht prozessbezogen</h3></div>
+  <p class="f-where"><span>llmbench/monitor.py:36–52</span></p>
+  <p>NVML liefert Auslastung, VRAM, Leistungsaufnahme und Temperatur der gesamten Karte. Ein Anzeigetreiber, ein zweiter Dienst oder ein vergessener Ollama-Prozess fließen unbemerkt in „GPU Ø", „VRAM Max" und „Power Ø" ein. Dasselbe gilt für CPU und RAM über <code>psutil</code>.</p>
+  <div class="effect"><b>Folge</b>Ein Server mit angeschlossenem Monitor sieht schlechter aus als ein headless betriebener — bei identischer Inferenzleistung. Mindestens sollte der Lauf festhalten, was sonst noch auf der GPU lag.</div>
+</article>
+
+<h2>Mittel <span class="count">Sicherheit, Dashboard, Berichte</span></h2>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M1</span><span class="f-fix">behoben</span><h3 class="f-title">Das Dashboard lässt sich von jeder besuchten Webseite fernsteuern</h3></div>
+  <p class="f-where"><span>llmbench/server.py:12–18, 85–99, 129–135</span></p>
+<pre>allow_origins=["*"]        # + allow_credentials=True
+@app.get("/api/actions/{action}")   # startet Subprozesse per GET
+@app.post("/api/config")            # überschreibt benchmark.yaml</pre>
+  <p>Drei Dinge greifen ineinander: CORS steht auf Wildcard, zustandsändernde Aktionen laufen über GET, und Authentifizierung gibt es keine. Solange <code>llmbench serve</code> läuft, kann eine beliebige im Browser geöffnete Seite Benchmarks starten. Über <code>POST /api/config</code> lässt sich zudem <code>benchmark.yaml</code> überschreiben — inklusive <code>tools.llama_bench</code>, das anschließend als Prozess gestartet wird.</p>
+  <div class="effect"><b>Folge</b>In der Kette wird daraus Codeausführung über den Browser. Die Bindung an <code>127.0.0.1</code> hilft dabei nicht, weil der Angriff aus dem lokalen Browser kommt. Mindestmaßnahme: Origins auf <code>localhost:8000</code> begrenzen, Aktionen auf POST umstellen, ein Token beim Start ausgeben.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M2</span><span class="f-fix">behoben</span><h3 class="f-title"><code>/api/runs/{run_id}</code> ohne Pfadprüfung</h3></div>
+  <p class="f-where"><span>llmbench/server.py:53</span></p>
+  <p><code>run_id</code> kommt ungeprüft aus der URL und wird direkt an den Ergebnispfad gehängt. Mit <code>../</code>-Segmenten lässt sich jede beliebige <code>summary.json</code> auf der Platte lesen.</p>
+  <div class="effect"><b>Folge</b>Begrenzter Schaden, aber in Kombination mit M1 von außen erreichbar. Fix: aufgelösten Pfad gegen das Ergebnisverzeichnis prüfen.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M3</span><span class="f-fix">behoben</span><h3 class="f-title">Das Web-UI kann eine Konfiguration schreiben, die jeden Lauf bricht</h3></div>
+  <p class="f-where"><span>web/src/views/Configuration.tsx</span> → <span>llmbench/server.py:96</span> → <span>llmbench/llama_bench.py:31</span></p>
+  <p>Die Flash-Attention-Checkbox schreibt beim Abwählen das Boolean <code>false</code>. In <code>_base_args</code> wird daraus <code>str(False)</code>, also das Argument <code>-fa False</code> — kein gültiger llama-bench-Wert.</p>
+  <p>Zwei weitere Nebenwirkungen desselben Speicherpfads: <code>yaml.dump</code> läuft ohne <code>allow_unicode</code>, wodurch die Umlaute im Endpoint-Prompt zu <code>\uXXXX</code>-Escapes werden, und sämtliche Kommentare in <code>benchmark.yaml</code> verschwinden bei jedem Speichern.</p>
+  <div class="effect"><b>Folge</b>Ein Klick im Dashboard genügt, damit anschließend jeder Benchmark mit einem Argumentfehler abbricht.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M4</span><span class="f-fix">behoben</span><h3 class="f-title"><code>GET /api/config</code> liefert <code>raw</code> immer leer</h3></div>
+  <p class="f-where"><span>llmbench/server.py:81</span></p>
+<pre>return {"config": yaml.safe_load(f), "raw": f.read()}
+#                 ^ liest das Handle leer      ^ liefert ""</pre>
+  <p>Nachgestellt und bestätigt: <code>raw</code> ist immer der leere String. Aktuell folgenlos, weil das Frontend nur <code>data.config</code> verwendet — aber <code>POST /api/config</code> akzeptiert <code>raw</code> und würde die Datei damit leeren. Ein Editor, der auf diesem Feld aufsetzt, löscht die Konfiguration beim ersten Speichern.</p>
+  <div class="effect"><b>Folge</b>Latente Datenverlust-Falle. Entweder <code>text = p.read_text()</code> lesen und daraus parsen, oder das Feld entfernen.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M5</span><span class="f-fix">behoben</span><h3 class="f-title">Fehlgeschlagene Tests sehen im Vergleich aus wie „nicht gemessen"</h3></div>
+  <p class="f-where"><span>llmbench/llama_bench.py:79</span> → <span>llmbench/compare.py:26</span></p>
+  <p><code>flatten_bench_rows()</code> gibt bei <code>status != "ok"</code> eine leere Liste zurück. In <code>comparison.html</code> erscheint dort ein Gedankenstrich — dieselbe Darstellung wie für eine Kombination, die gar nicht geplant war.</p>
+  <div class="effect"><b>Folge</b>Ein Server, der bei 130k Kontext an VRAM-Mangel scheitert, fällt im Vergleich nicht negativ auf. Er sieht nur unvollständig aus. Für eine Kaufentscheidung ist das die falsche Information.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M6</span><span class="f-fix">behoben</span><h3 class="f-title">Endpoint- und Telemetriedaten fehlen im Vergleich vollständig</h3></div>
+  <p class="f-where"><span>llmbench/compare.py:19–27</span></p>
+  <p><code>_records()</code> iteriert ausschließlich über <code>profiles[].benchmarks</code>. TTFT P50/P95, System-TPS, Interaktivitäts-TPS, Leistungsaufnahme und Temperatur — laut README ausdrücklich Vergleichskriterien — landen weder in <code>comparison.html</code> noch in CSV oder JSON.</p>
+  <div class="effect"><b>Folge</b>Der Mehrbenutzer-Test wird pro Server erhoben und dann nicht verglichen. Auch Tokens/s pro Watt fehlt, obwohl beide Größen bereits gemessen werden — für einen Serverkauf oft die entscheidende Zahl.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M7</span><span class="f-fix">behoben</span><h3 class="f-title">Telemetrie-Rohdaten blähen <code>summary.json</code> auf</h3></div>
+  <p class="f-where"><span>llmbench/monitor.py:83</span> — <code>summary()</code> gibt <code>samples</code> mit zurück</p>
+  <p>Bei 0,5 s Takt entstehen 7.200 Samples pro Stunde und Test, jeweils mit einem Eintrag pro GPU. Diese Liste landet vollständig sowohl in <code>raw_*.json</code> als auch — über den Rückgabewert von <code>run_llama_bench</code> — in <code>summary.json</code>.</p>
+  <div class="effect"><b>Folge</b><code>summary.json</code> wächst bei mehreren Modellen und Profilen in den zweistelligen Megabyte-Bereich. Genau diese Datei lesen Report, <code>compare</code> und das Dashboard bei jedem Aufruf komplett ein. Vorschlag: Rohsamples nur in <code>raw_*.json</code>, Aggregate in <code>summary.json</code>.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M8</span><span class="f-fix">behoben</span><h3 class="f-title">Berichte zeigen nur GPU 0</h3></div>
+  <p class="f-where"><span>llmbench/report.py:58</span>, <span>llmbench/compare.py:68</span> — jeweils <code>(t.get("gpus") or [{}])[0]</code></p>
+  <p>Telemetrietabelle und Hardware-Übersicht des Vergleichs greifen fest auf den ersten GPU-Eintrag zu. Erfasst werden alle.</p>
+  <div class="effect"><b>Folge</b>Ein Multi-GPU-Server wird falsch dargestellt — bei Tensor-Split-Profilen wird der interessanteste Teil der Messung nicht angezeigt.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M9</span><span class="f-fix">behoben</span><h3 class="f-title">AMD und Intel werden erkannt, aber nicht gemessen</h3></div>
+  <p class="f-where"><span>llmbench/hardware.py:67–106</span> gegen <span>llmbench/monitor.py:26</span></p>
+  <p><code>hardware.py</code> wurde um <code>rocm-smi</code> und <code>xpu-smi</code> erweitert, <code>monitor.py</code> kann weiterhin ausschließlich NVML. Für AMD- und Intel-GPUs gibt es also einen Eintrag in <code>hardware.json</code>, aber keinerlei Auslastungs-, VRAM- oder Leistungsdaten. Der Report meldet dabei „Keine NVIDIA-GPU erkannt", obwohl eine GPU erkannt wurde.</p>
+  <div class="effect"><b>Folge</b>Der Cross-Platform-Anspruch von v1.2.0 gilt für die Inventarisierung, nicht für die Messung. Das sollte im Report offen stehen, sonst wirken leere Telemetriespalten wie ein Fehler.</div>
+</article>
+
+<article class="finding m">
+  <div class="f-head"><span class="f-id">M10</span><span class="f-fix">behoben</span><h3 class="f-title">Fehlende TTFT-Werte werden als „0,00 ms" gerendert</h3></div>
+  <p class="f-where"><span>llmbench/report.py:70</span> — <code>(x.get("ttft_p50_seconds") or 0) * 1000</code></p>
+  <p>Wenn kein einziger Request erfolgreich war, ist die Perzentil-Funktion <code>None</code>. Die Anzeige macht daraus eine Null.</p>
+  <div class="effect"><b>Folge</b>„0,00 ms TTFT" liest sich wie ein exzellenter Messwert und ist in Wahrheit ein Totalausfall.</div>
+</article>
+
+<h2>Niedrig <span class="count">Konsistenz, Hygiene, Wartbarkeit</span></h2>
+<p class="section-note">Einzeln unkritisch, in Summe der Unterschied zwischen einem Skript und einem Werkzeug, das Kollegen auf ihren Servern ausführen. Ebenfalls erledigt.</p>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N1</span><span class="f-fix">behoben</span><h3 class="f-title">Die Version steht an vier Stellen und stimmt an dreien nicht</h3></div>
+  <p class="f-where"><span>README.md</span> „Version 1.2.0" gegen <span>VERSION</span>, <span>llmbench/__init__.py</span>, <span>pyproject.toml</span> — überall <code>1.1.1</code>; <span>CHANGELOG.md</span> endet bei 1.1.1</p>
+  <div class="effect"><b>Folge</b><code>llmbench --version</code> meldet 1.1.1, während die README 1.2.0 bewirbt. Bei einem Werkzeug, dessen Zweck Reproduzierbarkeit ist, ist eine unklare eigene Version besonders unglücklich.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N2</span><span class="f-fix">behoben</span><h3 class="f-title">README und Setup-Skript widersprechen sich bei Linux/macOS</h3></div>
+  <p class="f-where"><span>README.md</span> gegen <span>START_BENCHMARK.sh:24</span></p>
+  <p>Die README schreibt: „Unter Windows, Linux und macOS ist kein manuelles llama.cpp-Kompilieren (für den Start) nötig." Das Skript selbst gibt aus: <em>„Automatic download of llama.cpp is not yet fully implemented for Linux/macOS in this script."</em></p>
+  <div class="effect"><b>Folge</b>Ein Kollege auf Linux folgt der README und steht ohne Binaries da.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N3</span><span class="f-fix">behoben</span><h3 class="f-title"><code>&amp;&amp;</code> statt <code>||</code> unterdrückt die Warnung</h3></div>
+  <p class="f-where"><span>START_BENCHMARK.sh:23</span></p>
+<pre>if [ ! -f "tools/llama.cpp/llama-bench" ] &amp;&amp; [ ! -f "tools/llama.cpp/llama-server" ]; then</pre>
+  <p>Fehlt genau eine der beiden Dateien, bleibt die Warnung aus.</p>
+  <div class="effect"><b>Folge</b>Das Skript läuft weiter und scheitert später mit einer weniger sprechenden Meldung.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N4</span><span class="f-fix">behoben</span><h3 class="f-title">Der beworbene Schnellstart installiert das Paket nicht</h3></div>
+  <p class="f-where"><span>setup.sh</span>, <span>setup.bat</span></p>
+  <p>Beide installieren nur <code>requirements.txt</code>, nicht <code>pip install -e .</code>. Damit existiert weder der <code>llmbench</code>-Befehl aus <code>[project.scripts]</code>, noch sind FastAPI und Uvicorn vorhanden — <code>llmbench serve</code> aus der README funktioniert nach dem Schnellstart nicht. <code>python -m llmbench</code> klappt nur, weil man zufällig im Projektordner steht. <code>setup.sh</code> hat außerdem kein <code>set -e</code> und läuft nach einem fehlgeschlagenen pip-Aufruf weiter.</p>
+  <div class="effect"><b>Folge</b>Der Weg, den die README als schnellsten empfiehlt, führt zu einer unvollständigen Installation.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N5</span><span class="f-fix">behoben</span><h3 class="f-title"><code>.gitignore</code> deckt den Web-Teil nicht ab</h3></div>
+  <p class="f-where"><span>.gitignore</span></p>
+  <p>Weder <code>web/node_modules/</code> noch <code>web/dist/</code>, <code>.ruff_cache/</code> oder <code>*.egg-info/</code> sind ausgeschlossen. Der gesamte <code>web/</code>-Ordner ist derzeit untracked — ein <code>git add .</code> würde tausende Abhängigkeitsdateien einchecken.</p>
+  <div class="effect"><b>Folge</b>Ein unbeabsichtigt aufgeblähtes Repository, das man danach nur mit History-Rewrite wieder loswird.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N6</span><span class="f-fix">behoben</span><h3 class="f-title"><code>llmbench/server.py</code> ist nicht versioniert</h3></div>
+  <p class="f-where">Git-Status: <code>?? llmbench/server.py</code></p>
+  <p>Die Datei ist untracked, wird aber von <code>cli.py:16</code> importiert. In einem frischen Clone fehlt sie.</p>
+  <div class="effect"><b>Folge</b><code>llmbench serve</code> meldet dort „Web-Abhängigkeiten fehlen" — obwohl in Wahrheit das Modul fehlt. Die Fehlermeldung führt in die Irre.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N7</span><span class="f-fix">behoben</span><h3 class="f-title">Der gesamte 1.2.0-Stand ist uncommitted</h3></div>
+  <p>Sämtliche Dateien sind verändert, nichts davon ist eingecheckt, und der letzte Commit ist v1.1.1. Es gibt derzeit keinen Punkt, auf den man zurückgehen kann.</p>
+  <div class="effect"><b>Folge</b>Vor jeder weiteren Änderung: Branch anlegen und den aktuellen Stand sichern.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N8</span><span class="f-fix">behoben</span><h3 class="f-title"><code>endpoint.api_key</code> ist ein toter Schalter</h3></div>
+  <p class="f-where"><span>llmbench/config.py:20</span> — einzige Fundstelle im gesamten Paket</p>
+  <p>Der Wert lässt sich konfigurieren, wird aber nirgends als Header gesetzt. Gegen eine abgesicherte llama-server-Instanz oder ein vorgelagertes Gateway lässt sich damit nicht testen.</p>
+  <div class="effect"><b>Folge</b>Entweder in <code>_one_completion</code> als <code>Authorization</code>-Header durchreichen oder aus der Konfiguration entfernen.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N9</span><span class="f-fix">behoben</span><h3 class="f-title">Der Setup-Wizard fragt nie nach dem Servernamen</h3></div>
+  <p class="f-where"><span>llmbench/cli.py:45–98</span></p>
+  <p><code>project.server_name</code> ist das Feld, unter dem ein Lauf später im Vergleich auftaucht — der Wizard erwähnt es nicht. Der Fallback ist der Hostname, was bei <code>DESKTOP-4F9A2C</code> und <code>WIN-SRV01</code> keine hilfreiche Spaltenüberschrift ergibt.</p>
+  <div class="effect"><b>Folge</b>Kleine Frage, großer Effekt auf die Lesbarkeit des Vergleichs.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N10</span><span class="f-fix">behoben</span><h3 class="f-title"><code>deep_merge</code> teilt verschachtelte Dicts mit den Defaults</h3></div>
+  <p class="f-where"><span>llmbench/config.py:29–36</span></p>
+  <p>Überschreibt der Nutzer einen Abschnitt nicht, verweist <code>cfg["benchmark"]</code> auf dasselbe Objekt wie <code>DEFAULT_CONFIG["benchmark"]</code>. Eine Mutation würde das Modul-Default für den gesamten Prozess verändern.</p>
+  <div class="effect"><b>Folge</b>Aktuell wird nirgends mutiert, also folgenlos — aber eine Falle, die beim nächsten Feature zuschnappt. <code>copy.deepcopy(DEFAULT_CONFIG)</code> als Basis genügt.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N11</span><span class="f-fix">behoben</span><h3 class="f-title">Die Messlogik ist ungetestet</h3></div>
+  <p class="f-where"><span>tests/</span> — 6 Tests über <code>bootstrap</code>, <code>config</code>, JSON-Parsing</p>
+  <p>Die Suite läuft grün und deckt Modellerkennung, Merge-Logik und das Parsen der llama-bench-Ausgabe ab. Ungetestet: <code>runner</code>, <code>endpoint</code>, <code>monitor</code>, <code>report</code>, <code>compare</code>, <code>server</code> — also die gesamte Mess- und Auswertungslogik.</p>
+  <div class="effect"><b>Folge</b>Gerade <code>compare</code> und <code>_write_csv</code> lassen sich mit vorbereiteten <code>summary.json</code>-Fixtures gut testen, ganz ohne GPU. Dort steckt die Auswertung, auf die eine Kaufentscheidung gestützt wird.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N12</span><span class="f-fix">behoben</span><h3 class="f-title"><code>doctor</code> prüft nur, ob <code>--help</code> antwortet</h3></div>
+  <p class="f-where"><span>llmbench/doctor.py:20</span></p>
+  <p>Nicht geprüft werden: ob der Build die verwendeten Flags kennt (<code>-fa auto</code>, <code>-ncmoe</code>, <code>-d</code>), ob das Modell überhaupt in den VRAM passt, ob genug Plattenplatz für die Ergebnisse vorhanden ist, und welche llama.cpp-Version installiert ist.</p>
+  <div class="effect"><b>Folge</b>Der Vorabcheck geht durch, der Lauf scheitert dann nach einer halben Stunde am ersten Argument.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N13</span><span class="f-fix">behoben</span><h3 class="f-title">Ordnernamen nutzen lokale Zeit, nicht UTC</h3></div>
+  <p class="f-where"><span>llmbench/utils.py:18</span></p>
+  <p><code>local_now_compact()</code> baut den Zeitstempel aus der Ortszeit. Im <code>summary.json</code> steht dagegen korrekt UTC.</p>
+  <div class="effect"><b>Folge</b>Läufe von Servern in verschiedenen Zeitzonen sortieren sich in der Ordnerliste falsch — und das Dashboard sortiert nach dem UTC-Feld, die Dateiliste nach der Ortszeit.</div>
+</article>
+
+<article class="finding n">
+  <div class="f-head"><span class="f-id">N14</span><span class="f-fix">behoben</span><h3 class="f-title">Ruff-Befunde</h3></div>
+  <p class="f-where">Standardregeln plus <code>F,B,ARG</code></p>
+<pre>bootstrap.py:20   F401  `os` importiert, nicht verwendet
+cli.py:106        F841  `setup` zugewiesen, nie benutzt
+server.py:62-68   E402  7x Import nicht am Dateianfang
+endpoint.py:72    B009  getattr mit konstantem Attributnamen
+hardware.py:51    B905  zip() ohne strict=
+monitor.py:81     B023  Closure über Schleifenvariable `items`
+report.py:43      ARG001 Parameter `model` unbenutzt</pre>
+  <p><code>B023</code> ist hier ungefährlich, weil <code>vals()</code> noch im selben Schleifendurchlauf aufgerufen wird. <code>ruff</code> steckt bislang in keinem Extra — ein <code>dev</code>-Eintrag in <code>pyproject.toml</code> wäre konsequent, da <code>.ruff_cache/</code> bereits existiert.</p>
+  <div class="effect"><b>Folge</b>Alles kosmetisch, alles in wenigen Minuten erledigt.</div>
+</article>
+
+<h2>Was sich geändert hat</h2>
+<p class="section-note">Die Umsetzung im Überblick. Details stehen in <code>CHANGELOG.md</code>; die README wurde an den tatsächlichen Code angeglichen.</p>
+
+<ul class="ship">
+  <li><span class="area">Nachweis</span><span class="what"><code>summary.json</code> führt jetzt die verwendete Konfiguration, einen Fingerabdruck über alle ergebnisrelevanten Einstellungen, den llama.cpp-Build und den SHA256 der <code>llama-bench</code>-Programmdatei. <code>doctor</code> zeigt den Fingerabdruck an — auf allen Servern muss derselbe Wert stehen.</span></li>
+  <li><span class="area">Gegenprobe</span><span class="what"><code>compare</code> prüft vor dem ersten Zahlenvergleich Konfiguration, Build, Modell-SHA256, llmbench-Version und Profileinstellungen. Abweichungen stehen als Fehler oder Hinweis oben im Bericht; <code>--strict</code> liefert dafür Exitcode 1.</span></li>
+  <li><span class="area">Erkennung</span><span class="what">llama.cpp wird nur noch in <code>tools/llama.cpp</code> und <code>bin/</code> gesucht, Modelle nur noch unter <code>models/</code>. Arbeitsverzeichnis, PATH und Systemordner sind raus — das alte Verhalten liegt hinter <code>--allow-system-search</code>. Gleiche Dateinamen in verschiedenen Ordnern bekommen eindeutige Modellnamen.</span></li>
+  <li><span class="area">Messung</span><span class="what"><code>llama-server</code> startet mit denselben Kernparametern wie <code>llama-bench</code>. Endpoint-Tests laufen mit <code>ignore_eos</code>, festem Seed und zwei verworfenen Aufwärmläufen. Jeder Einzeltest hat ein Zeitlimit und wird bei Überschreitung als <code>timeout</code> vermerkt statt hängenzubleiben.</span></li>
+  <li><span class="area">Telemetrie</span><span class="what">Der Monitor erkennt fremde Prozesse auf der GPU und misst einen Ruhewert vor der Last; beides erscheint als Hinweis im Bericht. Energieplan beziehungsweise CPU-Governor wandern in <code>hardware.json</code>. Rohsamples liegen nur noch in <code>raw_*.json</code>.</span></li>
+  <li><span class="area">Berichte</span><span class="what">Ausfälle sind im Vergleich als „Fehler" beziehungsweise „Zeitüberschreitung" markiert, jede Zeile des betroffenen Bereichs. Neu dazu: Endpoint-Vergleich, Tokens/s pro Watt, alle GPUs statt nur der ersten, Abstand zum jeweils besten Server in Prozent.</span></li>
+  <li><span class="area">Dashboard</span><span class="what">CORS-Wildcard entfernt, stattdessen ein Guard über die Fetch-Metadaten des Browsers: eine fremde Seite kann weder Benchmarks starten noch die Konfiguration überschreiben. Pfadprüfung für <code>/api/runs/{id}</code>, Backup und Validierung beim Speichern, <code>--allow-remote</code> erzwingt ein Token.</span></li>
+  <li><span class="area">Absicherung</span><span class="what">Testsuite von 6 auf 60 Tests, jeder kritische Befund hat einen eigenen Regressionstest. <code>ruff</code>-Konfiguration in <code>pyproject.toml</code>, alle Befunde behoben.</span></li>
+</ul>
+
+<h2>Was gut ist</h2>
+<p class="section-note">Damit die Liste oben nicht den falschen Eindruck hinterlässt — die Architektur trägt, und die Befunde sind Ergänzungen, keine Umbauten.</p>
+
+<ul class="keeps">
+  <li><b>Rohdaten bleiben erhalten.</b> Jeder Lauf legt Kommandozeile, stdout, stderr, Laufzeit und Telemetrie ab. Damit lässt sich fast jede Frage nachträglich beantworten.</li>
+  <li><b>Zwischenstände werden geschrieben.</b> <code>summary.partial.json</code> nach jedem Modell — ein Abbruch nach drei Stunden vernichtet nicht alles.</li>
+  <li><b>Fehler brechen den Lauf nicht ab.</b> Jeder Testtyp ist einzeln gekapselt und landet als <code>status: failed</code> im Ergebnis statt als Traceback im Terminal.</li>
+  <li><b>Der Long-Context-Ansatz ist richtig.</b> <code>llama-bench -d</code> füllt den KV-Cache tatsächlich, statt nur ein Kontextfenster einzustellen. Das ist der Unterschied zwischen einer echten und einer behaupteten Messung.</li>
+  <li><b>Die Perzentil-Funktion ist sauber.</b> Lineare Interpolation, korrekt implementiert — kein naives Sortieren mit Index-Rundung.</li>
+  <li><b>Die Trennung von System-TPS und Interaktivitäts-TPS</b> ist genau die Unterscheidung, die bei Mehrbenutzerbetrieb zählt.</li>
+</ul>
+
+<h2>Wie geprüft wurde</h2>
+<div class="method">
+  <p>Alle 15 Module wurden vollständig gelesen, dazu Tests, <code>pyproject.toml</code>, Setup-Skripte, <code>benchmark.example.yaml</code> und die React-Ansichten des Dashboards. Jeder Befund ist auf Datei und Zeile zurückgeführt; nichts steht hier aufgrund einer Vermutung. Die Zeilenangaben beziehen sich auf den Stand vor der Umsetzung, Commit <code>131c6cb</code>.</p>
+  <p>Ausgeführt wurden die Testsuite und <code>ruff</code> in beiden Konfigurationen — vorher 6 Tests, jetzt 60, beide Male grün. Der <code>raw</code>-Fehler in <code>server.py:81</code> wurde separat nachgestellt und bestätigt.</p>
+  <p>Nach der Umsetzung wurde die gesamte Kette mit einem simulierten <code>llama-bench</code> durchgespielt: <code>bootstrap → doctor → run → compare</code>, zwei Server mit identischen Einstellungen (kein Befund), ein dritter mit heimlich geänderten <code>repetitions</code>, geändertem KV-Cache-Typ und ausgetauschter Modelldatei (zwei Fehler, Exitcode 1 unter <code>--strict</code>) sowie ein vierter mit abstürzendem Benchmark (Ausfall in jeder betroffenen Zeile sichtbar). Bemerkenswert am dritten Fall: dieser Server lieferte die höchsten Tokens/s und hätte den Vergleich vorher gewonnen.</p>
+  <p>Nicht geprüft: ein Lauf gegen echte Hardware mit echten GGUF-Dateien. Im Projekt liegt kein <code>tools/</code>-Verzeichnis und kein Modell. Ob der eingefrorene llama.cpp-Build alle verwendeten Optionen kennt, stellt jetzt <code>doctor</code> selbst fest, indem es den Hilfetext des installierten Builds auswertet. Das Web-Dashboard konnte nicht neu gebaut werden — die <code>node_modules</code> stammen von Windows; die Korrektur der Flash-Attention-Checkbox greift trotzdem, weil der Wert serverseitig normalisiert wird.</p>
+</div>
+
+<footer>Code-Audit · llm-server-benchmark · Befund 131c6cb → Umsetzung d139458 · 23. August 2026</footer>
+
+</div>

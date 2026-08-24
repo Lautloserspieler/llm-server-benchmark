@@ -1,5 +1,7 @@
+﻿[CmdletBinding()]
 param(
     [string]$Config = "benchmark.yaml",
+    [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
     [switch]$ForceUpdateLlamaCpp
 )
@@ -27,9 +29,14 @@ if (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
     $env:PATH = "$LocalPythonDir;$LocalPythonDir\Scripts;$env:PATH"
 }
 
-$forward = @("-Config", $Config)
-if ($SetupOnly) { $forward += "-SetupOnly" }
-if ($ForceUpdateLlamaCpp) { $forward += "-ForceUpdateLlamaCpp" }
+# Hashtable-Splatting, nicht Array-Splatting: nur so werden die Werte
+# garantiert an die Parameternamen gebunden. Mit einem Array konnte
+# "-Config" als Wert durchrutschen und der Dateiname im naechsten
+# Parameter landen.
+$forward = @{ Config = $Config }
+if ($LlamaCppTag) { $forward["LlamaCppTag"] = $LlamaCppTag }
+if ($SetupOnly) { $forward["SetupOnly"] = $true }
+if ($ForceUpdateLlamaCpp) { $forward["ForceUpdateLlamaCpp"] = $true }
 
 & $CoreScript @forward
 exit $LASTEXITCODE

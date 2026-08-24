@@ -2,78 +2,78 @@
 
 Reproduzierbares Benchmark-Tool für lokale LLM-Server und Workstations auf Basis von **llama.cpp**.
 
-Ziel ist die direkte Vergleichbarkeit von Servern unter identischen Bedingungen:
+Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingungen — und der **Nachweis**, dass die Bedingungen tatsächlich identisch waren.
 
 - Prompt Processing / Input Tokens pro Sekunde
 - Text Generation / Output Tokens pro Sekunde
 - Long-Context-Performance bei 8K, 32K, 64K und ~128K belegtem Kontext
 - CPU-, RAM-, GPU- und VRAM-Auslastung
-- GPU-Leistungsaufnahme und Temperatur
+- GPU-Leistungsaufnahme, Temperatur und Tokens/s pro Watt
 - Full-GPU- und Hybrid-Profile
 - parallele Requests / Multi-User-Tests
 - TTFT P50 / P95
 - System-TPS und Interactivity-TPS
-- HTML-, CSV- und JSON-Berichte
-- SHA256-Prüfung der verwendeten GGUF-Dateien
-- Vergleich mehrerer Serverläufe
+- Live-Anzeige im Terminal während des Laufs
+- PDF-, HTML-, CSV- und JSON-Berichte
+- SHA256-Prüfung der GGUF-Dateien **und** der llama.cpp-Programmdateien
+- automatische Konsistenzprüfung beim Vergleich mehrerer Serverläufe
 
-## Version 1.1.1 – One-Click-Setup ohne winget
+## Version 1.3.0
 
-Unter Windows ist **kein manuelles Python- oder llama.cpp-Setup nötig**. `winget` wird für die Python-Installation nicht mehr benötigt.
+Während eines Laufs war bisher nichts zu sehen. Neu ist deshalb eine Statuszeile im Terminal, die laufend zeigt, welcher Test gerade läuft, wie weit er ist, was die Hardware dabei tut und wie lange der Gesamtlauf noch dauert:
 
-Einfach:
+```text
+[3/9] qwen-27b-q4_0 · Full-GPU · long_context
+    pp512                     1284.30 t/s   ±12.10
+    tg128                       58.70 t/s   ±0.40
+  laeuft 04:12 · run 2/5 · CPU 18% · GPU 98% · 11.4/12.0 GiB · 187 W · 71 °C · noch ca. 23:41
+```
+
+Fertige Einzelergebnisse bleiben als feste Zeilen stehen, die Statuszeile darunter aktualisiert sich. Ohne Terminal, etwa bei Umleitung in eine Datei, schaltet die Ausgabe selbsttätig auf einzelne Zeilen um; erzwingen lässt sich das mit `--plain`.
+
+Am Ende steht eine Ergebnistabelle direkt im Terminal, und jeder Lauf erzeugt zusätzlich einen PDF-Bericht mit Diagrammen.
+
+Das Web-Dashboard ist entfallen — die Live-Anzeige ersetzt es.
+
+## Version 1.2.0
+
+Der Schwerpunkt dieser Version war der Nachweis der Vergleichbarkeit. Bis 1.1.1 hat das Werkzeug korrekt gemessen, aber nicht festgehalten, *unter welchen Bedingungen*. Zwei Server konnten unbemerkt mit verschiedenen Einstellungen, verschiedenen llama.cpp-Builds oder verschiedenen Modelldateien verglichen werden.
+
+Neu:
+
+- Die tatsächlich verwendete Konfiguration, ein **Konfigurations-Fingerabdruck**, der llama.cpp-Build und der SHA256 von `llama-bench` landen in `summary.json`.
+- `llmbench compare` prüft vor dem Vergleich, ob die Läufe überhaupt vergleichbar sind, und stellt Abweichungen an den Anfang des Berichts.
+- Die automatische Erkennung durchsucht nur noch das Projekt, nicht mehr PATH und Systemordner.
+- Endpoint-Tests laufen mit denselben Parametern wie `llama-bench`, mit festem Seed, fester Antwortlänge und Aufwärmläufen.
+- Jeder Einzeltest hat ein Zeitlimit.
+
+Die vollständige Liste steht in `CHANGELOG.md`.
+
+## Schnellstart
+
+### Windows
 
 ```text
 1. Repository herunterladen oder klonen
 2. GGUF-Dateien nach models/ kopieren
-3. START_BENCHMARK.bat starten
+3. START_BENCHMARK.bat ausführen
 ```
 
-Der erste Start richtet das System automatisch ein.
+`START_BENCHMARK.bat` richtet bei Bedarf Python ein, lädt den passenden llama.cpp-Build herunter, erzeugt die Konfiguration und startet den Benchmark. Ist Python 3.10+ bereits vorhanden, genügt auch `setup.bat`.
 
-### Was automatisch installiert bzw. eingerichtet wird
+### Linux und macOS
 
-`START_BENCHMARK.bat` bzw. `scripts/START_BENCHMARK.ps1` erledigt automatisch:
-
-1. Prüfung auf Python 3.10 oder neuer.
-2. Falls Python fehlt: direkter Download des offiziellen Python-3.12.10-Installers von `python.org`.
-3. SHA256-Prüfung des heruntergeladenen Python-Installers.
-4. Projektlokale Installation unter `.runtime/python` – keine globale PATH-Änderung und keine systemweite Python-Installation erforderlich.
-5. Erstellung einer isolierten `.venv`.
-6. Installation/Aktualisierung aller benötigten Python-Pakete.
-7. Erkennung einer NVIDIA-GPU über `nvidia-smi`.
-8. Abfrage des neuesten offiziellen llama.cpp-Releases von GitHub.
-9. Automatische Auswahl des passenden Windows-x64-Builds:
-   - CUDA 13.3, wenn der Treiber CUDA 13 unterstützt,
-   - sonst CUDA 12.4 bei NVIDIA,
-   - CPU-Build, falls keine NVIDIA-GPU erkannt wird.
-10. Download von `llama-bench` und `llama-server`.
-11. Bei CUDA: Download der passenden CUDA-Runtime-DLLs. Ein separates CUDA Toolkit ist nicht notwendig.
-12. Speicherung des verwendeten llama.cpp-Builds unter `tools/llama.cpp/.llama-build.json`.
-13. Erstellung bzw. Aktualisierung von `benchmark.yaml`.
-14. Automatische Erkennung aller `*.gguf`-Dateien unter `models/`.
-15. Ausführung von `llmbench doctor` zur Vorprüfung.
-16. Automatischer Start des Benchmarks, sobald mindestens ein Modell vorhanden ist.
-
-### Python-Bootstrap
-
-Wenn bereits Python 3.10+ vorhanden ist, verwendet das Setup die bestehende Installation zur Erstellung von `.venv`.
-
-Wenn kein geeignetes Python vorhanden ist, wird **Python 3.12.10 direkt von python.org** geladen und ausschließlich für dieses Projekt nach
-
-```text
-.runtime/python/
+```bash
+./setup.sh
 ```
 
-installiert. Das Setup unterstützt Windows **x64** und **ARM64**. Der Download wird vor der Ausführung gegen eine fest hinterlegte SHA256-Prüfsumme aus den offiziellen Python-Release-Metadaten geprüft.
+`setup.sh` legt `.venv` an und installiert `llmbench` mit allen Abhängigkeiten.
 
-Damit funktioniert das Setup auch auf Systemen, auf denen Microsoft Store oder `winget` deaktiviert bzw. durch Unternehmensrichtlinien blockiert sind.
+> **Wichtig:** Unter Linux und macOS wird llama.cpp **nicht** automatisch heruntergeladen. Lade `llama-bench` und `llama-server` von den [offiziellen Releases](https://github.com/ggml-org/llama.cpp/releases) oder baue sie selbst, und lege beide unter `tools/llama.cpp/` ab. Für einen Serververgleich auf allen Servern denselben Build verwenden — `llmbench compare` meldet Abweichungen.
 
 ## Modelle
 
-Die GGUF-Modelle werden nicht automatisch heruntergeladen, weil sie keine Programmabhängigkeit sind und häufig viele Gigabyte groß sind.
-
-Lege sie einfach hier ab:
+GGUF-Modelle werden nicht automatisch heruntergeladen — sie sind keine Programmabhängigkeit und oft viele Gigabyte groß.
 
 ```text
 models/
@@ -82,114 +82,106 @@ models/
   qwen-27b-q4_0.gguf
 ```
 
-Beim nächsten Start werden alle GGUF-Dateien automatisch erkannt und in `benchmark.yaml` eingetragen. Bereits vorhandene Profile und manuelle Anpassungen bleiben erhalten.
+Beim nächsten Start werden alle GGUF-Dateien unter `models/` erkannt und in `benchmark.yaml` eingetragen. Vorhandene Profile und manuelle Anpassungen bleiben erhalten. Dateien mit gleichem Namen in verschiedenen Unterordnern bekommen automatisch eindeutige Modellnamen, damit sich ihre Ergebnisse nicht gegenseitig überschreiben.
 
-Die Modelldateien werden durch `.gitignore` ausdrücklich vom Repository ausgeschlossen.
+Modelldateien sind über `.gitignore` vom Repository ausgeschlossen.
 
 ## Reproduzierbarkeit
 
-Für einen fairen Serververgleich sollten verwendet werden:
+Für einen fairen Serververgleich müssen übereinstimmen:
 
 1. dieselbe llama.cpp-Version,
 2. exakt dieselben GGUF-Dateien,
 3. dieselbe Quantisierung,
 4. dieselbe Benchmark-Konfiguration,
-5. möglichst derselbe Treiber-/Softwarestand.
+5. möglichst derselbe Treiber- und Softwarestand.
 
-Das Tool berechnet optional SHA256-Prüfsummen der Modelle. So kann nachgewiesen werden, dass auf mehreren Servern wirklich dieselbe Datei getestet wurde.
+### Was automatisch geprüft wird
+
+Jeder Lauf schreibt in `summary.json`:
+
+| Feld | Bedeutung |
+| --- | --- |
+| `config_fingerprint` | Hash über alle ergebnisrelevanten Einstellungen |
+| `config` | die vollständige verwendete Konfiguration |
+| `tools.llama_bench.binary.sha256` | Prüfsumme der Programmdatei |
+| `tools.llama_cpp_build_ids` | Build-Commit und -Nummer aus llama.cpp selbst |
+| `llmbench_version` | Version dieses Werkzeugs |
+| `models[].model.sha256` | Prüfsumme jeder getesteten GGUF-Datei |
+
+`llmbench compare` vergleicht diese Angaben über alle Läufe und meldet Abweichungen als Fehler oder Hinweis, bevor eine einzige Zahl gegenübergestellt wird.
+
+Den Fingerabdruck eines Servers zeigt auch `llmbench doctor` an. Vor einer Vergleichsserie lohnt der kurze Blick: Auf allen Servern muss derselbe Wert stehen.
 
 ### llama.cpp wird bewusst eingefroren
 
-Nach der ersten Installation wird llama.cpp **nicht bei jedem Start automatisch aktualisiert**. Sonst könnten zwei Server unbemerkt mit verschiedenen Builds getestet werden.
+Nach der ersten Installation wird llama.cpp **nicht** bei jedem Start aktualisiert, sonst könnten zwei Server unbemerkt mit verschiedenen Builds messen. Ein bewusstes Update erfolgt über `UPDATE_DEPENDENCIES.bat`.
 
-Ein bewusstes Update erfolgt über:
+#### Build festschreiben
+
+Ohne feste Vorgabe installiert das Setup den neuesten llama.cpp-Build — und der hängt davon ab, *wann* jemand das Setup gestartet hat. Zwei Server, die eine Woche auseinander eingerichtet werden, bekommen verschiedene Builds.
+
+Für eine Vergleichsserie deshalb den Build festschreiben. Der erste Server nennt nach der Installation den verwendeten Tag; diesen in eine Datei `llama-cpp-version.txt` im Projektordner schreiben:
 
 ```text
-UPDATE_DEPENDENCIES.bat
+b10456
 ```
 
-Dieses Skript aktualisiert die Python-Abhängigkeiten und lädt die aktuelle llama.cpp-Version erneut herunter. Für eine Vergleichsserie sollte dieses Update auf allen Servern vor dem ersten Lauf durchgeführt und danach nicht mehr verändert werden.
+Alle weiteren Server installieren dann genau diesen Build. Die Datei gehört ins Repository — sie ist Teil der Testbedingungen. Alternativ einmalig per Parameter:
+
+```powershell
+.\START_BENCHMARK.bat -LlamaCppTag b10456
+```
+
+Oder über die Umgebungsvariable `LLMBENCH_LLAMACPP_TAG`. Reihenfolge: Parameter, dann Umgebungsvariable, dann `llama-cpp-version.txt`, dann neuester Build.
+
+Welcher Build tatsächlich installiert wurde, steht in `tools/llama.cpp/.llama-build.json` und in jedem Ergebnis unter `tools.llama_cpp_build_ids`. `llmbench compare` meldet Abweichungen als Fehler.
+
+Die automatische Erkennung sucht ausschließlich in `tools/llama.cpp` und `bin/` innerhalb des Projekts. Sie greift **nicht** mehr auf das Arbeitsverzeichnis, den PATH oder Systemordner zu — genau das hatte zuvor dazu geführt, dass ein zufällig installiertes llama.cpp den eingefrorenen Build verdrängen konnte. Das alte Verhalten ist über `--allow-system-search` weiterhin erreichbar.
 
 ## NVIDIA-Treiber
 
-Ein bestehender NVIDIA-Grafiktreiber wird **nicht automatisch ersetzt**. Ein Treiberwechsel kann Administratorrechte, einen Neustart und Auswirkungen auf andere Software haben.
-
-Die für den ausgewählten llama.cpp-CUDA-Build notwendigen CUDA-Runtime-DLLs werden dagegen automatisch installiert.
-
-Wenn keine NVIDIA-GPU bzw. kein `nvidia-smi` gefunden wird, installiert das Setup automatisch den CPU-Build von llama.cpp.
+Ein bestehender NVIDIA-Grafiktreiber wird **nicht** automatisch ersetzt. Die für den gewählten CUDA-Build nötigen CUDA-Runtime-DLLs werden dagegen automatisch installiert; ein separates CUDA Toolkit ist nicht erforderlich. Ohne NVIDIA-GPU installiert das Setup den CPU-Build.
 
 ## Benchmark-Suite
 
 ### Prompt Processing
 
-Standardmäßig:
-
-- pp512
-- pp4096
-- pp8192
-
-Messwert: **Input Tokens/s**.
+Standardmäßig `pp512`, `pp4096`, `pp8192`. Messwert: **Input Tokens/s**.
 
 ### Text Generation
 
-Standardmäßig:
-
-- tg128
-- tg512
-
-Messwert: **Output Tokens/s**.
+Standardmäßig `tg128`, `tg512`. Messwert: **Output Tokens/s**.
 
 ### Long Context
 
-Standardmäßig:
+Standardmäßig 0, 8.192, 32.768, 65.536 und 130.000 Tokens Kontexttiefe. `llama-bench -d` füllt den KV-Cache tatsächlich bis zur jeweiligen Tiefe — gemessen wird also die Leistung bei real belegtem Kontext, nicht nur ein eingestelltes Kontextfenster.
 
-- 0
-- 8.192
-- 32.768
-- 65.536
-- 130.000 Tokens Context Depth
-
-`llama-bench -d` füllt den KV-Cache tatsächlich bis zur jeweiligen Tiefe. Damit wird nicht nur ein maximales Kontextfenster eingestellt, sondern die Leistung bei real belegtem Kontext gemessen.
+Jeder Einzeltest ist über `benchmark.timeout_seconds` (Standard: 1 Stunde) begrenzt. Passt eine Kontexttiefe nicht in den Speicher, wird der Test als `timeout` vermerkt und der Lauf fortgesetzt, statt unbegrenzt zu hängen.
 
 ### Hardware-Telemetrie
 
-Während der Tests werden u. a. erfasst:
+Erfasst werden CPU, RAM, GPU-Auslastung, VRAM, Leistungsaufnahme und Temperatur, dazu der Windows-Energieplan bzw. der Linux-CPU-Governor.
 
-- CPU Ø / Max
-- RAM Ø / Max
-- GPU Ø / Max
-- VRAM Ø / Max
-- GPU-Leistungsaufnahme Ø / Max
-- maximale GPU-Temperatur
+GPU-Telemetrie wird über NVML gelesen und ist damit **NVIDIA-spezifisch**. AMD- und Intel-GPUs werden erkannt und im Bericht aufgeführt, liefern aber keine Auslastungs- und Leistungsdaten.
 
-NVIDIA-Telemetrie wird über NVML gelesen.
+Weil NVML die gesamte Karte misst, erkennt der Monitor zusätzlich fremde Prozesse auf der GPU und erfasst einen Ruhewert vor der Last. Beides erscheint als Hinweis im Bericht — eine GPU, auf der noch etwas anderes lief, liefert keine belastbaren Vergleichswerte.
 
-### Endpoint-/Multi-User-Test
+### Endpoint- und Multi-User-Test
 
-Optional startet das Tool `llama-server` selbst und testet beispielsweise:
+Optional startet das Tool `llama-server` selbst und testet 1, 2, 4 und 8 parallele Requests. Der Server wird dabei mit denselben Kernparametern gestartet wie `llama-bench` (Batch, UBatch, Flash Attention, KV-Cache-Typen).
 
-- 1 parallelen Request
-- 2 parallele Requests
-- 4 parallele Requests
-- 8 parallele Requests
+Gemessen werden System-TPS, Tokens/s pro Request, TTFT P50 und P95 sowie die Erfolgsquote.
 
-Gemessen werden:
+Damit die Zahlen zwischen Läufen vergleichbar bleiben:
 
-- System TPS
-- Tokens/s pro Request
-- TTFT P50
-- TTFT P95
-- Erfolgs-/Fehlerquote
+- `endpoint.warmup_requests` (Standard 2) wärmt den Server vor der Messung auf; diese Requests werden verworfen.
+- `endpoint.ignore_eos` (Standard `true`) erzwingt eine feste Antwortlänge. Ohne das misst System-TPS teilweise, wie früh das Modell aufhört zu schreiben.
+- `endpoint.seed` (Standard 42) hält das Sampling deterministisch.
 
 ## Konfiguration
 
-Die Standardkonfiguration befindet sich in:
-
-```text
-benchmark.example.yaml
-```
-
-Beim ersten Start wird daraus automatisch `benchmark.yaml` erzeugt bzw. ergänzt.
+Die Vorlage liegt in `benchmark.example.yaml`; beim ersten Start entsteht daraus `benchmark.yaml`. Diese Datei ist maschinenspezifisch und per `.gitignore` ausgeschlossen — geteilt wird die Vorlage.
 
 Neue Modelle erhalten zunächst ein Full-GPU-Profil:
 
@@ -200,7 +192,7 @@ profiles:
     threads: auto
 ```
 
-Zusätzliche Hybridprofile können anschließend ergänzt werden, zum Beispiel:
+Hybridprofile lassen sich ergänzen:
 
 ```yaml
 profiles:
@@ -209,81 +201,88 @@ profiles:
     threads: 10
 ```
 
+Profilnamen müssen je Modell eindeutig sein, Modellnamen im gesamten Projekt — `llmbench doctor` meldet Verstöße.
+
 ## CLI
 
-Nach dem Setup steht das Tool in der virtuellen Umgebung zur Verfügung.
-
-Installation prüfen:
-
 ```powershell
-.\.venv\Scripts\python.exe -m llmbench doctor --config benchmark.yaml
+# Einrichtung
+llmbench setup
+
+# Vorabprüfung inklusive Konfigurations-Fingerabdruck
+llmbench doctor --config benchmark.yaml
+
+# Benchmark
+llmbench run --config benchmark.yaml
+llmbench run --config benchmark.yaml --model "Qwen-27B-Q4_0"
+
+# Ohne sich aktualisierende Statuszeile, etwa für eine Protokolldatei
+llmbench run --config benchmark.yaml --plain
+
+# Modellerkennung erneut ausführen
+llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
 ```
 
-Benchmark ausführen:
+Ohne Installation als Paket funktioniert auch `python -m llmbench ...` aus dem Projektordner.
 
-```powershell
-.\.venv\Scripts\python.exe -m llmbench run --config benchmark.yaml
-```
-
-Nur ein Modell:
-
-```powershell
-.\.venv\Scripts\python.exe -m llmbench run --config benchmark.yaml --model "Qwen-27B-Q4_0"
-```
-
-Modellerkennung manuell erneut ausführen:
-
-```powershell
-.\.venv\Scripts\python.exe -m llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
-```
+`llmbench doctor` prüft zusätzlich, ob der installierte llama.cpp-Build alle benötigten Optionen kennt, ob die Modelle in den VRAM passen und ob genug Plattenplatz frei ist.
 
 ## Ergebnisse
 
-Jeder Lauf erzeugt einen eigenen Ordner:
+Jeder Lauf erzeugt einen eigenen Ordner mit UTC-Zeitstempel:
 
 ```text
 results/
-  SERVERNAME_YYYYMMDD-HHMMSS/
+  SERVERNAME_YYYYMMDD-HHMMSSZ/
     hardware.json
-    summary.json
+    summary.json          # Ergebnisse, Konfiguration, Build-Nachweis
+    summary.partial.json  # Zwischenstand nach jedem Modell
     benchmarks.csv
+    report.pdf
     report.html
-    MODEL/
+    MODELL/
       PROFIL/
         raw_prompt.json
         raw_generation.json
         raw_long_context.json
+      endpoint/
+        endpoint_load.json
+        llama-server.log
 ```
 
-Die Rohdaten enthalten zusätzlich den exakten llama-bench-Befehl, stdout/stderr, Telemetrie und Laufzeit.
+Die `raw_*.json` enthalten den exakten Befehl, stdout, stderr, Laufzeit und die vollständige Telemetrie mit allen Einzelmesspunkten. `summary.json` enthält davon nur die Aggregate und bleibt dadurch auch nach mehrstündigen Läufen handhabbar.
+
+`report.pdf` ist der Bericht zum Weitergeben: Serverdaten, Nachweis der Testbedingungen, Ergebnistabellen und Balkendiagramme je Modell und Profil, Telemetrie und Endpoint-Werte. Prompt Processing und Text Generation bekommen dabei getrennte Diagramme, weil sie um eine Größenordnung auseinanderliegen. Lässt sich das PDF nicht erzeugen, etwa weil `reportlab` fehlt, bleibt der Lauf gültig und der Grund steht als Hinweis in `summary.json`.
 
 ## Mehrere Server vergleichen
 
 ```powershell
-.\.venv\Scripts\python.exe -m llmbench compare `
-  "results/ServerA_..." `
-  "results/ServerB_..." `
-  --out comparison
+llmbench compare "results/ServerA_..." "results/ServerB_..." --out comparison
 ```
 
-Erzeugt werden:
+Erzeugt werden `comparison.html`, `comparison.csv`, `comparison.json` und — sofern Endpoint-Tests gelaufen sind — `comparison_endpoint.csv`.
 
-- `comparison.html`
-- `comparison.csv`
-- `comparison.json`
+Der Bericht beginnt mit der Konsistenzprüfung und enthält anschließend Hardware, Benchmark-Vergleich (inklusive Abstand zum jeweils besten Server), Endpoint-Vergleich und eine Effizienztabelle in Tokens/s pro Watt. Fehlgeschlagene und abgebrochene Tests sind als solche gekennzeichnet und verschwinden nicht als leere Zelle.
+
+Für automatisierte Abläufe:
+
+```powershell
+llmbench compare "results/ServerA_..." "results/ServerB_..." --strict
+```
+
+`--strict` liefert Exitcode 1, sobald die Läufe nicht unter gleichen Bedingungen entstanden sind.
 
 ## Tests
 
-Die Python-Test-Suite kann mit folgendem Befehl ausgeführt werden:
-
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -q
+pip install -e ".[dev]"
+pytest -q
+ruff check .
 ```
 
 ## MLPerf-Einordnung
 
-Dieses Projekt ist **kein offizieller MLPerf-Submission-Runner**. Es verwendet jedoch sinnvolle serverseitige Messgrößen wie Throughput, Interaktivität, TTFT und Parallelität für reproduzierbare interne Hardwarevergleiche.
+Dieses Projekt ist **kein** offizieller MLPerf-Submission-Runner. Es verwendet jedoch serverseitig sinnvolle Messgrößen wie Throughput, Interaktivität, TTFT und Parallelität für reproduzierbare interne Hardwarevergleiche.
 
 - llama.cpp: https://github.com/ggml-org/llama.cpp
 - llama-bench: https://github.com/ggml-org/llama.cpp/tree/master/tools/llama-bench

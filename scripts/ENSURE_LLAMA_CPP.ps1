@@ -45,10 +45,6 @@ function Add-ToPath([string]$Dir) {
     }
 }
 
-# Windows PowerShell 5.1 behandelt stderr nativer Programme in einer Pipeline
-# als PowerShell-ErrorRecord. CMake schreibt aber auch normale Statusmeldungen
-# (z.B. CMAKE_BUILD_TYPE=Release) auf stderr. Deshalb darf hier NUR der echte
-# Prozess-Exitcode ueber Erfolg/Fehler entscheiden.
 function Invoke-NativeLogged {
     param(
         [Parameter(Mandatory=$true)][string]$Exe,
@@ -79,6 +75,7 @@ function Get-PythonExe {
         $p = (Get-Content $PythonPathFile -Raw).Trim()
         if ($p -and (Test-Path $p)) { return $p }
     }
+
     foreach ($name in @("py.exe","python.exe","python")) {
         $cmd = Get-Command $name -ErrorAction SilentlyContinue
         if (-not $cmd) { continue }
@@ -91,6 +88,7 @@ function Get-PythonExe {
             }
         } catch { }
     }
+
     throw "Python wurde vom Bootstrap nicht bereitgestellt."
 }
 
@@ -124,6 +122,7 @@ function Find-VisualStudio {
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
         "$env:ProgramFiles\Microsoft Visual Studio\Installer\vswhere.exe"
     )
+
     foreach ($vswhere in $vswhereCandidates) {
         if (-not $vswhere -or -not (Test-Path $vswhere)) { continue }
         $root = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
@@ -141,6 +140,7 @@ function Find-VisualStudio {
             return [pscustomobject]@{ Root=$vcvars.Directory.Parent.Parent.Parent.Parent.FullName; VcVars=$vcvars.FullName }
         }
     }
+
     return $null
 }
 
@@ -151,20 +151,24 @@ function Ensure-VisualStudio {
         if (-not (Test-IsAdministrator)) {
             throw "Visual C++ Build Tools fehlen. START_BENCHMARK.bat muss fuer die automatische Erstinstallation als Administrator laufen."
         }
+
         $installer = Join-Path $CacheDir "vs_BuildTools.exe"
         if (-not (Test-Path $installer)) {
             Write-Host "Lade Visual Studio 2022 Build Tools..."
             Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile $installer -UseBasicParsing
         }
+
         Write-Host "Installiere MSVC + Windows SDK. Das kann einige Minuten dauern..." -ForegroundColor Yellow
         $args = @("--quiet","--wait","--norestart","--nocache","--add","Microsoft.VisualStudio.Workload.VCTools","--includeRecommended")
         $proc = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
         if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
             throw "Visual Studio Build Tools Installation fehlgeschlagen (Exitcode $($proc.ExitCode))."
         }
+
         $vs = Find-VisualStudio
         if (-not $vs) { throw "Visual C++ Build Tools wurden installiert, aber vcvars64.bat wurde nicht gefunden." }
     }
+
     Write-Host "Visual Studio: $($vs.Root)"
     return $vs
 }
@@ -173,11 +177,13 @@ function Import-VsEnvironment([string]$VcVars) {
     $cmdLine = "`"$VcVars`" >nul && set"
     $lines = & $env:ComSpec /s /c $cmdLine
     if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat konnte nicht ausgefuehrt werden." }
+
     foreach ($line in $lines) {
         if ($line -match '^([^=]+)=(.*)$') {
             [Environment]::SetEnvironmentVariable($Matches[1],$Matches[2],"Process")
         }
     }
+
     $cl = Get-Command cl.exe -ErrorAction SilentlyContinue
     if (-not $cl) { throw "cl.exe wurde nach vcvars64.bat nicht gefunden." }
     Write-Host "Host-Compiler: $($cl.Source)"
@@ -218,35 +224,149 @@ function Get-NvidiaInfo {
     }
 }
 
+function Add-CudaRootCandidate {
+    param(
+        [Parameter(Mandatory=$true)][System.Collections.Generic.List[string]]$List,
+        [string]$Path
+    )
+    if (-not $Path) { return }
+    try {
+        $full = [IO.Path]::GetFullPath($Path.Trim().TrimEnd('\'))
+    } catch {
+        return
+    }
+    if (Test-Path $full) { $List.Add($full) }
+}
+
+function Get-CudaVersionFromRoot([string]$Root) {
+    if (-not $Root) { return $null }
+
+    $leaf = Split-Path $Root -Leaf
+    if ($leaf -match '^v?(\d+)\.(\d+)$') {
+        try { return [version]("{0}.{1}" -f $Matches[1],$Matches[2]) } catch { }
+    }
+
+    $versionJson = Join-Path $Root "version.json"
+    if (Test-Path $versionJson) {
+        try {
+            $json = Get-Content $versionJson -Raw | ConvertFrom-Json
+            $text = $null
+            if ($json.cuda -and $json.cuda.version) { $text = [string]$json.cuda.version }
+            elseif ($json.version) { $text = [string]$json.version }
+            if ($text -and $text -match '^(\d+)\.(\d+)') {
+                return [version]("{0}.{1}" -f $Matches[1],$Matches[2])
+            }
+        } catch { }
+    }
+
+    return $null
+}
+
 function Get-CudaToolkits {
     $roots = New-Object System.Collections.Generic.List[string]
-    if ($env:CUDA_PATH) { $roots.Add($env:CUDA_PATH) }
-    $base = Join-Path $env:ProgramFiles "NVIDIA GPU Computing Toolkit\CUDA"
-    if (Test-Path $base) { Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | ForEach-Object { $roots.Add($_.FullName) } }
 
-    $seen=@{}
-    $kits=@()
-    foreach ($root in $roots) {
-        if (-not $root) { continue }
-        $key=$root.ToLowerInvariant(); if ($seen[$key]) { continue }; $seen[$key]=$true
-        $nvcc=Join-Path $root "bin\nvcc.exe"; if (-not (Test-Path $nvcc)) { continue }
-        $text = (& $nvcc --version 2>&1 | Out-String)
-        if ($text -match 'release\s+([0-9]+\.[0-9]+)') {
-            try { $ver=[version]$Matches[1] } catch { continue }
-            $kits += [pscustomobject]@{ Root=$root; Nvcc=$nvcc; Version=$ver }
+    # 1) Explizite CUDA-Umgebungsvariablen.
+    Add-CudaRootCandidate -List $roots -Path $env:CUDA_PATH
+    foreach ($name in @("CUDA_PATH_V12_8","CUDA_PATH_V12_9","CUDA_PATH_V13_0","CUDA_PATH_V13_1","CUDA_PATH_V13_2","CUDA_PATH_V13_3")) {
+        $value = [Environment]::GetEnvironmentVariable($name,"Process")
+        if (-not $value) { $value = [Environment]::GetEnvironmentVariable($name,"Machine") }
+        if (-not $value) { $value = [Environment]::GetEnvironmentVariable($name,"User") }
+        Add-CudaRootCandidate -List $roots -Path $value
+    }
+
+    # 2) Standardpfade. ProgramW6432 ist wichtig, falls ein 32-Bit-Prozess laeuft.
+    $programRoots = @($env:ProgramW6432,$env:ProgramFiles)
+    foreach ($programRoot in ($programRoots | Where-Object { $_ } | Select-Object -Unique)) {
+        $base = Join-Path $programRoot "NVIDIA GPU Computing Toolkit\CUDA"
+        if (-not (Test-Path $base)) { continue }
+        Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-CudaRootCandidate -List $roots -Path $_.FullName
         }
     }
+
+    # 3) nvcc aus PATH. Daraus zwei Ebenen hoch zum CUDA-Root.
+    try {
+        $whereNvcc = @(& where.exe nvcc.exe 2>$null)
+        foreach ($nvccPath in $whereNvcc) {
+            if (-not $nvccPath) { continue }
+            $binDir = Split-Path $nvccPath.Trim() -Parent
+            $cudaRoot = Split-Path $binDir -Parent
+            Add-CudaRootCandidate -List $roots -Path $cudaRoot
+        }
+    } catch { }
+
+    # 4) NVIDIA CUDA Registry, falls vorhanden.
+    foreach ($regPath in @(
+        "HKLM:\SOFTWARE\NVIDIA Corporation\GPU Computing Toolkit\CUDA",
+        "HKLM:\SOFTWARE\WOW6432Node\NVIDIA Corporation\GPU Computing Toolkit\CUDA"
+    )) {
+        if (-not (Test-Path $regPath)) { continue }
+        try {
+            $rootProps = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            if ($rootProps -and $rootProps.Path) { Add-CudaRootCandidate -List $roots -Path ([string]$rootProps.Path) }
+            Get-ChildItem $regPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $props = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+                if ($props -and $props.InstallDir) { Add-CudaRootCandidate -List $roots -Path ([string]$props.InstallDir) }
+                elseif ($props -and $props.Path) { Add-CudaRootCandidate -List $roots -Path ([string]$props.Path) }
+            }
+        } catch { }
+    }
+
+    # 5) Letzter harter Fallback fuer die Standardinstallation von CUDA 12.8.
+    foreach ($driveRoot in @($env:ProgramW6432,$env:ProgramFiles,"C:\Program Files")) {
+        if (-not $driveRoot) { continue }
+        Add-CudaRootCandidate -List $roots -Path (Join-Path $driveRoot "NVIDIA GPU Computing Toolkit\CUDA\v12.8")
+    }
+
+    $seen = @{}
+    $kits = @()
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        $key = $root.ToLowerInvariant()
+        if ($seen[$key]) { continue }
+        $seen[$key] = $true
+
+        $nvcc = Join-Path $root "bin\nvcc.exe"
+        if (-not (Test-Path $nvcc)) { continue }
+
+        # Absichtlich KEIN nvcc --version fuer die Erkennung: Eine manuelle
+        # Installation ist gueltig, sobald der Toolkit-Root + nvcc real existiert.
+        $ver = Get-CudaVersionFromRoot $root
+        if (-not $ver) {
+            Write-Warning "CUDA Toolkit gefunden, Version aber nicht aus Pfad/version.json ermittelbar: $root"
+            continue
+        }
+
+        $kits += [pscustomobject]@{
+            Root=$root
+            Nvcc=$nvcc
+            Version=$ver
+        }
+    }
+
+    Write-Host ""
+    Write-Host "CUDA Toolkit Erkennung:" -ForegroundColor Cyan
+    if ($kits.Count -eq 0) {
+        Write-Host "  Kein Toolkit mit bin\nvcc.exe gefunden." -ForegroundColor Yellow
+    } else {
+        foreach ($kit in ($kits | Sort-Object Version -Descending)) {
+            Write-Host "  CUDA $($kit.Version) -> $($kit.Root)" -ForegroundColor Green
+        }
+    }
+
     return @($kits)
 }
 
 function Install-Cuda128 {
     if (-not (Test-IsAdministrator)) { throw "CUDA 12.8 fehlt und kann ohne Administratorrechte nicht automatisch installiert werden." }
+
     Write-Step "CUDA Toolkit 12.8.1"
-    $installer=Join-Path $CacheDir "cuda_12.8.1_572.61_windows.exe"
-    $url="https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_572.61_windows.exe"
+    $installer = Join-Path $CacheDir "cuda_12.8.1_572.61_windows.exe"
+    $url = "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_572.61_windows.exe"
+
     if (-not (Test-Path $installer)) {
         Write-Host "Lade CUDA Toolkit 12.8.1 von NVIDIA..." -ForegroundColor Yellow
-        $curl=Get-Command curl.exe -ErrorAction SilentlyContinue
+        $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
         if ($curl) {
             & $curl.Source -L --fail --retry 3 -o $installer $url
             if ($LASTEXITCODE -ne 0) { throw "CUDA-12.8-Download fehlgeschlagen." }
@@ -254,25 +374,54 @@ function Install-Cuda128 {
             Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
         }
     }
+
     Write-Host "Installiere nur Toolkit-Komponenten; der Grafiktreiber bleibt unveraendert." -ForegroundColor Yellow
-    $components=@("-s","nvcc_12.8","cudart_12.8","cublas_12.8","cublas_dev_12.8","nvrtc_12.8","nvrtc_dev_12.8","nvjitlink_12.8","thrust_12.8")
-    $proc=Start-Process -FilePath $installer -ArgumentList $components -Wait -PassThru
-    if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) { throw "CUDA Toolkit 12.8 Installation fehlgeschlagen (Exitcode $($proc.ExitCode))." }
+    $components = @("-s","nvcc_12.8","cudart_12.8","cublas_12.8","cublas_dev_12.8","nvrtc_12.8","nvrtc_dev_12.8","nvjitlink_12.8","thrust_12.8")
+    $proc = Start-Process -FilePath $installer -ArgumentList $components -Wait -PassThru
+    if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+        throw "CUDA Toolkit 12.8 Installation fehlgeschlagen (Exitcode $($proc.ExitCode))."
+    }
 }
 
 function Select-Cuda($Nvidia) {
-    $kits=@(Get-CudaToolkits)
+    $kits = @(Get-CudaToolkits)
+
     if ($Nvidia.IsBlackwell) {
-        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" -and $_.Version -lt [version]"13.0" } | Sort-Object Version -Descending)
-        if ($preferred.Count -gt 0) { return $preferred[0] }
+        $preferred = @($kits | Where-Object {
+            $_.Version.Major -eq 12 -and $_.Version.Minor -ge 8
+        } | Sort-Object Version -Descending)
+
+        if ($preferred.Count -gt 0) {
+            $selected = $preferred[0]
+            Write-Host "Verwende installiertes CUDA Toolkit $($selected.Version): $($selected.Root)" -ForegroundColor Green
+            $env:CUDA_PATH = $selected.Root
+            Add-ToPath (Join-Path $selected.Root "bin")
+            return $selected
+        }
+
+        Write-Warning "Blackwell erkannt, aber CUDA 12.8/12.9 wurde nicht gefunden. Versuche automatische Installation."
         Install-Cuda128
-        $kits=@(Get-CudaToolkits)
-        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" -and $_.Version -lt [version]"13.0" } | Sort-Object Version -Descending)
-        if ($preferred.Count -gt 0) { return $preferred[0] }
-        throw "Blackwell erkannt, aber nach der Installation wurde kein CUDA Toolkit 12.8/12.9 mit nvcc gefunden."
+        $kits = @(Get-CudaToolkits)
+        $preferred = @($kits | Where-Object {
+            $_.Version.Major -eq 12 -and $_.Version.Minor -ge 8
+        } | Sort-Object Version -Descending)
+
+        if ($preferred.Count -gt 0) {
+            $selected = $preferred[0]
+            $env:CUDA_PATH = $selected.Root
+            Add-ToPath (Join-Path $selected.Root "bin")
+            return $selected
+        }
+
+        $expected = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin\nvcc.exe"
+        throw "Blackwell erkannt, aber CUDA 12.8/12.9 wurde nicht gefunden. Erwartet z.B.: $expected"
     }
-    if ($kits.Count -eq 0) { throw "Kein CUDA Toolkit mit nvcc gefunden." }
-    return ($kits | Sort-Object Version -Descending | Select-Object -First 1)
+
+    if ($kits.Count -eq 0) { throw "Kein CUDA Toolkit mit bin\nvcc.exe gefunden." }
+    $selected = $kits | Sort-Object Version -Descending | Select-Object -First 1
+    $env:CUDA_PATH = $selected.Root
+    Add-ToPath (Join-Path $selected.Root "bin")
+    return $selected
 }
 
 function Ensure-PreparedSource([string]$Ref) {
@@ -288,42 +437,50 @@ function Ensure-PreparedSource([string]$Ref) {
     }
 
     if (-not (Test-Path $PrepareSource)) { throw "PREPARE_LLAMA_SOURCE.py fehlt." }
-    $args=@($PrepareSource,"--project-root",$Root,"--ref",$Ref)
+    $args = @($PrepareSource,"--project-root",$Root,"--ref",$Ref)
     if ($ForceUpdateLlamaCpp) { $args += "--force" }
     & $python @args
     if ($LASTEXITCODE -ne 0) { throw "llama.cpp-Quellcode konnte nicht vorbereitet werden." }
 
     if (-not (Test-Path $PreparedPathFile)) { throw "Source-Preparer hat keinen Source-Pfad hinterlegt." }
-    $preparedPath=(Get-Content $PreparedPathFile -Raw).Trim()
+    $preparedPath = (Get-Content $PreparedPathFile -Raw).Trim()
     if (-not $preparedPath -or -not (Test-Path (Join-Path $preparedPath "CMakeLists.txt"))) {
         throw "Vorbereiteter llama.cpp-Source-Pfad ist ungueltig: $preparedPath"
     }
+
     return [pscustomobject]@{ Path=$preparedPath; Ref=$Ref }
 }
 
 function Invoke-Probe([string]$Exe) {
-    $o=[IO.Path]::GetTempFileName(); $e=[IO.Path]::GetTempFileName()
+    $o = [IO.Path]::GetTempFileName()
+    $e = [IO.Path]::GetTempFileName()
     try {
-        $p=Start-Process $Exe -ArgumentList '--list-devices' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $o -RedirectStandardError $e
-        $text=((Get-Content $o -Raw -ErrorAction SilentlyContinue)+"`n"+(Get-Content $e -Raw -ErrorAction SilentlyContinue)).Trim()
-        return [pscustomobject]@{Ok=($p.ExitCode -eq 0);ExitCode=$p.ExitCode;Output=$text}
-    } catch { return [pscustomobject]@{Ok=$false;ExitCode=$null;Output=$_.Exception.Message} }
-    finally { Remove-Item $o,$e -Force -ErrorAction SilentlyContinue }
+        $p = Start-Process $Exe -ArgumentList '--list-devices' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $o -RedirectStandardError $e
+        $text = ((Get-Content $o -Raw -ErrorAction SilentlyContinue)+"`n"+(Get-Content $e -Raw -ErrorAction SilentlyContinue)).Trim()
+        return [pscustomobject]@{ Ok=($p.ExitCode -eq 0); ExitCode=$p.ExitCode; Output=$text }
+    } catch {
+        return [pscustomobject]@{ Ok=$false; ExitCode=$null; Output=$_.Exception.Message }
+    } finally {
+        Remove-Item $o,$e -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Copy-Binaries([string]$BuildDir) {
-    $bench=Get-ChildItem $BuildDir -Filter llama-bench.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    $server=Get-ChildItem $BuildDir -Filter llama-server.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $bench = Get-ChildItem $BuildDir -Filter llama-bench.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $server = Get-ChildItem $BuildDir -Filter llama-server.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $bench -or -not $server) { throw "Build beendet, aber llama-bench.exe/llama-server.exe fehlen." }
     if ($bench.Directory.FullName -ne $server.Directory.FullName) { throw "llama-bench und llama-server liegen nicht im selben Bin-Verzeichnis." }
+
     if (Test-Path $LlamaDir) { Remove-Item $LlamaDir -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $LlamaDir | Out-Null
-    Get-ChildItem $bench.Directory.FullName -Force | ForEach-Object { Copy-Item $_.FullName $LlamaDir -Recurse -Force }
+    Get-ChildItem $bench.Directory.FullName -Force | ForEach-Object {
+        Copy-Item $_.FullName $LlamaDir -Recurse -Force
+    }
 }
 
 function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[switch]$Conservative) {
-    $profile=if($Conservative){'conservative'}else{'optimized'}
-    $buildDir=Join-Path $BuildRoot ("$Ref-cuda-$($Cuda.Version.ToString().Replace('.','_'))-$profile")
+    $profile = if($Conservative){'conservative'}else{'optimized'}
+    $buildDir = Join-Path $BuildRoot ("$Ref-cuda-$($Cuda.Version.ToString().Replace('.','_'))-$profile")
 
     if (-not (Test-Path $buildDir)) {
         New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
@@ -332,26 +489,28 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
         Write-Host "Vorhandener Build-Ordner erkannt. Setze Build inkrementell fort: $buildDir" -ForegroundColor Green
     }
 
-    $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
-    $configureLog=Join-Path $LogRoot "configure-$stamp-$profile.log"
-    $buildLog=Join-Path $LogRoot "build-$stamp-$profile.log"
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $configureLog = Join-Path $LogRoot "configure-$stamp-$profile.log"
+    $buildLog = Join-Path $LogRoot "build-$stamp-$profile.log"
 
-    $env:CUDA_PATH=$Cuda.Root
+    $env:CUDA_PATH = $Cuda.Root
     Add-ToPath (Join-Path $Cuda.Root 'bin')
-    $arch=($Nvidia.Architectures -join ';')
+    $arch = ($Nvidia.Architectures -join ';')
 
     Write-Step "llama.cpp lokal kompilieren ($profile)"
     Write-Host "GPU(s):         $($Nvidia.Names -join ' | ')"
     Write-Host "Treiber:        $($Nvidia.Driver)"
     Write-Host "CUDA Toolkit:   $($Cuda.Version)"
-    Write-Host "CUDA Arch.:      $arch"
-    Write-Host "Source:          $($Source.Path)"
-    Write-Host "Build:           $buildDir"
-    Write-Host "Configure-Log:   $configureLog"
-    Write-Host "Build-Log:       $buildLog"
+    Write-Host "CUDA Root:      $($Cuda.Root)"
+    Write-Host "nvcc:           $($Cuda.Nvcc)"
+    Write-Host "CUDA Arch.:     $arch"
+    Write-Host "Source:         $($Source.Path)"
+    Write-Host "Build:          $buildDir"
+    Write-Host "Configure-Log:  $configureLog"
+    Write-Host "Build-Log:      $buildLog"
     Write-Host "Ein vorhandener Ninja-Build wird fortgesetzt; bereits fertige Objekte werden nicht neu kompiliert." -ForegroundColor Yellow
 
-    $args=@(
+    $args = @(
         '-S',$Source.Path,'-B',$buildDir,'-G','Ninja',
         '-DCMAKE_BUILD_TYPE=Release',
         "-DCMAKE_MAKE_PROGRAM=$($Tools.Ninja)",
@@ -367,6 +526,7 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
         '-DLLAMA_BUILD_TOOLS=ON','-DLLAMA_BUILD_SERVER=ON',
         '-DLLAMA_BUILD_UI=OFF','-DLLAMA_BUILD_APP=OFF','-DLLAMA_OPENSSL=OFF'
     )
+
     if ($Conservative) {
         $args += '-DGGML_CUDA_GRAPHS=OFF'
         $args += '-DGGML_CUDA_NO_VMM=ON'
@@ -376,41 +536,61 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
     $rc = Invoke-NativeLogged -Exe $Tools.CMake -Arguments $args -LogFile $configureLog
     if ($rc -ne 0) { throw "CMake-Konfiguration fehlgeschlagen (Exitcode $rc). Log: $configureLog" }
 
-    $jobs=[Math]::Max(1,[Environment]::ProcessorCount)
-    $buildArgs=@('--build',$buildDir,'--target','llama-bench','llama-server','--parallel',$jobs)
+    $jobs = [Math]::Max(1,[Environment]::ProcessorCount)
+    $buildArgs = @('--build',$buildDir,'--target','llama-bench','llama-server','--parallel',$jobs)
     $rc = Invoke-NativeLogged -Exe $Tools.CMake -Arguments $buildArgs -LogFile $buildLog
     if ($rc -ne 0) { throw "llama.cpp-Kompilierung fehlgeschlagen (Exitcode $rc). Log: $buildLog" }
 
     Copy-Binaries $buildDir
-    $bench=Join-Path $LlamaDir 'llama-bench.exe'
+    $bench = Join-Path $LlamaDir 'llama-bench.exe'
     Remove-Item Env:\GGML_CUDA_PDL -ErrorAction SilentlyContinue
-    $probe=Invoke-Probe $bench
-    $workaround=$null
+    $probe = Invoke-Probe $bench
+    $workaround = $null
+
     if (-not $probe.Ok -and $Nvidia.IsBlackwell) {
-        $env:GGML_CUDA_PDL='0'
-        $probe=Invoke-Probe $bench
-        if ($probe.Ok) { $workaround='GGML_CUDA_PDL=0' }
+        $env:GGML_CUDA_PDL = '0'
+        $probe = Invoke-Probe $bench
+        if ($probe.Ok) { $workaround = 'GGML_CUDA_PDL=0' }
     }
-    return [pscustomobject]@{Ok=$probe.Ok;ExitCode=$probe.ExitCode;Output=$probe.Output;Profile=$profile;Workaround=$workaround;BuildDir=$buildDir;ConfigureLog=$configureLog;BuildLog=$buildLog}
+
+    return [pscustomobject]@{
+        Ok=$probe.Ok
+        ExitCode=$probe.ExitCode
+        Output=$probe.Output
+        Profile=$profile
+        Workaround=$workaround
+        BuildDir=$buildDir
+        ConfigureLog=$configureLog
+        BuildLog=$buildLog
+    }
 }
 
 function Test-ExistingBuild {
     if ($ForceUpdateLlamaCpp) { return $false }
-    $bench=Join-Path $LlamaDir 'llama-bench.exe'; $server=Join-Path $LlamaDir 'llama-server.exe'
+
+    $bench = Join-Path $LlamaDir 'llama-bench.exe'
+    $server = Join-Path $LlamaDir 'llama-server.exe'
     if (-not (Test-Path $bench) -or -not (Test-Path $server) -or -not (Test-Path $StateFile)) { return $false }
-    try { $state=Get-Content $StateFile -Raw | ConvertFrom-Json } catch { return $false }
+
+    try { $state = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { return $false }
     if ($state.build_kind -ne 'source') { return $false }
-    if ($state.cuda_root) { $env:CUDA_PATH=[string]$state.cuda_root; Add-ToPath (Join-Path ([string]$state.cuda_root) 'bin') }
+
+    if ($state.cuda_root) {
+        $env:CUDA_PATH = [string]$state.cuda_root
+        Add-ToPath (Join-Path ([string]$state.cuda_root) 'bin')
+    }
     if ($state.cuda_workaround -eq 'GGML_CUDA_PDL=0') { $env:GGML_CUDA_PDL='0' }
-    $probe=Invoke-Probe $bench
+
+    $probe = Invoke-Probe $bench
     if (-not $probe.Ok) { return $false }
+
     Write-Host "llama.cpp Source-Build vorhanden: $($state.source_ref), CUDA $($state.cuda_toolkit), Arch $($state.cuda_architectures)" -ForegroundColor Green
     return $true
 }
 
 if (Test-ExistingBuild) { exit 0 }
 
-$nvidia=Get-NvidiaInfo
+$nvidia = Get-NvidiaInfo
 if (-not $nvidia) { throw "Keine NVIDIA-GPU ueber nvidia-smi erkannt." }
 if ($nvidia.Architectures.Count -eq 0) { throw "Compute Capability konnte nicht ermittelt werden. GPU(s): $($nvidia.Names -join ', ')" }
 
@@ -418,44 +598,61 @@ Write-Step "llama.cpp Source-Build Setup"
 Write-Host "GPU(s): $($nvidia.Names -join ' | ')"
 Write-Host "Compute Capability: $($nvidia.Caps -join ', ')"
 Write-Host "Kurzer Workspace: $WorkRoot"
-if ($nvidia.IsBlackwell) { Write-Host "Blackwell erkannt: nativer Build fuer $($nvidia.Architectures -join ';') mit CUDA 12.8/12.9." -ForegroundColor Green }
+if ($nvidia.IsBlackwell) {
+    Write-Host "Blackwell erkannt: nativer Build fuer $($nvidia.Architectures -join ';') mit CUDA 12.8/12.9." -ForegroundColor Green
+}
 
-$tools=Ensure-CMakeNinja
-$vs=Ensure-VisualStudio
-$cl=Import-VsEnvironment $vs.VcVars
-$cuda=Select-Cuda $nvidia
-Write-Host "nvcc: $($cuda.Nvcc)"
-Write-Host (& $cuda.Nvcc --version | Select-Object -Last 1)
+$tools = Ensure-CMakeNinja
+$vs = Ensure-VisualStudio
+$cl = Import-VsEnvironment $vs.VcVars
+$cuda = Select-Cuda $nvidia
 
-$ref=$LlamaCppTag.Trim()
-if (-not $ref -and (Test-Path $PreparedRefFile)) { $ref=(Get-Content $PreparedRefFile -Raw).Trim() }
+$ref = $LlamaCppTag.Trim()
+if (-not $ref -and (Test-Path $PreparedRefFile)) { $ref = (Get-Content $PreparedRefFile -Raw).Trim() }
 if (-not $ref) { throw "Keine llama.cpp-Source-Ref vorhanden." }
-$source=Ensure-PreparedSource $ref
+$source = Ensure-PreparedSource $ref
 
 try {
-    $result=Build-Llama $tools $cl $cuda $nvidia $ref $source
+    $result = Build-Llama $tools $cl $cuda $nvidia $ref $source
     if (-not $result.Ok) {
         Write-Warning "Optimierter Source-Build startet nicht (Exitcode $($result.ExitCode)). Baue konservatives Profil..."
-        $result=Build-Llama $tools $cl $cuda $nvidia $ref $source -Conservative
+        $result = Build-Llama $tools $cl $cuda $nvidia $ref $source -Conservative
     }
+
     if (-not $result.Ok) {
-        if (Test-Path $DiagScript) { try { & $DiagScript -BenchExe (Join-Path $LlamaDir 'llama-bench.exe') | Out-Null } catch { } }
+        if (Test-Path $DiagScript) {
+            try { & $DiagScript -BenchExe (Join-Path $LlamaDir 'llama-bench.exe') | Out-Null } catch { }
+        }
         throw "Lokal kompilierter llama.cpp-Build startet nicht (Exitcode $($result.ExitCode))."
     }
 
     if ($result.Workaround) { $env:GGML_CUDA_PDL='0' }
-    $sourceHash=""
-    $hashFile=Join-Path $RuntimeRoot "llama-source-sha256.txt"
-    if (Test-Path $hashFile) { $sourceHash=(Get-Content $hashFile -Raw).Trim() }
 
-    $state=[ordered]@{
-        build_kind='source'; source_ref=$ref; source_path=$source.Path; source_archive_sha256=$sourceHash;
-        work_root=$WorkRoot; backend='cuda-source'; cuda_toolkit=$cuda.Version.ToString(); cuda_root=$cuda.Root; nvcc=$cuda.Nvcc;
-        cuda_architectures=($nvidia.Architectures -join ';'); compute_capabilities=($nvidia.Caps -join ';');
-        gpu_names=($nvidia.Names -join ' | '); nvidia_driver=$nvidia.Driver; build_profile=$result.Profile;
-        cuda_workaround=$result.Workaround; configure_log=$result.ConfigureLog; build_log=$result.BuildLog;
+    $sourceHash = ""
+    $hashFile = Join-Path $RuntimeRoot "llama-source-sha256.txt"
+    if (Test-Path $hashFile) { $sourceHash = (Get-Content $hashFile -Raw).Trim() }
+
+    $state = [ordered]@{
+        build_kind='source'
+        source_ref=$ref
+        source_path=$source.Path
+        source_archive_sha256=$sourceHash
+        work_root=$WorkRoot
+        backend='cuda-source'
+        cuda_toolkit=$cuda.Version.ToString()
+        cuda_root=$cuda.Root
+        nvcc=$cuda.Nvcc
+        cuda_architectures=($nvidia.Architectures -join ';')
+        compute_capabilities=($nvidia.Caps -join ';')
+        gpu_names=($nvidia.Names -join ' | ')
+        nvidia_driver=$nvidia.Driver
+        build_profile=$result.Profile
+        cuda_workaround=$result.Workaround
+        configure_log=$result.ConfigureLog
+        build_log=$result.BuildLog
         installed_at=(Get-Date).ToString('o')
     }
+
     $state | ConvertTo-Json -Depth 4 | Set-Content $StateFile -Encoding UTF8
     Write-Host ""
     Write-Host "llama.cpp wurde erfolgreich aus dem Quellcode kompiliert." -ForegroundColor Green

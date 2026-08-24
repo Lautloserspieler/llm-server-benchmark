@@ -96,7 +96,7 @@ def extract_source(zip_path: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     safe_rmtree(destination)
 
-    # Wichtig unter Windows: bewusst in einem kurzen Arbeitsverzeichnis entpacken.
+    # Unter Windows bewusst in einem kurzen Arbeitsverzeichnis entpacken.
     # llama.cpp enthaelt sehr tiefe UI-Pfade, die zusammen mit einem langen
     # Downloads-/Projektpfad sonst WinError 206 ausloesen koennen.
     with tempfile.TemporaryDirectory(prefix="x-", dir=str(destination.parent)) as tmp_dir_str:
@@ -111,8 +111,6 @@ def extract_source(zip_path: Path, destination: Path) -> None:
             raise RuntimeError("CMakeLists.txt wurde im llama.cpp-Quellarchiv nicht gefunden.")
 
         tree = candidates[0]
-        # rename/move innerhalb desselben kurzen Laufwerks ist schneller und
-        # erzeugt keine zweite tiefe Kopie des Source-Trees.
         shutil.move(str(tree), str(destination))
 
     if not (destination / "CMakeLists.txt").is_file():
@@ -128,8 +126,29 @@ def get_short_work_root() -> Path:
     if local_app_data:
         return (Path(local_app_data) / "LLMBench").resolve()
 
-    # Fallback fuer ungewoehnliche Windows-Umgebungen.
     return (Path(tempfile.gettempdir()) / "LLMBench").resolve()
+
+
+def write_source_metadata(runtime: Path, ref: str, source_dir: Path, work_root: Path, zip_path: Path) -> None:
+    """Persist source metadata without requiring the download cache to exist.
+
+    The extracted source tree is the build input. The ZIP is only a cache artifact
+    and may legitimately be removed between runs. A missing cache ZIP must never
+    invalidate an otherwise complete source tree.
+    """
+    (runtime / "llama-source-ref.txt").write_text(ref, encoding="utf-8")
+    (runtime / "llama-source-path.txt").write_text(str(source_dir), encoding="utf-8")
+    (runtime / "llama-work-root.txt").write_text(str(work_root), encoding="utf-8")
+
+    hash_file = runtime / "llama-source-sha256.txt"
+    if zip_path.is_file():
+        hash_file.write_text(sha256(zip_path), encoding="ascii")
+    else:
+        # Do not invent a checksum for a file that no longer exists. The pinned
+        # source ref still identifies the build input and ENSURE_LLAMA_CPP treats
+        # this checksum as optional metadata.
+        hash_file.unlink(missing_ok=True)
+        print("Hinweis: Source-Cache-ZIP fehlt; SHA-256-Metadatum wird uebersprungen.")
 
 
 def main() -> int:
@@ -180,10 +199,10 @@ def main() -> int:
             download_zip(source_url(ref), zip_path)
             extract_source(zip_path, source_dir)
 
-    (runtime / "llama-source-ref.txt").write_text(ref, encoding="utf-8")
-    (runtime / "llama-source-sha256.txt").write_text(sha256(zip_path), encoding="ascii")
-    (runtime / "llama-source-path.txt").write_text(str(source_dir), encoding="utf-8")
-    (runtime / "llama-work-root.txt").write_text(str(work_root), encoding="utf-8")
+    if not (source_dir / "CMakeLists.txt").is_file():
+        raise RuntimeError(f"Vorbereiteter llama.cpp-Source ist unvollstaendig: {source_dir}")
+
+    write_source_metadata(runtime, ref, source_dir, work_root, zip_path)
 
     print(f"llama.cpp Source bereit: {source_dir}")
     print(f"Source-Ref: {ref}")

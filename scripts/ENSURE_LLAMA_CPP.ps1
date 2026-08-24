@@ -12,16 +12,26 @@ $RuntimeRoot = Join-Path $Root ".runtime"
 $ToolsDir = Join-Path $Root "tools"
 $LlamaDir = Join-Path $ToolsDir "llama.cpp"
 $StateFile = Join-Path $LlamaDir ".llama-build.json"
-$PinFile = Join-Path $Root "llama-cpp-version.txt"
 $PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
 $BuildToolsVenv = Join-Path $RuntimeRoot "build-tools"
+$PreparedRefFile = Join-Path $RuntimeRoot "llama-source-ref.txt"
+$PreparedPathFile = Join-Path $RuntimeRoot "llama-source-path.txt"
+$PrepareSource = Join-Path $PSScriptRoot "PREPARE_LLAMA_SOURCE.py"
 $CacheDir = Join-Path $RuntimeRoot "cache"
-$SourceRoot = Join-Path $RuntimeRoot "llama-source"
-$BuildRoot = Join-Path $RuntimeRoot "llama-build"
 $LogRoot = Join-Path $RuntimeRoot "build-logs"
 $DiagScript = Join-Path $PSScriptRoot "DIAGNOSE_LLAMA_CRASH.ps1"
 
-New-Item -ItemType Directory -Force -Path $RuntimeRoot,$ToolsDir,$CacheDir,$SourceRoot,$BuildRoot,$LogRoot | Out-Null
+if ($env:LLMBENCH_WORK_ROOT) {
+    $WorkRoot = $env:LLMBENCH_WORK_ROOT
+} elseif ($env:LOCALAPPDATA) {
+    $WorkRoot = Join-Path $env:LOCALAPPDATA "LLMBench"
+} else {
+    $WorkRoot = Join-Path ([System.IO.Path]::GetTempPath()) "LLMBench"
+}
+$SourceRoot = Join-Path $WorkRoot "src"
+$BuildRoot = Join-Path $WorkRoot "build"
+
+New-Item -ItemType Directory -Force -Path $RuntimeRoot,$ToolsDir,$CacheDir,$LogRoot,$WorkRoot,$SourceRoot,$BuildRoot | Out-Null
 
 function Write-Step([string]$Text) {
     Write-Host ""
@@ -75,8 +85,8 @@ function Ensure-CMakeNinja {
     }
 
     if (-not (Test-Path $cmake) -or -not (Test-Path $ninja)) {
-        Write-Host "Installiere CMake 3.31.8 und Ninja projektlokal..."
-        & $venvPython -m pip install --disable-pip-version-check --upgrade "cmake==3.31.8" "ninja>=1.11"
+        Write-Host "Installiere CMake >=3.31.10,<4 und Ninja projektlokal..."
+        & $venvPython -m pip install --disable-pip-version-check --upgrade "cmake>=3.31.10,<4" "ninja>=1.11"
         if ($LASTEXITCODE -ne 0) { throw "CMake/Ninja konnten nicht installiert werden." }
     }
 
@@ -97,7 +107,7 @@ function Find-VisualStudio {
         if ($root) {
             $root = $root.ToString().Trim()
             $vcvars = Join-Path $root "VC\Auxiliary\Build\vcvars64.bat"
-            if (Test-Path $vcvars) { return [pscustomobject]@{ Root=$root; VcVars=$vcvars; VsWhere=$vswhere } }
+            if (Test-Path $vcvars) { return [pscustomobject]@{ Root=$root; VcVars=$vcvars } }
         }
     }
 
@@ -105,7 +115,7 @@ function Find-VisualStudio {
         if (-not $base -or -not (Test-Path $base)) { continue }
         $vcvars = Get-ChildItem -Path $base -Filter vcvars64.bat -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($vcvars) {
-            return [pscustomobject]@{ Root=$vcvars.Directory.Parent.Parent.Parent.Parent.FullName; VcVars=$vcvars.FullName; VsWhere=$null }
+            return [pscustomobject]@{ Root=$vcvars.Directory.Parent.Parent.Parent.Parent.FullName; VcVars=$vcvars.FullName }
         }
     }
     return $null
@@ -124,11 +134,7 @@ function Ensure-VisualStudio {
             Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile $installer -UseBasicParsing
         }
         Write-Host "Installiere MSVC + Windows SDK. Das kann einige Minuten dauern..." -ForegroundColor Yellow
-        $args = @(
-            "--quiet","--wait","--norestart","--nocache",
-            "--add","Microsoft.VisualStudio.Workload.VCTools",
-            "--includeRecommended"
-        )
+        $args = @("--quiet","--wait","--norestart","--nocache","--add","Microsoft.VisualStudio.Workload.VCTools","--includeRecommended")
         $proc = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
         if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
             throw "Visual Studio Build Tools Installation fehlgeschlagen (Exitcode $($proc.ExitCode))."
@@ -234,11 +240,11 @@ function Install-Cuda128 {
 function Select-Cuda($Nvidia) {
     $kits=@(Get-CudaToolkits)
     if ($Nvidia.IsBlackwell) {
-        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" } | Sort-Object Version -Descending)
+        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" -and $_.Version -lt [version]"13.0" } | Sort-Object Version -Descending)
         if ($preferred.Count -gt 0) { return $preferred[0] }
         Install-Cuda128
         $kits=@(Get-CudaToolkits)
-        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" } | Sort-Object Version -Descending)
+        $preferred=@($kits | Where-Object { $_.Version.Major -eq 12 -and $_.Version -ge [version]"12.8" -and $_.Version -lt [version]"13.0" } | Sort-Object Version -Descending)
         if ($preferred.Count -gt 0) { return $preferred[0] }
         throw "Blackwell erkannt, aber nach der Installation wurde kein CUDA Toolkit 12.8/12.9 mit nvcc gefunden."
     }
@@ -246,47 +252,30 @@ function Select-Cuda($Nvidia) {
     return ($kits | Sort-Object Version -Descending | Select-Object -First 1)
 }
 
-function Get-SourceRef {
-    if ($LlamaCppTag) { return $LlamaCppTag.Trim() }
-    if ($env:LLMBENCH_LLAMACPP_TAG) { return $env:LLMBENCH_LLAMACPP_TAG.Trim() }
-    if (Test-Path $PinFile) {
-        foreach ($line in Get-Content $PinFile) {
-            $v=$line.Trim(); if ($v -and -not $v.StartsWith('#')) { return $v }
-        }
-    }
-    try {
-        $atom=Invoke-WebRequest -Uri "https://github.com/ggml-org/llama.cpp/releases.atom" -UseBasicParsing -TimeoutSec 20
-        $builds=@()
-        foreach ($m in [regex]::Matches([string]$atom.Content,'/releases/tag/(b[0-9]+)')) {
-            if ($m.Groups[1].Value -match '^b([0-9]+)$') { $builds += [pscustomobject]@{Tag=$m.Groups[1].Value;N=[int64]$Matches[1]} }
-        }
-        if ($builds.Count -gt 0) { return (($builds | Sort-Object N -Descending | Select-Object -First 1).Tag) }
-    } catch { Write-Warning "Release-Feed nicht erreichbar: $($_.Exception.Message)" }
-    return "master"
-}
+function Ensure-PreparedSource([string]$Ref) {
+    $python = Get-PythonExe
 
-function Get-Source([string]$Ref) {
-    Write-Step "llama.cpp Quellcode"
-    if ($Ref -notmatch '^[A-Za-z0-9._-]+$') { throw "Ungueltige Source-Kennung '$Ref'." }
-    $zip=Join-Path $CacheDir "llama-$Ref.zip"
-    $src=Join-Path $SourceRoot $Ref
-    if ($ForceUpdateLlamaCpp) { Remove-Item $zip -Force -ErrorAction SilentlyContinue; Remove-Item $src -Recurse -Force -ErrorAction SilentlyContinue }
-    if (-not (Test-Path $zip)) {
-        $url = if ($Ref -eq 'master') { "https://codeload.github.com/ggml-org/llama.cpp/zip/refs/heads/master" } else { "https://codeload.github.com/ggml-org/llama.cpp/zip/refs/tags/$Ref" }
-        Write-Host "Lade offiziellen llama.cpp-Quellcode ($Ref)..."
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+    $preparedRef = ""
+    $preparedPath = ""
+    if (Test-Path $PreparedRefFile) { $preparedRef = (Get-Content $PreparedRefFile -Raw).Trim() }
+    if (Test-Path $PreparedPathFile) { $preparedPath = (Get-Content $PreparedPathFile -Raw).Trim() }
+
+    if ($preparedRef -eq $Ref -and $preparedPath -and (Test-Path (Join-Path $preparedPath "CMakeLists.txt"))) {
+        return [pscustomobject]@{ Path=$preparedPath; Ref=$Ref }
     }
-    if (-not (Test-Path $src)) {
-        $tmp=Join-Path $SourceRoot ("extract-"+[guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-        try {
-            Expand-Archive $zip -DestinationPath $tmp -Force
-            $tree=Get-ChildItem $tmp -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'CMakeLists.txt') } | Select-Object -First 1
-            if (-not $tree) { throw "CMakeLists.txt im Source-Archiv nicht gefunden." }
-            Move-Item $tree.FullName $src
-        } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+
+    if (-not (Test-Path $PrepareSource)) { throw "PREPARE_LLAMA_SOURCE.py fehlt." }
+    $args=@($PrepareSource,"--project-root",$Root,"--ref",$Ref)
+    if ($ForceUpdateLlamaCpp) { $args += "--force" }
+    & $python @args
+    if ($LASTEXITCODE -ne 0) { throw "llama.cpp-Quellcode konnte nicht vorbereitet werden." }
+
+    if (-not (Test-Path $PreparedPathFile)) { throw "Source-Preparer hat keinen Source-Pfad hinterlegt." }
+    $preparedPath=(Get-Content $PreparedPathFile -Raw).Trim()
+    if (-not $preparedPath -or -not (Test-Path (Join-Path $preparedPath "CMakeLists.txt"))) {
+        throw "Vorbereiteter llama.cpp-Source-Pfad ist ungueltig: $preparedPath"
     }
-    return [pscustomobject]@{ Path=$src; Sha256=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() }
+    return [pscustomobject]@{ Path=$preparedPath; Ref=$Ref }
 }
 
 function Invoke-Probe([string]$Exe) {
@@ -300,8 +289,8 @@ function Invoke-Probe([string]$Exe) {
 }
 
 function Copy-Binaries([string]$BuildDir) {
-    $bench=Get-ChildItem $BuildDir -Filter llama-bench.exe -Recurse -File | Select-Object -First 1
-    $server=Get-ChildItem $BuildDir -Filter llama-server.exe -Recurse -File | Select-Object -First 1
+    $bench=Get-ChildItem $BuildDir -Filter llama-bench.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $server=Get-ChildItem $BuildDir -Filter llama-server.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $bench -or -not $server) { throw "Build beendet, aber llama-bench.exe/llama-server.exe fehlen." }
     if ($bench.Directory.FullName -ne $server.Directory.FullName) { throw "llama-bench und llama-server liegen nicht im selben Bin-Verzeichnis." }
     if (Test-Path $LlamaDir) { Remove-Item $LlamaDir -Recurse -Force }
@@ -324,13 +313,14 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
     $arch=($Nvidia.Architectures -join ';')
 
     Write-Step "llama.cpp lokal kompilieren ($profile)"
-    Write-Host "GPU(s):        $($Nvidia.Names -join ' | ')"
-    Write-Host "Treiber:       $($Nvidia.Driver)"
-    Write-Host "CUDA Toolkit:  $($Cuda.Version)"
-    Write-Host "CUDA Arch.:     $arch"
-    Write-Host "Source:         $Ref"
-    Write-Host "Configure-Log:  $configureLog"
-    Write-Host "Build-Log:      $buildLog"
+    Write-Host "GPU(s):         $($Nvidia.Names -join ' | ')"
+    Write-Host "Treiber:        $($Nvidia.Driver)"
+    Write-Host "CUDA Toolkit:   $($Cuda.Version)"
+    Write-Host "CUDA Arch.:      $arch"
+    Write-Host "Source:          $($Source.Path)"
+    Write-Host "Build:           $buildDir"
+    Write-Host "Configure-Log:   $configureLog"
+    Write-Host "Build-Log:       $buildLog"
     Write-Host "Der erste Build kann mehrere Minuten dauern." -ForegroundColor Yellow
 
     $args=@(
@@ -349,7 +339,11 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
         '-DLLAMA_BUILD_TOOLS=ON','-DLLAMA_BUILD_SERVER=ON',
         '-DLLAMA_BUILD_UI=OFF','-DLLAMA_BUILD_APP=OFF','-DLLAMA_OPENSSL=OFF'
     )
-    if ($Conservative) { $args += '-DGGML_CUDA_GRAPHS=OFF'; $args += '-DGGML_CUDA_NO_VMM=ON'; $args += '-DGGML_CUDA_FA=OFF' }
+    if ($Conservative) {
+        $args += '-DGGML_CUDA_GRAPHS=OFF'
+        $args += '-DGGML_CUDA_NO_VMM=ON'
+        $args += '-DGGML_CUDA_FA=OFF'
+    }
 
     & $Tools.CMake @args 2>&1 | Tee-Object -FilePath $configureLog
     $rc=$LASTEXITCODE
@@ -396,6 +390,7 @@ if ($nvidia.Architectures.Count -eq 0) { throw "Compute Capability konnte nicht 
 Write-Step "llama.cpp Source-Build Setup"
 Write-Host "GPU(s): $($nvidia.Names -join ' | ')"
 Write-Host "Compute Capability: $($nvidia.Caps -join ', ')"
+Write-Host "Kurzer Workspace: $WorkRoot"
 if ($nvidia.IsBlackwell) { Write-Host "Blackwell erkannt: nativer Build fuer $($nvidia.Architectures -join ';') mit CUDA 12.8/12.9." -ForegroundColor Green }
 
 $tools=Ensure-CMakeNinja
@@ -404,8 +399,11 @@ $cl=Import-VsEnvironment $vs.VcVars
 $cuda=Select-Cuda $nvidia
 Write-Host "nvcc: $($cuda.Nvcc)"
 Write-Host (& $cuda.Nvcc --version | Select-Object -Last 1)
-$ref=Get-SourceRef
-$source=Get-Source $ref
+
+$ref=$LlamaCppTag.Trim()
+if (-not $ref -and (Test-Path $PreparedRefFile)) { $ref=(Get-Content $PreparedRefFile -Raw).Trim() }
+if (-not $ref) { throw "Keine llama.cpp-Source-Ref vorhanden." }
+$source=Ensure-PreparedSource $ref
 
 try {
     $result=Build-Llama $tools $cl $cuda $nvidia $ref $source
@@ -419,9 +417,13 @@ try {
     }
 
     if ($result.Workaround) { $env:GGML_CUDA_PDL='0' }
+    $sourceHash=""
+    $hashFile=Join-Path $RuntimeRoot "llama-source-sha256.txt"
+    if (Test-Path $hashFile) { $sourceHash=(Get-Content $hashFile -Raw).Trim() }
+
     $state=[ordered]@{
-        build_kind='source'; source_ref=$ref; source_archive_sha256=$source.Sha256;
-        backend='cuda-source'; cuda_toolkit=$cuda.Version.ToString(); cuda_root=$cuda.Root; nvcc=$cuda.Nvcc;
+        build_kind='source'; source_ref=$ref; source_path=$source.Path; source_archive_sha256=$sourceHash;
+        work_root=$WorkRoot; backend='cuda-source'; cuda_toolkit=$cuda.Version.ToString(); cuda_root=$cuda.Root; nvcc=$cuda.Nvcc;
         cuda_architectures=($nvidia.Architectures -join ';'); compute_capabilities=($nvidia.Caps -join ';');
         gpu_names=($nvidia.Names -join ' | '); nvidia_driver=$nvidia.Driver; build_profile=$result.Profile;
         cuda_workaround=$result.Workaround; configure_log=$result.ConfigureLog; build_log=$result.BuildLog;

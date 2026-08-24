@@ -324,8 +324,13 @@ function Copy-Binaries([string]$BuildDir) {
 function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[switch]$Conservative) {
     $profile=if($Conservative){'conservative'}else{'optimized'}
     $buildDir=Join-Path $BuildRoot ("$Ref-cuda-$($Cuda.Version.ToString().Replace('.','_'))-$profile")
-    Remove-Item $buildDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+
+    if (-not (Test-Path $buildDir)) {
+        New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+        Write-Host "Neuer Build-Ordner: $buildDir"
+    } else {
+        Write-Host "Vorhandener Build-Ordner erkannt. Setze Build inkrementell fort: $buildDir" -ForegroundColor Green
+    }
 
     $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
     $configureLog=Join-Path $LogRoot "configure-$stamp-$profile.log"
@@ -344,7 +349,7 @@ function Build-Llama($Tools,[string]$Cl,$Cuda,$Nvidia,[string]$Ref,$Source,[swit
     Write-Host "Build:           $buildDir"
     Write-Host "Configure-Log:   $configureLog"
     Write-Host "Build-Log:       $buildLog"
-    Write-Host "Der erste Build kann mehrere Minuten dauern." -ForegroundColor Yellow
+    Write-Host "Ein vorhandener Ninja-Build wird fortgesetzt; bereits fertige Objekte werden nicht neu kompiliert." -ForegroundColor Yellow
 
     $args=@(
         '-S',$Source.Path,'-B',$buildDir,'-G','Ninja',

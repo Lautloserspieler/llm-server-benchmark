@@ -5,30 +5,96 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from .config import resolve_path
+from . import __version__
+from .config import config_fingerprint, public_config, resolve_path
 from .endpoint import run_endpoint_load, start_llama_server, stop_llama_server, wait_health
 from .hardware import collect_hardware
-from .llama_bench import run_llama_bench, flatten_bench_rows
+from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build, run_llama_bench
 from .report import generate_run_html
-from .utils import ensure_dir, hostname, local_now_compact, safe_name, sha256_file, utc_now_iso, write_json
+from .utils import (
+    ensure_dir,
+    file_fingerprint,
+    hostname,
+    safe_name,
+    utc_now_compact,
+    utc_now_iso,
+    write_json,
+)
+
+BENCH_KINDS = ("prompt", "generation", "long_context")
 
 
 def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     path = resolve_path(model["path"], cfg)
     p = Path(path)
-    meta = {"name": model["name"], "path": path, "exists": p.exists(), "size_bytes": p.stat().st_size if p.exists() else None, "quality_gate": model.get("quality_gate"), "notes": model.get("notes")}
+    meta: dict[str, Any] = {
+        "name": model["name"],
+        "path": path,
+        "exists": p.exists(),
+        "size_bytes": p.stat().st_size if p.exists() else None,
+        "quality_gate": model.get("quality_gate"),
+        "notes": model.get("notes"),
+    }
     if p.exists() and cfg["project"].get("hash_models", True):
-        meta["sha256"] = sha256_file(p)
+        meta["sha256"] = file_fingerprint(p, with_hash=True).get("sha256")
     return meta
 
 
-def run_suite(cfg: dict[str, Any], selected_model: str | None = None, skip_endpoint: bool = False) -> Path:
+def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Identitaet der Messwerkzeuge festhalten: ohne sie ist ein Vergleich
+    zwischen zwei Servern nicht belegbar."""
+    with_hash = bool(cfg["project"].get("hash_tools", True))
+    info: dict[str, Any] = {"llmbench_version": __version__}
+    info["llama_bench"] = probe_build(cfg["tools"]["llama_bench"], with_hash=with_hash)
+    server_exe = cfg["tools"].get("llama_server")
+    if server_exe:
+        info["llama_server"] = {"binary": file_fingerprint(server_exe, with_hash=with_hash)}
+    return info
+
+
+def _resolve_endpoint_profile(model: dict[str, Any], endpoint_cfg: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    profiles = model.get("profiles") or []
+    wanted = endpoint_cfg.get("profile")
+    if not wanted:
+        return profiles[0], None
+    match = next((p for p in profiles if p.get("name") == wanted), None)
+    if match:
+        return match, None
+    return profiles[0], (
+        f"Profil '{wanted}' aus endpoint.profile existiert bei Modell "
+        f"'{model.get('name')}' nicht. Stattdessen wurde '{profiles[0].get('name')}' verwendet."
+    )
+
+
+def run_suite(
+    cfg: dict[str, Any], selected_model: str | None = None, skip_endpoint: bool = False
+) -> Path:
     server_name = cfg["project"].get("server_name") or hostname()
     output_root = Path(resolve_path(cfg["project"]["output_dir"], cfg))
-    run_dir = ensure_dir(output_root / f"{safe_name(server_name)}_{local_now_compact()}")
-    hardware = collect_hardware()
+    run_dir = ensure_dir(output_root / f"{safe_name(server_name)}_{utc_now_compact()}")
+
+    hardware = collect_hardware(output_root)
     write_json(run_dir / "hardware.json", hardware)
-    summary: dict[str, Any] = {"schema_version": 1, "project": cfg["project"].get("name"), "server_name": server_name, "started_at": utc_now_iso(), "config_path": cfg.get("_config_path"), "hardware": hardware, "models": []}
+    tools = _tool_info(cfg)
+
+    summary: dict[str, Any] = {
+        "schema_version": 2,
+        "llmbench_version": __version__,
+        "project": cfg["project"].get("name"),
+        "server_name": server_name,
+        "started_at": utc_now_iso(),
+        "config_path": cfg.get("_config_path"),
+        # Die tatsaechlich verwendete Konfiguration wandert mit ins Ergebnis.
+        # Nur so laesst sich spaeter pruefen, ob zwei Laeufe vergleichbar sind.
+        "config": public_config(cfg),
+        "config_fingerprint": config_fingerprint(cfg["benchmark"]),
+        "tools": tools,
+        "hardware": hardware,
+        "warnings": [],
+        "models": [],
+    }
+
+    build_ids: set[str] = set()
 
     for model in cfg["models"]:
         if selected_model and model["name"].lower() != selected_model.lower():
@@ -38,40 +104,86 @@ def run_suite(cfg: dict[str, Any], selected_model: str | None = None, skip_endpo
         model_result: dict[str, Any] = {"model": meta, "profiles": []}
         if not meta["exists"]:
             model_result["status"] = "failed"
-            model_result["error"] = "Model file not found"
+            model_result["error"] = f"Modelldatei nicht gefunden: {meta['path']}"
             summary["models"].append(model_result)
+            summary["warnings"].append(model_result["error"])
+            write_json(run_dir / "summary.partial.json", summary)
             continue
 
         for profile in model.get("profiles", []):
             profile_dir = ensure_dir(model_dir / safe_name(profile["name"]))
-            profile_result: dict[str, Any] = {"name": profile["name"], "settings": profile, "benchmarks": {}}
-            for kind in ("prompt", "generation", "long_context"):
+            profile_result: dict[str, Any] = {
+                "name": profile["name"],
+                "settings": profile,
+                "benchmarks": {},
+            }
+            for kind in BENCH_KINDS:
                 try:
-                    result = run_llama_bench(cfg["tools"]["llama_bench"], meta["path"], cfg["benchmark"], profile, kind, profile_dir)
+                    result = run_llama_bench(
+                        cfg["tools"]["llama_bench"],
+                        meta["path"],
+                        cfg["benchmark"],
+                        profile,
+                        kind,
+                        profile_dir,
+                    )
                 except Exception as exc:
-                    result = {"kind": kind, "status": "failed", "error": str(exc), "traceback": traceback.format_exc()}
+                    result = {
+                        "kind": kind,
+                        "status": "failed",
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    }
+                build_ids.update(build_ids_from_rows(result))
+                for warn in (result.get("telemetry") or {}).get("warnings", []):
+                    summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
                 profile_result["benchmarks"][kind] = result
             model_result["profiles"].append(profile_result)
 
         endpoint_cfg = dict(cfg.get("endpoint", {}))
         endpoint_cfg.update(model.get("endpoint", {}) or {})
         if endpoint_cfg.get("enabled") and not skip_endpoint:
-            wanted_profile = endpoint_cfg.get("profile")
-            profile = next((p for p in model["profiles"] if p["name"] == wanted_profile), model["profiles"][0])
+            profile, note = _resolve_endpoint_profile(model, endpoint_cfg)
+            if note:
+                summary["warnings"].append(note)
             endpoint_dir = ensure_dir(model_dir / "endpoint")
             proc = None
             try:
                 if endpoint_cfg.get("auto_start", True):
-                    proc, command = start_llama_server(cfg["tools"]["llama_server"], meta["path"], profile, endpoint_cfg, endpoint_dir / "llama-server.log")
-                    wait_health(endpoint_cfg["base_url"], float(endpoint_cfg.get("startup_timeout_seconds", 300)))
+                    proc, command = start_llama_server(
+                        cfg["tools"]["llama_server"],
+                        meta["path"],
+                        profile,
+                        endpoint_cfg,
+                        cfg["benchmark"],
+                        endpoint_dir / "llama-server.log",
+                    )
+                    wait_health(
+                        endpoint_cfg["base_url"],
+                        float(endpoint_cfg.get("startup_timeout_seconds", 300)),
+                    )
                 else:
                     command = None
                     wait_health(endpoint_cfg["base_url"], 10)
-                ep = run_endpoint_load(endpoint_cfg["base_url"], endpoint_cfg, float(cfg["benchmark"].get("resource_sample_interval", 0.5)), endpoint_dir)
+                ep = run_endpoint_load(
+                    endpoint_cfg["base_url"],
+                    endpoint_cfg,
+                    float(cfg["benchmark"].get("resource_sample_interval", 0.5)),
+                    endpoint_dir,
+                    target_pid=proc.pid if proc else None,
+                )
                 ep["server_command"] = command
+                ep["profile"] = profile.get("name")
                 model_result["endpoint"] = ep
+                for warn in (ep.get("telemetry") or {}).get("warnings", []):
+                    summary["warnings"].append(f"{model['name']}/endpoint: {warn}")
             except Exception as exc:
-                model_result["endpoint"] = {"status": "failed", "error": str(exc), "traceback": traceback.format_exc()}
+                model_result["endpoint"] = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(),
+                }
+                summary["warnings"].append(f"{model['name']}: Endpoint-Test fehlgeschlagen: {exc}")
             finally:
                 if proc is not None:
                     stop_llama_server(proc)
@@ -79,6 +191,12 @@ def run_suite(cfg: dict[str, Any], selected_model: str | None = None, skip_endpo
         summary["models"].append(model_result)
         write_json(run_dir / "summary.partial.json", summary)
 
+    summary["tools"]["llama_cpp_build_ids"] = sorted(build_ids)
+    if len(build_ids) > 1:
+        summary["warnings"].append(
+            "Innerhalb dieses Laufs wurden mehrere llama.cpp-Builds gemeldet: "
+            + ", ".join(sorted(build_ids))
+        )
     summary["finished_at"] = utc_now_iso()
     write_json(run_dir / "summary.json", summary)
     _write_csv(run_dir / "benchmarks.csv", summary)
@@ -87,12 +205,35 @@ def run_suite(cfg: dict[str, Any], selected_model: str | None = None, skip_endpo
 
 
 def _write_csv(path: Path, summary: dict[str, Any]) -> None:
-    fields = ["server_name", "model", "profile", "kind", "test", "avg_ts", "stddev_ts", "n_prompt", "n_gen", "n_depth", "n_threads", "n_gpu_layers", "backend", "gpu_info", "cpu_info", "build_commit"]
+    fields = [
+        "server_name", "model", "profile", "kind", "status", "test", "avg_ts", "stddev_ts",
+        "n_prompt", "n_gen", "n_depth", "n_threads", "n_gpu_layers", "backend",
+        "gpu_info", "cpu_info", "build_commit", "config_fingerprint",
+    ]
+    static = {"server_name", "model", "profile", "kind", "status", "config_fingerprint"}
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         for m in summary.get("models", []):
+            model_name = m.get("model", {}).get("name")
             for profile in m.get("profiles", []):
                 for kind, result in profile.get("benchmarks", {}).items():
-                    for row in flatten_bench_rows(result):
-                        w.writerow({"server_name": summary.get("server_name"), "model": m.get("model", {}).get("name"), "profile": profile.get("name"), "kind": kind, **{k: row.get(k) for k in fields if k not in {"server_name", "model", "profile", "kind"}}})
+                    base = {
+                        "server_name": summary.get("server_name"),
+                        "model": model_name,
+                        "profile": profile.get("name"),
+                        "kind": kind,
+                        "status": result.get("status"),
+                        "config_fingerprint": summary.get("config_fingerprint"),
+                    }
+                    rows = flatten_bench_rows(result)
+                    if not rows:
+                        # Fehlgeschlagene Tests bleiben als Zeile sichtbar,
+                        # statt aus der Auswertung zu verschwinden.
+                        w.writerow({**base, "test": result.get("error")})
+                        continue
+                    for row in rows:
+                        w.writerow({
+                            **base,
+                            **{k: row.get(k) for k in fields if k not in static},
+                        })

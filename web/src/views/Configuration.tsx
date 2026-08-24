@@ -134,8 +134,8 @@ export function Configuration() {
             <input 
               type="checkbox" 
               id="flash_attn"
-              checked={config.benchmark?.flash_attention === 'auto' || config.benchmark?.flash_attention === true} 
-              onChange={e => updateConfig('benchmark', 'flash_attention', e.target.checked ? 'auto' : false)} 
+              checked={['auto', 'on', 'true', true].includes(config.benchmark?.flash_attention)} 
+              onChange={e => updateConfig('benchmark', 'flash_attention', e.target.checked ? 'auto' : 'off')} 
             />
             <label htmlFor="flash_attn">{t('config.fields.flash_attention')}</label>
           </div>

@@ -44,7 +44,7 @@ def resolve_ref(explicit_ref: str | None, pin_file: Path) -> str:
 
     try:
         atom = get_url(f"https://github.com/{REPO}/releases.atom", timeout=20).decode("utf-8", errors="ignore")
-        tags = []
+        tags: list[tuple[int, str]] = []
         for match in re.finditer(r"/releases/tag/(b(\d+))", atom):
             tags.append((int(match.group(2)), match.group(1)))
         if tags:
@@ -87,12 +87,19 @@ def download_zip(url: str, target: Path) -> None:
     tmp.replace(target)
 
 
+def safe_rmtree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def extract_source(zip_path: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        shutil.rmtree(destination, ignore_errors=True)
+    safe_rmtree(destination)
 
-    with tempfile.TemporaryDirectory(prefix="llmbench-llama-src-", dir=str(destination.parent)) as tmp_dir_str:
+    # Wichtig unter Windows: bewusst in einem kurzen Arbeitsverzeichnis entpacken.
+    # llama.cpp enthaelt sehr tiefe UI-Pfade, die zusammen mit einem langen
+    # Downloads-/Projektpfad sonst WinError 206 ausloesen koennen.
+    with tempfile.TemporaryDirectory(prefix="x-", dir=str(destination.parent)) as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
         with zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(tmp_dir)
@@ -104,10 +111,25 @@ def extract_source(zip_path: Path, destination: Path) -> None:
             raise RuntimeError("CMakeLists.txt wurde im llama.cpp-Quellarchiv nicht gefunden.")
 
         tree = candidates[0]
-        shutil.copytree(tree, destination, symlinks=False)
+        # rename/move innerhalb desselben kurzen Laufwerks ist schneller und
+        # erzeugt keine zweite tiefe Kopie des Source-Trees.
+        shutil.move(str(tree), str(destination))
 
     if not (destination / "CMakeLists.txt").is_file():
         raise RuntimeError("llama.cpp wurde entpackt, aber CMakeLists.txt fehlt im Zielordner.")
+
+
+def get_short_work_root() -> Path:
+    explicit = os.environ.get("LLMBENCH_WORK_ROOT", "").strip()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        return (Path(local_app_data) / "LLMBench").resolve()
+
+    # Fallback fuer ungewoehnliche Windows-Umgebungen.
+    return (Path(tempfile.gettempdir()) / "LLMBench").resolve()
 
 
 def main() -> int:
@@ -120,8 +142,13 @@ def main() -> int:
     root = Path(args.project_root).resolve()
     runtime = root / ".runtime"
     cache = runtime / "cache"
-    source_root = runtime / "llama-source"
+    work_root = get_short_work_root()
+    source_root = work_root / "src"
     pin_file = root / "llama-cpp-version.txt"
+
+    runtime.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
+    source_root.mkdir(parents=True, exist_ok=True)
 
     ref = resolve_ref(args.ref or None, pin_file)
     if not re.fullmatch(r"[A-Za-z0-9._-]+", ref):
@@ -131,37 +158,36 @@ def main() -> int:
     zip_path = cache / f"llama-{ref}.zip"
 
     if args.force:
-        shutil.rmtree(source_dir, ignore_errors=True)
+        safe_rmtree(source_dir)
         zip_path.unlink(missing_ok=True)
 
     if source_dir.exists() and (source_dir / "CMakeLists.txt").is_file():
         print(f"llama.cpp-Quellcode bereits vorbereitet: {ref}")
     else:
-        if source_dir.exists():
-            shutil.rmtree(source_dir, ignore_errors=True)
+        safe_rmtree(source_dir)
 
         if not zip_path.exists() or not zipfile.is_zipfile(zip_path):
             print(f"Lade offiziellen llama.cpp-Quellcode ({ref})...")
             download_zip(source_url(ref), zip_path)
 
-        print("Entpacke llama.cpp robust mit Python zipfile...")
+        print(f"Entpacke llama.cpp in kurzen Windows-Pfad: {source_dir}")
         try:
             extract_source(zip_path, source_dir)
         except Exception:
-            # Ein kaputtes Cache-Archiv einmal automatisch neu laden.
-            shutil.rmtree(source_dir, ignore_errors=True)
+            safe_rmtree(source_dir)
             zip_path.unlink(missing_ok=True)
             print("Erster Entpackversuch fehlgeschlagen. Lade das Source-Archiv neu...")
             download_zip(source_url(ref), zip_path)
             extract_source(zip_path, source_dir)
 
-    ref_file = runtime / "llama-source-ref.txt"
-    ref_file.write_text(ref, encoding="utf-8")
-    hash_file = runtime / "llama-source-sha256.txt"
-    hash_file.write_text(sha256(zip_path), encoding="ascii")
+    (runtime / "llama-source-ref.txt").write_text(ref, encoding="utf-8")
+    (runtime / "llama-source-sha256.txt").write_text(sha256(zip_path), encoding="ascii")
+    (runtime / "llama-source-path.txt").write_text(str(source_dir), encoding="utf-8")
+    (runtime / "llama-work-root.txt").write_text(str(work_root), encoding="utf-8")
 
     print(f"llama.cpp Source bereit: {source_dir}")
     print(f"Source-Ref: {ref}")
+    print(f"Kurzer Build-Workspace: {work_root}")
     return 0
 
 

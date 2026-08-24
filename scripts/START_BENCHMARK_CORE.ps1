@@ -1,4 +1,8 @@
-﻿param(
+﻿# CmdletBinding schaltet die positionale Parameterbindung ab. Ein falsch
+# uebergebenes Argument bricht damit sofort mit klarer Meldung ab, statt
+# still im naechsten Parameter zu landen.
+[CmdletBinding()]
+param(
     [string]$Config = "benchmark.yaml",
     [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
@@ -104,19 +108,40 @@ function Get-NvidiaInfo {
     return @{ Command = $nvsmi.Source; Driver = $driver; Cuda = $cuda; CudaSource = $source }
 }
 
-function Invoke-GitHubApi([string]$Url) {
+function Invoke-GitHubApi([string]$Url, [switch]$AllowMissing) {
     $headers = @{ "User-Agent" = "llm-server-benchmark-installer"; "Accept" = "application/vnd.github+json" }
     if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
-    return Invoke-RestMethod -Uri $Url -Headers $headers
+    try {
+        return Invoke-RestMethod -Uri $Url -Headers $headers
+    } catch {
+        $status = $null
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -eq 404 -and $AllowMissing) { return $null }
+        if ($status -eq 403) {
+            throw "GitHub hat die Anfrage abgelehnt (403). Das ist meist das Anfragelimit fuer nicht angemeldete Zugriffe. Entweder spaeter erneut versuchen oder die Umgebungsvariable GITHUB_TOKEN mit einem persoenlichen Zugriffstoken setzen."
+        }
+        throw "GitHub-Anfrage fehlgeschlagen ($Url): $($_.Exception.Message)"
+    }
+}
+
+function Assert-LlamaTag([string]$Value, [string]$Origin) {
+    # llama.cpp-Tags sehen aus wie "b10456" oder "v0.2.0". Alles andere ist
+    # fast sicher ein versehentlich hier gelandeter Wert.
+    if ($Value -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $Value -match '\.(ya?ml|txt|json|exe|bat|ps1)$') {
+        throw "'$Value' ist keine gueltige llama.cpp-Release-Kennung (Quelle: $Origin). Erwartet wird ein Tag wie 'b10456'. Die verfuegbaren Tags stehen unter https://github.com/ggml-org/llama.cpp/releases"
+    }
+    return $Value
 }
 
 function Get-PinnedLlamaTag {
-    if ($LlamaCppTag) { return $LlamaCppTag.Trim() }
-    if ($env:LLMBENCH_LLAMACPP_TAG) { return $env:LLMBENCH_LLAMACPP_TAG.Trim() }
+    if ($LlamaCppTag) { return Assert-LlamaTag $LlamaCppTag.Trim() "Parameter -LlamaCppTag" }
+    if ($env:LLMBENCH_LLAMACPP_TAG) { return Assert-LlamaTag $env:LLMBENCH_LLAMACPP_TAG.Trim() "Umgebungsvariable LLMBENCH_LLAMACPP_TAG" }
     if (Test-Path $PinFile) {
         foreach ($line in (Get-Content $PinFile)) {
             $value = $line.Trim()
-            if ($value -and -not $value.StartsWith("#")) { return $value }
+            if ($value -and -not $value.StartsWith("#")) {
+                return Assert-LlamaTag $value "Datei llama-cpp-version.txt"
+            }
         }
     }
     return $null
@@ -137,7 +162,10 @@ function Resolve-LlamaCppRelease([string]$MainPattern, [string]$RuntimePattern) 
     $pinned = Get-PinnedLlamaTag
     if ($pinned) {
         Write-Host "Vorgegebener llama.cpp-Build: $pinned"
-        $release = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$pinned"
+        $release = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$pinned" -AllowMissing
+        if (-not $release) {
+            throw "Das llama.cpp-Release '$pinned' existiert nicht. Verfuegbare Tags: https://github.com/ggml-org/llama.cpp/releases"
+        }
         if (-not (Test-ReleaseHasAssets $release $MainPattern $RuntimePattern)) {
             $names = ($release.assets | ForEach-Object { $_.name }) -join "`n  - "
             throw "Im vorgegebenen Release $pinned gibt es kein passendes Windows-Paket.`nVorhandene Dateien:`n  - $names"

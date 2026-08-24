@@ -77,6 +77,15 @@
   PowerShell 5.1 las sie sonst als ANSI, was jeden Umlaut zerlegte
   ("Systemprüfung" wurde zu "SystemprÃ¼fung").
 - `START_BENCHMARK.bat` und `UPDATE_DEPENDENCIES.bat` reichen Argumente durch.
+- Der Wrapper übergibt die Parameter per Hashtable-Splatting an das
+  Core-Skript. Mit Array-Splatting konnte `-Config` als Wert durchrutschen,
+  sodass `benchmark.yaml` im nächsten Parameter landete. Beide Skripte
+  nutzen jetzt `[CmdletBinding()]` und binden gar nicht mehr positional.
+- Ein vorgegebener llama.cpp-Tag wird auf Plausibilität geprüft, und ein
+  nicht existierendes Release meldet das im Klartext statt als roher
+  HTTP-404 aus `Invoke-RestMethod`. Das GitHub-Anfragelimit wird ebenfalls
+  als solches benannt.
+- Neue Vorlage `llama-cpp-version.txt` im Projektordner.
 - Das Windows-Setup installiert das Paket jetzt mit den Web-Extras, wie
   `setup.bat` auch.
 

@@ -30,7 +30,39 @@ def get_url(url: str, timeout: int = 30) -> bytes:
         return response.read()
 
 
-def resolve_ref(explicit_ref: str | None, pin_file: Path) -> str:
+def resolve_latest_ref() -> str:
+    try:
+        atom = get_url(f"https://github.com/{REPO}/releases.atom", timeout=20).decode("utf-8", errors="ignore")
+        tags: list[tuple[int, str]] = []
+        for match in re.finditer(r"/releases/tag/(b(\d+))", atom):
+            tags.append((int(match.group(2)), match.group(1)))
+        if tags:
+            tags.sort(reverse=True)
+            return tags[0][1]
+    except Exception:
+        pass
+    return "master"
+
+
+def resolve_ref(
+    explicit_ref: str | None,
+    pin_file: Path,
+    runtime: Path,
+    source_root: Path,
+    force: bool,
+) -> str:
+    """Choose the llama.cpp ref without silently updating every launch.
+
+    Priority:
+    1. explicit --ref
+    2. LLMBENCH_LLAMACPP_TAG
+    3. llama-cpp-version.txt
+    4. already prepared usable source from a previous run
+    5. latest upstream release
+
+    With --force, item 4 is intentionally skipped so an unpinned setup can
+    refresh to the latest upstream release.
+    """
     if explicit_ref:
         return explicit_ref.strip()
 
@@ -42,18 +74,26 @@ def resolve_ref(explicit_ref: str | None, pin_file: Path) -> str:
     if pinned:
         return pinned
 
-    try:
-        atom = get_url(f"https://github.com/{REPO}/releases.atom", timeout=20).decode("utf-8", errors="ignore")
-        tags: list[tuple[int, str]] = []
-        for match in re.finditer(r"/releases/tag/(b(\d+))", atom):
-            tags.append((int(match.group(2)), match.group(1)))
-        if tags:
-            tags.sort(reverse=True)
-            return tags[0][1]
-    except Exception:
-        pass
+    if not force:
+        ref_file = runtime / "llama-source-ref.txt"
+        path_file = runtime / "llama-source-path.txt"
+        if ref_file.is_file():
+            previous_ref = ref_file.read_text(encoding="utf-8-sig", errors="ignore").strip()
+            previous_path = ""
+            if path_file.is_file():
+                previous_path = path_file.read_text(encoding="utf-8-sig", errors="ignore").strip()
 
-    return "master"
+            candidates: list[Path] = []
+            if previous_path:
+                candidates.append(Path(previous_path))
+            if previous_ref:
+                candidates.append(source_root / previous_ref)
+
+            if previous_ref and any((p / "CMakeLists.txt").is_file() for p in candidates):
+                print(f"Verwende bereits vorbereiteten llama.cpp-Stand: {previous_ref}")
+                return previous_ref
+
+    return resolve_latest_ref()
 
 
 def source_url(ref: str) -> str:
@@ -130,12 +170,7 @@ def get_short_work_root() -> Path:
 
 
 def write_source_metadata(runtime: Path, ref: str, source_dir: Path, work_root: Path, zip_path: Path) -> None:
-    """Persist source metadata without requiring the download cache to exist.
-
-    The extracted source tree is the build input. The ZIP is only a cache artifact
-    and may legitimately be removed between runs. A missing cache ZIP must never
-    invalidate an otherwise complete source tree.
-    """
+    """Persist source metadata without requiring the download cache to exist."""
     (runtime / "llama-source-ref.txt").write_text(ref, encoding="utf-8")
     (runtime / "llama-source-path.txt").write_text(str(source_dir), encoding="utf-8")
     (runtime / "llama-work-root.txt").write_text(str(work_root), encoding="utf-8")
@@ -144,9 +179,6 @@ def write_source_metadata(runtime: Path, ref: str, source_dir: Path, work_root: 
     if zip_path.is_file():
         hash_file.write_text(sha256(zip_path), encoding="ascii")
     else:
-        # Do not invent a checksum for a file that no longer exists. The pinned
-        # source ref still identifies the build input and ENSURE_LLAMA_CPP treats
-        # this checksum as optional metadata.
         hash_file.unlink(missing_ok=True)
         print("Hinweis: Source-Cache-ZIP fehlt; SHA-256-Metadatum wird uebersprungen.")
 
@@ -169,7 +201,7 @@ def main() -> int:
     cache.mkdir(parents=True, exist_ok=True)
     source_root.mkdir(parents=True, exist_ok=True)
 
-    ref = resolve_ref(args.ref or None, pin_file)
+    ref = resolve_ref(args.ref or None, pin_file, runtime, source_root, args.force)
     if not re.fullmatch(r"[A-Za-z0-9._-]+", ref):
         raise RuntimeError(f"Ungueltige llama.cpp-Source-Kennung: {ref!r}")
 

@@ -19,6 +19,17 @@ $PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
 $BuildToolsVenv = Join-Path $RuntimeRoot "build-tools"
 $PreparedRefFile = Join-Path $RuntimeRoot "llama-source-ref.txt"
 
+# llama.cpp besitzt sehr tiefe Source-Pfade. Unter Windows darf der eigentliche
+# Source-/Build-Workspace deshalb nicht unter einem langen Downloads-Pfad liegen.
+if ($env:LOCALAPPDATA) {
+    $ShortWorkRoot = Join-Path $env:LOCALAPPDATA "LLMBench"
+} else {
+    $ShortWorkRoot = Join-Path ([System.IO.Path]::GetTempPath()) "LLMBench"
+}
+New-Item -ItemType Directory -Force -Path $ShortWorkRoot | Out-Null
+$env:LLMBENCH_WORK_ROOT = $ShortWorkRoot
+Write-Host "Kurzer llama.cpp-Arbeitsordner: $ShortWorkRoot"
+
 if (-not (Test-Path $EnsurePython)) {
     throw "Python-Bootstrap fehlt: $EnsurePython"
 }
@@ -87,8 +98,6 @@ $env:PATH = "$BuildToolsBin;$env:PATH"
 Write-Host "CMake: $((& $BuildToolsCMake --version | Select-Object -First 1))"
 Write-Host "Ninja: $(& $BuildToolsNinja --version)"
 
-# GitHub-Source-ZIPs auf Windows nicht mehr mit Expand-Archive/Move-Item
-# vorbereiten. Python zipfile behandelt Dotfiles wie .clang-format robust.
 Write-Host ""
 Write-Host "=== llama.cpp Source vorbereiten ===" -ForegroundColor Cyan
 $prepareArgs = @($PrepareLlamaSource, "--project-root", $Root)
@@ -111,20 +120,13 @@ if (-not $PreparedRef) {
     throw "Source-Preparer war erfolgreich, hat aber keine Source-Ref hinterlegt."
 }
 
-# Genau denselben Ref an den Builder übergeben, damit dieser das bereits
-# vorbereitete Source-Verzeichnis verwendet und nicht erneut entpackt.
 $LlamaCppTag = $PreparedRef
 
-# ForceUpdate soll Source + Build neu erzeugen. Den Force-Schalter geben wir
-# nicht an ENSURE_LLAMA_CPP weiter, weil dessen alter Extraktionspfad sonst den
-# soeben robust vorbereiteten Source wieder löschen würde.
 if ($ForceUpdateLlamaCpp) {
     Remove-Item (Join-Path $Root "tools\llama.cpp") -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $RuntimeRoot "llama-build") -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $ShortWorkRoot "build") -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# CUDA-/llama.cpp-Setup separat vor dem Core ausführen. Bei einem nativen
-# Windows-Crash automatisch Eventlog, Exitcode, DLLs und CUDA-Umgebung sammeln.
 $llamaArgs = @{ LlamaCppTag = $LlamaCppTag }
 
 try {

@@ -430,7 +430,7 @@ $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 if (-not (Test-Path $VenvPython)) { throw "Python in .venv wurde nicht gefunden." }
 & $VenvPython -m pip install --upgrade pip setuptools wheel
 if ($LASTEXITCODE -ne 0) { throw "pip konnte nicht aktualisiert werden." }
-& $VenvPython -m pip install -e ".[web]"
+& $VenvPython -m pip install -e "."
 if ($LASTEXITCODE -ne 0) { throw "Projektabhaengigkeiten konnten nicht installiert werden." }
 
 Install-LlamaCpp

@@ -5,5 +5,3 @@ nvidia-ml-py>=12.560.30
 pydantic>=2.0
 # PDF-Bericht
 reportlab>=4.0
-streamlit>=1.30.0
-pandas>=2.0.0

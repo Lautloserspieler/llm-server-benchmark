@@ -18,7 +18,7 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e ".[web]"
+python -m pip install -e "."
 
 echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp

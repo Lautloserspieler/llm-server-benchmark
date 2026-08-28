@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any
 
 class BenchmarkBackend(abc.ABC):
     """Abstract base class for LLM benchmark backends."""
@@ -11,12 +11,12 @@ class BenchmarkBackend(abc.ABC):
     def run_benchmark(
         self,
         model_path: str,
-        profile: Dict[str, Any],
+        profile: dict[str, Any],
         kind: str,
         out_dir: Path,
-        bench_cfg: Dict[str, Any],
+        bench_cfg: dict[str, Any],
         on_progress=None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Runs a specific benchmark test."""
         ...
 
@@ -24,9 +24,9 @@ class BenchmarkBackend(abc.ABC):
     def start_server(
         self,
         model_path: str,
-        profile: Dict[str, Any],
-        endpoint_cfg: Dict[str, Any],
-        bench_cfg: Dict[str, Any],
+        profile: dict[str, Any],
+        endpoint_cfg: dict[str, Any],
+        bench_cfg: dict[str, Any],
         log_path: Path
     ) -> tuple[Any, str]:
         """Starts the server for endpoint testing."""
@@ -38,6 +38,6 @@ class BenchmarkBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def wait_health(self, base_url: str, timeout_s: float, headers: Optional[Dict[str, str]] = None) -> float:
+    def wait_health(self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
         """Waits for the server to become healthy."""
         ...

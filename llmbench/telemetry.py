@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import contextlib
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -14,8 +14,8 @@ class GpuSample:
     memory_used_bytes: int
     memory_total_bytes: int
     temperature_c: float
-    power_w: Optional[float]
-    compute_pids: List[int]
+    power_w: float | None
+    compute_pids: list[int]
 
 
 class TelemetryProvider(abc.ABC):
@@ -30,7 +30,7 @@ class TelemetryProvider(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def sample_gpus(self) -> List[GpuSample]:
+    def sample_gpus(self) -> list[GpuSample]:
         """Sample current GPU metrics."""
         ...
 
@@ -46,7 +46,7 @@ class NvidiaProvider(TelemetryProvider):
     def __init__(self) -> None:
         super().__init__()
         self._nvml: Any = None
-        self._handles: List[Any] = []
+        self._handles: list[Any] = []
 
     def initialize(self) -> bool:
         try:
@@ -63,7 +63,7 @@ class NvidiaProvider(TelemetryProvider):
             self.initialized = False
             return False
 
-    def sample_gpus(self) -> List[GpuSample]:
+    def sample_gpus(self) -> list[GpuSample]:
         if not self._nvml:
             return []
 
@@ -78,7 +78,7 @@ class NvidiaProvider(TelemetryProvider):
                 with contextlib.suppress(Exception):
                     power_w = self._nvml.nvmlDeviceGetPowerUsage(h) / 1000.0
 
-                pids: List[int] = []
+                pids: list[int] = []
                 with contextlib.suppress(Exception):
                     pids = [
                         int(p.pid)
@@ -117,7 +117,7 @@ class DefaultProvider(TelemetryProvider):
         self.initialized = True
         return True
 
-    def sample_gpus(self) -> List[GpuSample]:
+    def sample_gpus(self) -> list[GpuSample]:
         return []
 
     def shutdown(self) -> None:

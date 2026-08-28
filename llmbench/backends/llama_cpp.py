@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import subprocess
-import asyncio
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any
 
 from .base import BenchmarkBackend
 from ..endpoint import (
@@ -23,12 +21,12 @@ class LlamaCppBackend(BenchmarkBackend):
     def run_benchmark(
         self,
         model_path: str,
-        profile: Dict[str, Any],
+        profile: dict[str, Any],
         kind: str,
         out_dir: Path,
-        bench_cfg: Dict[str, Any],
+        bench_cfg: dict[str, Any],
         on_progress=None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return run_llama_bench(
             self.llama_bench_exe,
             model_path,
@@ -42,9 +40,9 @@ class LlamaCppBackend(BenchmarkBackend):
     def start_server(
         self,
         model_path: str,
-        profile: Dict[str, Any],
-        endpoint_cfg: Dict[str, Any],
-        bench_cfg: Dict[str, Any],
+        profile: dict[str, Any],
+        endpoint_cfg: dict[str, Any],
+        bench_cfg: dict[str, Any],
         log_path: Path
     ) -> tuple[Any, str]:
         return start_llama_server(
@@ -59,5 +57,5 @@ class LlamaCppBackend(BenchmarkBackend):
     def stop_server(self, proc: Any) -> None:
         stop_llama_server(proc)
 
-    def wait_health(self, base_url: str, timeout_s: float, headers: Optional[Dict[str, str]] = None) -> float:
+    def wait_health(self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
         return wait_health(base_url, timeout_s, headers)

@@ -56,5 +56,33 @@ endpoint:
     Erklaere in einem technisch praezisen Absatz, warum reproduzierbare Benchmarks
     fuer lokale LLM-Server wichtig sind.
 
+soak:
+  # Startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt beide
+  # unter Dauerlast, um Throttling durch Temperatur sichtbar zu machen. Braucht
+  # je Modell ein Profil mit gpu_layers: 0 (CPU) und eins mit gpu_layers != 0
+  # (GPU) - `llmbench bootstrap` legt beide automatisch an.
+  enabled: true
+  # null = automatisch das erste Profil mit gpu_layers: 0 bzw. != 0 verwenden.
+  cpu_profile: null
+  gpu_profile: null
+  host: "127.0.0.1"
+  cpu_port: 8090
+  gpu_port: 8091
+  duration_short_seconds: 300
+  duration_long_seconds: 1800
+  sample_interval_seconds: 2.0
+  concurrency: 2
+  max_tokens: 256
+  temperature: 0.0
+  seed: 42
+  context_size: 8192
+  startup_timeout_seconds: 300
+  # Ab diesem Rueckgang der Tokens/s zwischen frueher und spaeter Laufzeit
+  # gilt Throttling als wahrscheinlich.
+  throttle_tps_drop_fraction: 0.15
+  prompt: >-
+    Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei Dauerlast
+    thermisch geregelt werden.
+
 # Wird durch die automatische Modellerkennung ergaenzt.
 models: []

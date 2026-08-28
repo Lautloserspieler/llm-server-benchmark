@@ -179,6 +179,46 @@ def _endpoint_table(ep: dict[str, Any]) -> str:
     )
 
 
+def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
+    if not soak_runs:
+        return ""
+    rows = []
+    for run in soak_runs:
+        if run.get("status") != "ok":
+            rows.append(
+                f"<tr><td>{esc(run.get('label'))}</td>"
+                f"<td colspan='6'>{status_cell(run.get('status'))} {esc(run.get('error'))}</td></tr>"
+            )
+            continue
+        for path_label, path_data in (("CPU", run.get("cpu") or {}), ("GPU", run.get("gpu") or {})):
+            throttle = (
+                "<span class='status-timeout'>Ja</span>" if path_data.get("throttling_suspected") else "Nein"
+            )
+            rows.append(
+                "<tr>"
+                f"<td>{esc(run.get('label'))}</td>"
+                f"<td>{esc(path_label)}</td>"
+                f"<td class='num'>{fnum(path_data.get('avg_tps'))}</td>"
+                f"<td class='num'>{fnum(path_data.get('early_window_avg_tps'))}</td>"
+                f"<td class='num'>{fnum(path_data.get('late_window_avg_tps'))}</td>"
+                f"<td class='num'>{esc(path_data.get('successful', 0))}/{esc(path_data.get('requests', 0))}</td>"
+                f"<td>{throttle}</td>"
+                "</tr>"
+            )
+    temp_parts = []
+    for run in soak_runs:
+        for gpu in (run.get("telemetry") or {}).get("gpus") or []:
+            if gpu.get("max_temperature_c"):
+                temp_parts.append(f"{esc(run.get('label'))}: GPU {esc(gpu.get('index', 0))} {fnum(gpu.get('max_temperature_c'), 0)} °C")
+    temp_note = f"<p class='muted small'>Maximaltemperatur waehrend der Dauerlast: {', '.join(temp_parts)}</p>" if temp_parts else ""
+    return (
+        "<div class='table-wrap'><table><thead><tr><th>Dauer</th><th>Pfad</th>"
+        "<th class='num'>Ø Tokens/s</th><th class='num'>Frueh</th><th class='num'>Spaet</th>"
+        "<th class='num'>Erfolgreich</th><th>Throttling</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table></div>" + temp_note
+    )
+
+
 def _provenance_block(summary: dict[str, Any]) -> str:
     tools = summary.get("tools") or {}
     bench = (tools.get("llama_bench") or {}).get("binary") or {}
@@ -270,6 +310,9 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
         if m.get("endpoint"):
             body.append("<h3>Endpoint-/Multi-User-Test</h3>")
             body.append(_endpoint_table(m["endpoint"]))
+        if m.get("soak"):
+            body.append("<h3>Dauerlast-Test (CPU + GPU gleichzeitig)</h3>")
+            body.append(_soak_table(m["soak"]))
 
     body.append("<p class='muted small'>Erzeugt mit llm-server-benchmark.</p></main></body></html>")
     Path(path).write_text("".join(body), encoding="utf-8")

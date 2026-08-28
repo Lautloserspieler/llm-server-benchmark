@@ -17,6 +17,7 @@ from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html
+from .soak import find_soak_profiles, run_soak_test
 from .tuner import tune_gpu_layers
 from .backends.llama_cpp import LlamaCppBackend
 from .utils import (
@@ -30,6 +31,14 @@ from .utils import (
 )
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
+SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
+
+
+def _soak_profiles_for(model: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    soak_cfg = cfg.get("soak") or {}
+    if not soak_cfg.get("enabled", True):
+        return None, None
+    return find_soak_profiles(model, soak_cfg)
 
 
 def count_tests(cfg: dict[str, Any], selected_model: str | None = None) -> int:
@@ -39,6 +48,9 @@ def count_tests(cfg: dict[str, Any], selected_model: str | None = None) -> int:
         if selected_model and model["name"].lower() != selected_model.lower():
             continue
         total += len(model.get("profiles") or []) * len(BENCH_KINDS)
+        cpu_profile, gpu_profile = _soak_profiles_for(model, cfg)
+        if cpu_profile and gpu_profile:
+            total += len(SOAK_LABELS)
     return total
 
 
@@ -194,6 +206,48 @@ def run_suite(
                     reporter.note(warn)
                 profile_result["benchmarks"][kind] = result
             model_result["profiles"].append(profile_result)
+
+        soak_cfg = dict(cfg.get("soak", {}))
+        if soak_cfg.get("enabled", True):
+            cpu_profile, gpu_profile = find_soak_profiles(model, soak_cfg)
+            if not (cpu_profile and gpu_profile):
+                msg = (
+                    f"{model['name']}: Soak-Test uebersprungen - es fehlt ein CPU-Profil "
+                    "(gpu_layers: 0) oder ein GPU-Profil. `llmbench bootstrap` neu ausfuehren "
+                    "oder soak.cpu_profile/soak.gpu_profile explizit setzen."
+                )
+                summary["warnings"].append(msg)
+                reporter.note(msg)
+            else:
+                soak_dir = ensure_dir(model_dir / "soak")
+                model_result["soak"] = []
+                for label, duration_key in SOAK_LABELS:
+                    duration_seconds = int(soak_cfg.get(duration_key, 300))
+                    reporter.test_started(
+                        model["name"], f"{cpu_profile['name']} + {gpu_profile['name']}", f"soak_{label}"
+                    )
+
+                    def _on_tick(remaining: float, sample: dict[str, Any] | None, _label: str = label) -> None:
+                        reporter.progress(note=f"Dauerlast {_label} · noch {int(remaining)}s", sample=sample)
+
+                    result = run_soak_test(
+                        backend, meta["path"], cpu_profile, gpu_profile, soak_cfg, cfg["benchmark"],
+                        soak_dir, duration_seconds, label, on_tick=_on_tick,
+                    )
+                    rows = []
+                    if result.get("status") == "ok":
+                        if result["cpu"].get("avg_tps") is not None:
+                            rows.append({"test": "soak_cpu_tps", "avg_ts": result["cpu"]["avg_tps"], "stddev_ts": 0.0})
+                        if result["gpu"].get("avg_tps") is not None:
+                            rows.append({"test": "soak_gpu_tps", "avg_ts": result["gpu"]["avg_tps"], "stddev_ts": 0.0})
+                    reporter.test_finished(result.get("status", "failed"), rows, result.get("error"))
+                    if result.get("throttling_suspected"):
+                        warn = f"{model['name']}/soak_{label}: moegliches Throttling erkannt (Tokens/s fallen ueber die Laufzeit deutlich)."
+                        summary["warnings"].append(warn)
+                        reporter.note(warn)
+                    for warn in (result.get("telemetry") or {}).get("warnings", []):
+                        summary["warnings"].append(f"{model['name']}/soak_{label}: {warn}")
+                    model_result["soak"].append(result)
 
         endpoint_cfg = dict(cfg.get("endpoint", {}))
         endpoint_cfg.update(model.get("endpoint", {}) or {})

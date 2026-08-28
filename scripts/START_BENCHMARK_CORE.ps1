@@ -475,5 +475,18 @@ if ($choice -eq "1") { $duration = "short" }
 elseif ($choice -eq "3") { $duration = "long" }
 
 Write-Host "Verwende Dauer: $duration"
-& $VenvPython -m llmbench run --config $Config --duration $duration
+
+Write-Host ""
+Write-Host "Womit soll getestet werden?"
+Write-Host "  1: Nur CPU"
+Write-Host "  2: Nur GPU"
+Write-Host "  3: CPU und GPU gleichzeitig (Standard, inkl. Dauerlast-Test)"
+$hwChoice = Read-Host "Auswahl [1-3, Standard=3]"
+
+$hardware = "both"
+if ($hwChoice -eq "1") { $hardware = "cpu" }
+elseif ($hwChoice -eq "2") { $hardware = "gpu" }
+
+Write-Host "Verwende Hardware-Auswahl: $hardware"
+& $VenvPython -m llmbench run --config $Config --duration $duration --hardware $hardware
 if ($LASTEXITCODE -ne 0) { throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)." }

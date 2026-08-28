@@ -89,3 +89,34 @@ def test_csv_contains_fingerprint_for_successful_rows(tmp_path: Path):
     assert rows[0]["avg_ts"] == "42.0"
     assert rows[0]["status"] == "ok"
     assert rows[0]["config_fingerprint"] == "abc123"
+
+
+def test_report_shows_soak_results_and_throttling_flag(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [{
+        "label": "short",
+        "status": "ok",
+        "cpu": {"avg_tps": 20.0, "early_window_avg_tps": 21.0, "late_window_avg_tps": 19.0,
+                "successful": 8, "requests": 8, "throttling_suspected": False},
+        "gpu": {"avg_tps": 90.0, "early_window_avg_tps": 100.0, "late_window_avg_tps": 60.0,
+                "successful": 30, "requests": 30, "throttling_suspected": True,
+                "note": "Tokens/s gefallen"},
+        "telemetry": {"gpus": [{"index": 0, "max_temperature_c": 84.0}]},
+    }]
+    out = tmp_path / "report.html"
+    generate_run_html(summary, out)
+    html = out.read_text(encoding="utf-8")
+    assert "Dauerlast-Test" in html
+    assert "84" in html
+    assert "Ja" in html
+
+
+def test_report_marks_failed_soak_run(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [
+        {"label": "long", "status": "failed", "error": "Server nicht erreichbar"}
+    ]
+    out = tmp_path / "report.html"
+    generate_run_html(summary, out)
+    html = out.read_text(encoding="utf-8")
+    assert "Server nicht erreichbar" in html

@@ -38,7 +38,7 @@ class ResourceMonitor:
     _stop: threading.Event = field(default_factory=threading.Event)
     _thread: threading.Thread | None = None
     _provider: Any = None
-    _target_pid: int | None = None
+    _target_pids: set[int] = field(default_factory=set)
     _own_pids: set[int] = field(default_factory=set)
     _seen_gpu_pids: set[int] = field(default_factory=set)
     _baseline: dict[str, Any] | None = None
@@ -48,7 +48,7 @@ class ResourceMonitor:
     def start(self) -> None:
         self._samples = []
         self._seen_gpu_pids = set()
-        self._own_pids = {os.getpid()}
+        self._own_pids = {os.getpid()} | self._target_pids
         self._stop.clear()
         psutil.cpu_percent(interval=None)
         self._provider = get_telemetry_provider()
@@ -69,20 +69,29 @@ class ResourceMonitor:
     def set_target_pid(self, pid: int | None) -> None:
         """Prozess, dessen Last gemessen werden soll. Alles andere auf der GPU
         gilt danach als Fremdlast und wird im Ergebnis vermerkt."""
-        self._target_pid = pid
         if pid:
+            self._target_pids.add(pid)
             self._own_pids.add(pid)
+
+    def set_target_pids(self, pids: list[int]) -> None:
+        """Wie set_target_pid, aber fuer mehrere gleichzeitig ueberwachte
+        Prozesse - z. B. den CPU- und den GPU-Server im Soak-Test, die
+        beide bewusst gleichzeitig laufen und sich nicht gegenseitig als
+        Fremdlast melden sollen."""
+        for pid in pids:
+            self.set_target_pid(pid)
 
     # ----------------------------------------------------------------- sampling
 
     def _refresh_own_pids(self) -> None:
-        if not self._target_pid:
+        if not self._target_pids:
             return
-        try:
-            proc = psutil.Process(self._target_pid)
-            self._own_pids.update(child.pid for child in proc.children(recursive=True))
-        except Exception:
-            pass
+        for target_pid in list(self._target_pids):
+            try:
+                proc = psutil.Process(target_pid)
+                self._own_pids.update(child.pid for child in proc.children(recursive=True))
+            except Exception:
+                pass
 
     def _gpu_sample(self) -> list[dict[str, Any]]:
         if not self._provider:

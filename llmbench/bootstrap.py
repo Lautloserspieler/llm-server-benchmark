@@ -121,7 +121,13 @@ def _default_model_entry(path: Path, root: Path, name: str) -> dict[str, Any]:
         "name": name,
         "path": _rel_or_abs(path, root),
         "quality_gate": "Nicht bewertet",
-        "profiles": [{"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"}],
+        # CPU-Only ist Voraussetzung fuer den Soak-Test (soak.cpu_profile/gpu_profile
+        # werden sonst nicht automatisch gefunden) und macht nebenbei den reinen
+        # CPU-Pfad direkt vergleichbar, ohne dass jemand von Hand ein Profil anlegt.
+        "profiles": [
+            {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"},
+            {"name": "CPU-Only", "gpu_layers": 0, "threads": "auto"},
+        ],
     }
 
 

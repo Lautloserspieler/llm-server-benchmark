@@ -102,6 +102,34 @@ class EndpointConfig(BaseModel):
             raise ValueError("Alle concurrency-Werte muessen ganze Zahlen >= 1 sein")
         return v
 
+class SoakConfig(BaseModel):
+    # Startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt sie
+    # ueber laengere Zeit unter Dauerlast, um Throttling durch Temperatur
+    # sichtbar zu machen - anders als die kurzen pp/tg-Tests, die abgeschlossen
+    # sind, bevor die Hardware ueberhaupt ins thermische Gleichgewicht kommt.
+    enabled: bool = True
+    cpu_profile: str | None = None
+    gpu_profile: str | None = None
+    host: str = "127.0.0.1"
+    cpu_port: int = 8090
+    gpu_port: int = 8091
+    duration_short_seconds: int = Field(300, gt=0)
+    duration_long_seconds: int = Field(1800, gt=0)
+    sample_interval_seconds: float = 2.0
+    concurrency: int = Field(2, ge=1)
+    max_tokens: int = 256
+    temperature: float = 0.0
+    seed: int = 42
+    context_size: int = 8192
+    startup_timeout_seconds: int = 300
+    # Ab diesem Rueckgang der Tokens/s zwischen erstem und letztem Fuenftel
+    # der Laufzeit gilt Throttling als wahrscheinlich.
+    throttle_tps_drop_fraction: float = Field(0.15, gt=0, lt=1)
+    prompt: str = (
+        "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
+        "Dauerlast thermisch geregelt werden."
+    )
+
 class ProfileConfig(BaseModel):
     name: str
     gpu_layers: int
@@ -120,6 +148,7 @@ class RootConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     endpoint: EndpointConfig = Field(default_factory=EndpointConfig)
+    soak: SoakConfig = Field(default_factory=SoakConfig)
     models: list[ModelConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -194,6 +223,28 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "prompt": (
             "Erklaere in einem technisch praezisen Absatz, warum reproduzierbare "
             "Benchmarks fuer lokale LLM-Server wichtig sind."
+        ),
+    },
+    "soak": {
+        "enabled": True,
+        "cpu_profile": None,
+        "gpu_profile": None,
+        "host": "127.0.0.1",
+        "cpu_port": 8090,
+        "gpu_port": 8091,
+        "duration_short_seconds": 300,
+        "duration_long_seconds": 1800,
+        "sample_interval_seconds": 2.0,
+        "concurrency": 2,
+        "max_tokens": 256,
+        "temperature": 0.0,
+        "seed": 42,
+        "context_size": 8192,
+        "startup_timeout_seconds": 300,
+        "throttle_tps_drop_fraction": 0.15,
+        "prompt": (
+            "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
+            "Dauerlast thermisch geregelt werden."
         ),
     },
     "models": [],

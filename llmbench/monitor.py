@@ -10,7 +10,7 @@ from typing import Any
 
 import psutil
 
-from .telemetry import get_telemetry_provider, GpuSample
+from .telemetry import get_telemetry_provider
 
 
 def _agg(items: list[dict[str, Any]], key: str) -> tuple[float | None, float | None]:
@@ -89,7 +89,7 @@ class ResourceMonitor:
             return []
         samples = self._provider.sample_gpus()
         out = []
-        for idx, s in enumerate(samples):
+        for s in samples:
             self._seen_gpu_pids.update(s.compute_pids)
             out.append(
                 {

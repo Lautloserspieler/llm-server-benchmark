@@ -5,10 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # Werte, die das Messergebnis beeinflussen. Nur diese gehen in den
 # Konfigurations-Fingerabdruck ein, der zwei Serverlaeufe vergleichbar macht.
@@ -30,7 +30,7 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 
 class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"
-    server_name: Optional[str] = None
+    server_name: str | None = None
     output_dir: str = "results"
     hash_models: bool = True
     hash_tools: bool = True
@@ -50,9 +50,9 @@ class BenchmarkConfig(BaseModel):
     resource_sample_interval: float = 0.5
     timeout_seconds: float = Field(3600.0, gt=0)
     auto_tune: bool = False
-    prompt_tokens: List[int] = Field(default_factory=lambda: [512, 4096, 8192])
-    generation_tokens: List[int] = Field(default_factory=lambda: [128, 512])
-    context_depths: List[int] = Field(default_factory=lambda: [0, 8192, 32768, 65536, 130000])
+    prompt_tokens: list[int] = Field(default_factory=lambda: [512, 4096, 8192])
+    generation_tokens: list[int] = Field(default_factory=lambda: [128, 512])
+    context_depths: list[int] = Field(default_factory=lambda: [0, 8192, 32768, 65536, 130000])
     long_context_prompt_tokens: int = 512
     long_context_generation_tokens: int = 128
 
@@ -65,14 +65,21 @@ class BenchmarkConfig(BaseModel):
             raise ValueError("Alle Eintraege muessen nicht-negative ganze Zahlen sein")
         return v
 
+    @field_validator("flash_attention", mode="before")
+    @classmethod
+    def validate_flash_attention(cls, v):
+        # Das Web-UI schickte frueher das Boolean False statt "off"; ohne diese
+        # Normalisierung vor der Pydantic-Typpruefung scheitert die Validierung.
+        return normalize_flash_attention(v)
+
 class EndpointConfig(BaseModel):
     enabled: bool = False
     auto_start: bool = True
     base_url: str = "http://127.0.0.1:8080"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     context_size: int = 32768
     parallel_slots: int = 8
-    concurrency: List[int] = Field(default_factory=lambda: [1, 2, 4, 8])
+    concurrency: list[int] = Field(default_factory=lambda: [1, 2, 4, 8])
     requests_per_level: int = 8
     warmup_requests: int = 2
     max_tokens: int = 256
@@ -102,10 +109,10 @@ class ProfileConfig(BaseModel):
 class ModelConfig(BaseModel):
     name: str
     path: str
-    profiles: List[ProfileConfig]
-    quality_gate: Optional[Any] = None
-    notes: Optional[str] = None
-    endpoint: Optional[dict] = None
+    profiles: list[ProfileConfig]
+    quality_gate: Any | None = None
+    notes: str | None = None
+    endpoint: dict | None = None
 
 class RootConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -113,7 +120,35 @@ class RootConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     endpoint: EndpointConfig = Field(default_factory=EndpointConfig)
-    models: List[ModelConfig] = Field(default_factory=list)
+    models: list[ModelConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_names(self):
+        # Zwei Modelle oder Profile mit gleichem Namen ueberschreiben sich
+        # gegenseitig im Ergebnisordner, siehe README "Reproduzierbarkeit".
+        issues: list[str] = []
+        seen_models: dict[str, int] = {}
+        for model in self.models:
+            seen_models[model.name] = seen_models.get(model.name, 0) + 1
+        duplicate_models = sorted(name for name, count in seen_models.items() if count > 1)
+        if duplicate_models:
+            issues.append("Doppelte Modellnamen: " + ", ".join(duplicate_models))
+
+        for model in self.models:
+            seen_profiles: dict[str, int] = {}
+            for profile in model.profiles:
+                key = profile.name.lower()
+                seen_profiles[key] = seen_profiles.get(key, 0) + 1
+            duplicates = sorted(name for name, count in seen_profiles.items() if count > 1)
+            if duplicates:
+                issues.append(
+                    f"Profilnamen des Modells '{model.name}' sind nicht eindeutig: "
+                    + ", ".join(duplicates)
+                )
+
+        if issues:
+            raise ValueError("; ".join(issues))
+        return self
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "project": {
@@ -182,9 +217,10 @@ def load_config(path: str | Path) -> dict[str, Any]:
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
 
-    # Validierung via Pydantic
-    RootConfig(**cfg_dict)
-
+    # Keine Validierung hier: ein ungueltiges RootConfig(**cfg_dict) wuerde mit
+    # einer rohen ValidationError abbrechen. validate_config() liefert
+    # stattdessen lesbare Fehlermeldungen; der Aufrufer (cli.py) ruft es
+    # unmittelbar nach load_config() auf.
     cfg_dict["_config_path"] = str(p.resolve())
     cfg_dict["_config_dir"] = str(p.resolve().parent)
     return cfg_dict

@@ -19,11 +19,11 @@ if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 fi
 
-echo "[+] Installiere llmbench inklusive Web-Dashboard..."
+echo "[+] Installiere llmbench..."
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[web]"
+python -m pip install -e "."
 
 echo ""
 echo "[OK] Installation abgeschlossen."

@@ -23,11 +23,11 @@ if not exist .venv (
     if !errorlevel! neq 0 goto :fail
 )
 
-echo [+] Installiere llmbench inklusive Web-Dashboard...
+echo [+] Installiere llmbench...
 call .venv\Scripts\activate
 python -m pip install --upgrade pip
 if !errorlevel! neq 0 goto :fail
-python -m pip install -e ".[web]"
+python -m pip install -e "."
 if !errorlevel! neq 0 goto :fail
 
 echo.

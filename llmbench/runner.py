@@ -10,13 +10,10 @@ from . import __version__
 from .config import config_fingerprint, public_config, resolve_path
 from .endpoint import (
     run_endpoint_load,
-    start_llama_server,
-    stop_llama_server,
-    wait_health,
     run_sanity_check,
 )
 from .hardware import collect_hardware
-from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build, run_llama_bench
+from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html

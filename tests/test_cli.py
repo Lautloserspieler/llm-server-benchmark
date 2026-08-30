@@ -10,6 +10,7 @@ def test_build_parser_run_defaults():
     assert args.config == "benchmark.yaml"
     assert args.model is None
     assert args.duration is None
+    assert args.hardware == "both"
     assert args.skip_endpoint is False
     assert args.plain is False
 
@@ -17,13 +18,21 @@ def test_build_parser_run_defaults():
 def test_build_parser_run_accepts_all_options():
     args = build_parser().parse_args([
         "run", "--config", "custom.yaml", "--model", "Qwen", "--duration", "short",
-        "--skip-endpoint", "--plain",
+        "--hardware", "cpu", "--skip-endpoint", "--plain",
     ])
     assert args.config == "custom.yaml"
     assert args.model == "Qwen"
     assert args.duration == "short"
+    assert args.hardware == "cpu"
     assert args.skip_endpoint is True
     assert args.plain is True
+
+
+def test_build_parser_run_rejects_invalid_hardware_choice():
+    import pytest
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["run", "--hardware", "npu"])
 
 
 def test_build_parser_compare_requires_at_least_one_input():
@@ -54,6 +63,24 @@ def test_main_run_reports_config_errors_and_exits_2(tmp_path: Path, capsys):
     out = capsys.readouterr()
     assert rc == 2
     assert "Konfigurationsfehler" in out.err
+
+
+def test_main_run_passes_hardware_choice_to_run_suite(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "benchmark.yaml"
+    config_path.write_text(
+        "models:\n  - name: M\n    path: model.gguf\n    profiles:\n      - name: GPU\n        gpu_layers: -1\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def _fake_run_suite(_cfg, **kwargs):
+        captured.update(kwargs)
+        return tmp_path
+
+    monkeypatch.setattr("llmbench.cli.run_suite", _fake_run_suite)
+    rc = main(["run", "--config", str(config_path), "--hardware", "gpu"])
+    assert rc == 0
+    assert captured["hardware_target"] == "gpu"
 
 
 def test_main_doctor_json_reports_status(tmp_path: Path, monkeypatch, capsys):

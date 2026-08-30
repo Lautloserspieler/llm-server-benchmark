@@ -32,6 +32,17 @@ from .utils import (
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
 SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
+HARDWARE_TARGETS = ("cpu", "gpu", "both")
+
+
+def filter_profiles_by_hardware(profiles: list[dict[str, Any]], hardware_target: str) -> list[dict[str, Any]]:
+    """Waehlt Profile nach `gpu_layers`: 0 gilt als CPU, alles andere als GPU
+    (auch Hybrid-Profile mit teilweisem Offload)."""
+    if hardware_target == "cpu":
+        return [p for p in profiles if int(p.get("gpu_layers", -1)) == 0]
+    if hardware_target == "gpu":
+        return [p for p in profiles if int(p.get("gpu_layers", -1)) != 0]
+    return list(profiles)
 
 
 def _soak_profiles_for(model: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -41,16 +52,20 @@ def _soak_profiles_for(model: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
     return find_soak_profiles(model, soak_cfg)
 
 
-def count_tests(cfg: dict[str, Any], selected_model: str | None = None) -> int:
+def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware_target: str = "both") -> int:
     """Wie viele Einzeltests stehen an. Basis der Restzeitschaetzung."""
     total = 0
     for model in cfg.get("models", []):
         if selected_model and model["name"].lower() != selected_model.lower():
             continue
-        total += len(model.get("profiles") or []) * len(BENCH_KINDS)
-        cpu_profile, gpu_profile = _soak_profiles_for(model, cfg)
-        if cpu_profile and gpu_profile:
-            total += len(SOAK_LABELS)
+        profiles = filter_profiles_by_hardware(model.get("profiles") or [], hardware_target)
+        total += len(profiles) * len(BENCH_KINDS)
+        # Der Soak-Test braucht CPU und GPU gleichzeitig - bei einer einseitigen
+        # Auswahl widerspraeche er ihr, deshalb entfaellt er dann.
+        if hardware_target == "both":
+            cpu_profile, gpu_profile = _soak_profiles_for(model, cfg)
+            if cpu_profile and gpu_profile:
+                total += len(SOAK_LABELS)
     return total
 
 
@@ -82,8 +97,9 @@ def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
     return info
 
 
-def _resolve_endpoint_profile(model: dict[str, Any], endpoint_cfg: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-    profiles = model.get("profiles") or []
+def _resolve_endpoint_profile(
+    profiles: list[dict[str, Any]], model_name: str, endpoint_cfg: dict[str, Any]
+) -> tuple[dict[str, Any], str | None]:
     wanted = endpoint_cfg.get("profile")
     if not wanted:
         return profiles[0], None
@@ -92,7 +108,8 @@ def _resolve_endpoint_profile(model: dict[str, Any], endpoint_cfg: dict[str, Any
         return match, None
     return profiles[0], (
         f"Profil '{wanted}' aus endpoint.profile existiert bei Modell "
-        f"'{model.get('name')}' nicht. Stattdessen wurde '{profiles[0].get('name')}' verwendet."
+        f"'{model_name}' nicht (oder passt nicht zur Hardware-Auswahl). "
+        f"Stattdessen wurde '{profiles[0].get('name')}' verwendet."
     )
 
 
@@ -101,7 +118,10 @@ def run_suite(
     selected_model: str | None = None,
     skip_endpoint: bool = False,
     reporter: Reporter | None = None,
+    hardware_target: str = "both",
 ) -> Path:
+    if hardware_target not in HARDWARE_TARGETS:
+        raise ValueError(f"Ungueltige Hardware-Auswahl: {hardware_target!r}. Erlaubt: {HARDWARE_TARGETS}")
     reporter = reporter or make_reporter()
     server_name = cfg["project"].get("server_name") or hostname()
     output_root = Path(resolve_path(cfg["project"]["output_dir"], cfg))
@@ -132,7 +152,7 @@ def run_suite(
     }
 
     build_ids: set[str] = set()
-    reporter.run_started(server_name, count_tests(cfg, selected_model))
+    reporter.run_started(server_name, count_tests(cfg, selected_model, hardware_target))
 
     for model in cfg["models"]:
         if selected_model and model["name"].lower() != selected_model.lower():
@@ -170,7 +190,16 @@ def run_suite(
             write_json(run_dir / "summary.partial.json", summary)
             continue
 
-        for profile in model.get("profiles", []):
+        profiles = filter_profiles_by_hardware(model.get("profiles") or [], hardware_target)
+        if not profiles:
+            msg = (
+                f"{model['name']}: Kein Profil passt zur Hardware-Auswahl '{hardware_target}' - "
+                "Modell wird uebersprungen."
+            )
+            summary["warnings"].append(msg)
+            reporter.note(msg)
+
+        for profile in profiles:
             profile_dir = ensure_dir(model_dir / safe_name(profile["name"]))
             profile_result: dict[str, Any] = {
                 "name": profile["name"],
@@ -208,7 +237,13 @@ def run_suite(
             model_result["profiles"].append(profile_result)
 
         soak_cfg = dict(cfg.get("soak", {}))
-        if soak_cfg.get("enabled", True):
+        if hardware_target != "both":
+            if soak_cfg.get("enabled", True):
+                reporter.note(
+                    f"{model['name']}: Soak-Test uebersprungen - er braucht CPU und GPU gleichzeitig, "
+                    f"die Auswahl war aber '{hardware_target}'."
+                )
+        elif soak_cfg.get("enabled", True):
             cpu_profile, gpu_profile = find_soak_profiles(model, soak_cfg)
             if not (cpu_profile and gpu_profile):
                 msg = (
@@ -251,8 +286,13 @@ def run_suite(
 
         endpoint_cfg = dict(cfg.get("endpoint", {}))
         endpoint_cfg.update(model.get("endpoint", {}) or {})
-        if endpoint_cfg.get("enabled") and not skip_endpoint:
-            profile, note = _resolve_endpoint_profile(model, endpoint_cfg)
+        if endpoint_cfg.get("enabled") and not skip_endpoint and not profiles:
+            summary["warnings"].append(
+                f"{model['name']}: Endpoint-Test uebersprungen - kein Profil passt zur Hardware-Auswahl "
+                f"'{hardware_target}'."
+            )
+        elif endpoint_cfg.get("enabled") and not skip_endpoint:
+            profile, note = _resolve_endpoint_profile(profiles, model["name"], endpoint_cfg)
             if note:
                 summary["warnings"].append(note)
             endpoint_dir = ensure_dir(model_dir / "endpoint")

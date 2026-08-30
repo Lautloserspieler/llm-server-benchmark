@@ -227,6 +227,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", default="benchmark.yaml")
     run.add_argument("--model", default=None, help="Nur ein benanntes Modell testen")
     run.add_argument("--duration", choices=["short", "medium", "long"], default=None, help="Vordefinierte Dauer: short, medium oder long")
+    run.add_argument(
+        "--hardware",
+        choices=["cpu", "gpu", "both"],
+        default="both",
+        help="Nur CPU-, nur GPU-Profile oder beides testen (Standard: both). "
+             "Der Soak-Test laeuft nur bei 'both', weil er CPU und GPU gleichzeitig braucht.",
+    )
     run.add_argument("--skip-endpoint", action="store_true")
     run.add_argument(
         "--plain",
@@ -297,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             selected_model=args.model,
             skip_endpoint=args.skip_endpoint,
             reporter=make_reporter(force_plain=args.plain),
+            hardware_target=args.hardware,
         )
         print(f"\nBenchmark abgeschlossen: {out}")
         pdf = out / "report.pdf"

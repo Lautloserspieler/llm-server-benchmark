@@ -28,6 +28,21 @@
   Soak-Test nicht gegenseitig als Fremdlast melden.
 - Abschaltbar ueber `soak.enabled: false`.
 
+### Hardware-Auswahl (`--hardware`)
+
+- Neue Option `llmbench run --hardware {cpu,gpu,both}` (Standard `both`):
+  beschraenkt den Lauf auf Profile mit `gpu_layers: 0` (`cpu`), auf Profile
+  mit `gpu_layers` ungleich 0 (`gpu`, inklusive Hybrid-Profile) oder testet
+  alle Profile (`both`).
+- Der Soak-Test laeuft nur bei `both`, da er CPU und GPU gleichzeitig
+  braucht; bei `cpu` oder `gpu` wird er uebersprungen und das steht als
+  Hinweis im Bericht.
+- Passt ein Modell zur gewaehlten Hardware kein Profil, wird es
+  uebersprungen (Hinweis im Bericht) statt den Lauf abzubrechen; ebenso der
+  Endpoint-Test, falls er ein passendes Profil braucht.
+- `START_BENCHMARK.bat` und `START_BENCHMARK.sh` fragen die Auswahl jetzt
+  interaktiv ab, direkt nach der Frage nach der Testdauer.
+
 ## 1.3.0
 
 ### Live-Anzeige waehrend des Laufs

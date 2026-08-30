@@ -187,17 +187,17 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
             except Exception as e:
                 print_err(f"Fehler beim automatischen Download: {e}")
         else:
-            val = Prompt.ask("[cyan]Pfad zu einem eigenen Modellordner (Enter zum Ueberspringen)[/cyan]")
+            val = Prompt.ask("[cyan]Pfad zu einem eigenen Modellordner (Enter zum Überspringen)[/cyan]")
             if val:
                 models_dir = val
             else:
-                console.print("[yellow]Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen oder 'llmbench download' nutzen.[/yellow]")
+                console.print("[yellow]Keine Modelle konfiguriert. Du kannst sie später in benchmark.yaml ergänzen oder 'llmbench download' nutzen.[/yellow]")
     else:
         print_msg(f"{models_found} Modell(e) erkannt.", style="green")
 
     import socket
     suggestion = socket.gethostname()
-    server_name = Prompt.ask(f"[cyan]Name dieses Servers fuer den Vergleich[/cyan]", default=suggestion)
+    server_name = Prompt.ask(f"[cyan]Name dieses Servers für den Vergleich[/cyan]", default=suggestion)
 
     result = bootstrap_config(config_path, root, llama_dir, models_dir, allow_system_search)
 
@@ -211,7 +211,7 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     for warning in result.get("warnings", []):
         console.print(f"[bold yellow]Hinweis:[/bold yellow] {warning}")
 
-    print_panel(f"Konfiguration gespeichert: {cfg_file}\nNaechster Schritt: llmbench doctor --config benchmark.yaml", title="Fertig")
+    print_panel(f"Konfiguration gespeichert: {cfg_file}\nNächster Schritt: llmbench doctor --config benchmark.yaml", title="Fertig")
     return 0
 
 

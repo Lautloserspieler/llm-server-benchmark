@@ -50,7 +50,8 @@ def _print_doctor(data: dict) -> int:
     print("--------")
     print(f"CPU: {hw.get('cpu', {}).get('name')}")
     print(f"RAM: {(hw.get('memory', {}).get('total_bytes') or 0) / (1024 ** 3):.1f} GiB")
-    print(f"Energieplan: {hw.get('power_scheme') or 'unbekannt'}")
+    power_scheme = (hw.get("power_scheme") or "unbekannt").replace("\ufffd", "?")
+    print(f"Energieplan: {power_scheme}")
     for gpu in hw.get("gpus", []):
         print(f"GPU: {gpu.get('vendor')} {gpu.get('name')} – {gpu.get('memory.total')} MiB VRAM")
 

@@ -21,19 +21,19 @@ from typing import TypedDict
 
 class ModelConfig(TypedDict):
     repo_id: str
-    pattern: str
+    pattern: list[str]
 
 MODELS: dict[str, dict[str, ModelConfig]] = {
     "small": {
-        "Qwen3-8B": {"repo_id": "Qwen/Qwen3-8B-GGUF", "pattern": "*q4_k_m*.gguf"},
-        "R1-Distill-Qwen-7B": {"repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF", "pattern": "*Q4_K_M*.gguf"},
+        "Qwen3-8B": {"repo_id": "Qwen/Qwen3-8B-GGUF", "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"]},
+        "R1-Distill-Qwen-7B": {"repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF", "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"]},
     },
     "mid": {
-        "Qwen3.8-27B": {"repo_id": "bartowski/Qwen3.8-27B-GGUF", "pattern": "*Q4_K_M*.gguf"},
+        "Qwen3.8-27B": {"repo_id": "bartowski/Qwen3.8-27B-GGUF", "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"]},
     },
     "heavy": {
-        "Qwen2.5-72B-Instruct": {"repo_id": "Qwen/Qwen2.5-72B-Instruct-GGUF", "pattern": "*q4_k_m*.gguf"},
-        "Mixtral-8x22B": {"repo_id": "MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF", "pattern": "*Q4_K_M*.gguf"},
+        "Qwen2.5-72B-Instruct": {"repo_id": "Qwen/Qwen2.5-72B-Instruct-GGUF", "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"]},
+        "Mixtral-8x22B": {"repo_id": "MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF", "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"]},
     },
 }
 
@@ -42,6 +42,7 @@ class RichTqdm:
 
     def __init__(self, *args, **kwargs):
         from rich.progress import Progress, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn
+        from llmbench.utils import console
         
         if RichTqdm._global_progress is None:
             RichTqdm._global_progress = Progress(
@@ -52,6 +53,7 @@ class RichTqdm:
                 DownloadColumn(),
                 "•",
                 TransferSpeedColumn(),
+                console=console
             )
             RichTqdm._global_progress.start()
         
@@ -65,6 +67,10 @@ class RichTqdm:
             RichTqdm._global_progress.update(self.task_id, advance=n)
             self.n += n
 
+    def refresh(self, *args, **kwargs):
+        if RichTqdm._global_progress:
+            RichTqdm._global_progress.refresh()
+
     def close(self):
         pass
 
@@ -75,6 +81,13 @@ class RichTqdm:
 
     def set_postfix(self, **kwargs):
         pass
+
+    def set_postfix_str(self, s, refresh=False):
+        pass
+
+    @property
+    def format_dict(self):
+        return {"rate": 0}
 
     def __iter__(self):
         return iter([])

@@ -201,6 +201,45 @@ def run_suite(
 
         for profile in profiles:
             profile_dir = ensure_dir(model_dir / safe_name(profile["name"]))
+
+        quality_gate_cfg = model.get("quality_gate") or {}
+        if quality_gate_cfg.get("enabled", False) and not skip_endpoint and profiles:
+            reporter.note(f"Fuehre Quality Gate / Sanity Checks fuer {model['name']} aus ...")
+            endpoint_cfg = dict(cfg.get("endpoint", {}))
+            endpoint_cfg.update(model.get("endpoint", {}) or {})
+            qg_profile, _ = _resolve_endpoint_profile(profiles, model["name"], endpoint_cfg)
+            proc = None
+            try:
+                proc, _ = backend.start_server(
+                    meta["path"],
+                    qg_profile,
+                    endpoint_cfg,
+                    cfg["benchmark"],
+                    model_dir / "llama-server-qg.log",
+                )
+                backend.wait_health(endpoint_cfg["base_url"], float(endpoint_cfg.get("startup_timeout_seconds", 300)))
+                passed, msg = asyncio.run(run_sanity_check(endpoint_cfg["base_url"], endpoint_cfg, quality_gate_cfg))
+                model_result["quality_gate"] = {"passed": passed, "message": msg}
+                if not passed:
+                    summary["warnings"].append(f"{model['name']}: Quality Gate fehlgeschlagen. Modell wird uebersprungen. Grund: {msg}")
+                    reporter.note("Warnung: Quality Gate fehlgeschlagen. Modell wird uebersprungen.")
+                    model_result["status"] = "skipped_quality_gate"
+                    summary["models"].append(model_result)
+                    write_json(run_dir / "summary.partial.json", summary)
+                    if proc is not None:
+                        backend.stop_server(proc)
+                    continue
+                else:
+                    reporter.note("Quality Gate bestanden.")
+            except Exception as exc:
+                summary["warnings"].append(f"{model['name']}: Quality Gate Fehler: {exc}")
+                reporter.note(f"Warnung: Quality Gate Fehler: {exc}")
+            finally:
+                if proc is not None:
+                    backend.stop_server(proc)
+
+        for profile in profiles:
+            profile_dir = ensure_dir(model_dir / safe_name(profile["name"]))
             profile_result: dict[str, Any] = {
                 "name": profile["name"],
                 "settings": profile,
@@ -315,12 +354,6 @@ def run_suite(
                     command = None
                     cold_start_s = backend.wait_health(endpoint_cfg["base_url"], 10)
 
-                # Sanity Check: Sicherstellen, dass der Server korrekt generiert.
-                passed, msg = asyncio.run(run_sanity_check(endpoint_cfg["base_url"], endpoint_cfg))
-                if not passed:
-                    summary["warnings"].append(f"{model['name']}: {msg}")
-                    reporter.note(f"Warnung: {msg}")
-
                 ep = run_endpoint_load(
                     endpoint_cfg["base_url"],
                     endpoint_cfg,
@@ -331,7 +364,6 @@ def run_suite(
                 ep["server_command"] = command
                 ep["profile"] = profile.get("name")
                 ep["cold_start_seconds"] = cold_start_s
-                ep["sanity_check"] = {"passed": passed, "message": msg}
                 model_result["endpoint"] = ep
                 for warn in (ep.get("telemetry") or {}).get("warnings", []):
                     summary["warnings"].append(f"{model['name']}/endpoint: {warn}")

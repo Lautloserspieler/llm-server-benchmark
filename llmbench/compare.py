@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,17 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
         "error",
         "Die Server wurden mit unterschiedlichen Benchmark-Einstellungen gemessen",
     )
+    # Feature 5: Bei Fingerprint-Mismatch die konkreten Werte zeigen
+    fingerprints = _collect(summaries, lambda s: s.get("config_fingerprint"))
+    known_fps = {k: v for k, v in fingerprints.items() if v not in (None, "", [], {})}
+    if len(set(json.dumps(v, sort_keys=True) for v in known_fps.values())) > 1:
+        diff_details = _config_diff_details(summaries)
+        if diff_details:
+            issues.append({
+                "level": "error",
+                "topic": "Benchmark-Konfiguration (Details)",
+                "message": f"Abweichende Werte: {diff_details}",
+            })
     _mismatch(
         "llama.cpp-Build",
         _collect(summaries, lambda s: (s.get("tools") or {}).get("llama_cpp_build_ids")),
@@ -144,6 +156,26 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
             })
 
     return issues
+
+
+def _config_diff_details(summaries: list[dict[str, Any]]) -> str:
+    """Listet die konkreten Benchmark-Einstellungen auf, die sich zwischen Servern unterscheiden."""
+    configs = {_server(s): (s.get("config") or {}).get("benchmark") or {} for s in summaries}
+    if len(configs) < 2:
+        return ""
+    keys_to_check = [
+        "repetitions", "batch_size", "ubatch_size", "flash_attention",
+        "cache_type_k", "cache_type_v", "prompt_tokens", "generation_tokens",
+        "context_depths",
+    ]
+    diffs = []
+    for key in keys_to_check:
+        values = {srv: cfg.get(key) for srv, cfg in configs.items()}
+        known = {k: v for k, v in values.items() if v is not None}
+        if len(set(json.dumps(v, sort_keys=True) for v in known.values())) > 1:
+            parts = [f"{srv}={json.dumps(v, ensure_ascii=False)}" for srv, v in known.items()]
+            diffs.append(f"{key}: {', '.join(parts)}")
+    return "; ".join(diffs)
 
 
 # ---------------------------------------------------------------- Datensaetze
@@ -224,6 +256,30 @@ def _efficiency_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
                     "max_temperature_c": max(
                         (g.get("max_temperature_c") or 0.0) for g in gpus
                     ) if gpus else None,
+                })
+    return out
+
+
+def _soak_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """Soak-Test-Ergebnisse je Modell und Durchgang (short/long)."""
+    out = []
+    for m in summary.get("models", []):
+        model_name = m.get("model", {}).get("name")
+        for run in m.get("soak") or []:
+            if run.get("status") != "ok":
+                continue
+            for path_label, path_data in (("CPU", run.get("cpu") or {}), ("GPU", run.get("gpu") or {})):
+                out.append({
+                    "server": _server(summary),
+                    "model": model_name,
+                    "label": run.get("label"),
+                    "path": path_label,
+                    "avg_tps": path_data.get("avg_tps"),
+                    "early_tps": path_data.get("early_window_avg_tps"),
+                    "late_tps": path_data.get("late_window_avg_tps"),
+                    "throttling": path_data.get("throttling_suspected", False),
+                    "requests": path_data.get("requests", 0),
+                    "successful": path_data.get("successful", 0),
                 })
     return out
 
@@ -412,6 +468,8 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
     records = [r for s in summaries for r in _records(s)]
     endpoint_records = [r for s in summaries for r in _endpoint_records(s)]
     efficiency = [r for s in summaries for r in _efficiency_records(s)]
+    soak_records = [r for s in summaries for r in _soak_records(s)]
+    scores = _compute_scores(records, endpoint_records, efficiency, servers)
 
     write_json(out / "comparison.json", {
         "servers": servers,
@@ -419,6 +477,8 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         "records": records,
         "endpoint": endpoint_records,
         "efficiency": efficiency,
+        "soak": soak_records,
+        "scores": scores,
     })
 
     bench_fields = ["server", "model", "profile", "kind", "test", "status", "error",
@@ -436,6 +496,9 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
             w.writeheader()
             w.writerows(endpoint_records)
 
+    score_section = _score_html(scores, servers)
+    score_block = f"<h2>Gesamtscore</h2>{score_section}" if score_section else ""
+
     page = (
         "<!doctype html><html lang='de'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -444,12 +507,22 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         "<p class='muted'>Gleiche Modell-, Profil- und Testkombinationen stehen nebeneinander. "
         "Der jeweils hoechste Tokens/s-Wert ist fett markiert, darunter der Abstand zum Besten.</p>"
         + _issues_html(issues)
+        + score_block
         + "<h2>Hardware</h2>" + _hardware_table_html(summaries)
         + "<h2>Benchmark-Vergleich</h2>" + _bench_table_html(records, servers)
         + "<h2>Endpoint- und Mehrbenutzer-Vergleich</h2>" + _endpoint_table_html(endpoint_records, servers)
         + "<h2>Effizienz (Tokens/s pro Watt)</h2>" + _efficiency_table_html(efficiency, servers)
+        + "<h2>Dauerlast-Test (Soak)</h2>" + _soak_table_html(soak_records, servers)
         + "</main></body></html>"
     )
     report = out / "comparison.html"
     report.write_text(page, encoding="utf-8")
+
+    try:
+        from .pdf_report import generate_compare_pdf
+        generate_compare_pdf(summaries, scores, issues, out / "comparison.pdf")
+    except Exception as exc:
+        import sys
+        print(f"Vergleichs-PDF konnte nicht erzeugt werden: {exc}", file=sys.stderr)
+
     return report, issues

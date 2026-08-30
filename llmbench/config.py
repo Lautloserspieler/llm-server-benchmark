@@ -72,6 +72,15 @@ class BenchmarkConfig(BaseModel):
         # Normalisierung vor der Pydantic-Typpruefung scheitert die Validierung.
         return normalize_flash_attention(v)
 
+class QualityGateTestConfig(BaseModel):
+    prompt: str
+    expected_regex: str | None = None
+    max_tokens: int = 50
+
+class QualityGateConfig(BaseModel):
+    enabled: bool = True
+    tests: list[QualityGateTestConfig] = Field(default_factory=list)
+
 class EndpointConfig(BaseModel):
     enabled: bool = False
     auto_start: bool = True
@@ -92,6 +101,8 @@ class EndpointConfig(BaseModel):
         "Erklaere in einem technisch praezisen Absatz, warum reproduzierbare "
         "Benchmarks fuer lokale LLM-Server wichtig sind."
     )
+    dataset_path: str | None = None
+    chat_format: bool = False
 
     @field_validator("concurrency")
     @classmethod
@@ -138,7 +149,7 @@ class ModelConfig(BaseModel):
     name: str
     path: str
     profiles: list[ProfileConfig]
-    quality_gate: Any | None = None
+    quality_gate: QualityGateConfig | None = None
     notes: str | None = None
     endpoint: dict | None = None
 
@@ -224,6 +235,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "Erklaere in einem technisch praezisen Absatz, warum reproduzierbare "
             "Benchmarks fuer lokale LLM-Server wichtig sind."
         ),
+        "dataset_path": None,
+        "chat_format": False,
     },
     "soak": {
         "enabled": True,

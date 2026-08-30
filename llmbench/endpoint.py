@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import math
+import re
 import statistics
 import subprocess
 import time
@@ -34,34 +35,54 @@ def _auth_headers(cfg: dict[str, Any]) -> dict[str, str]:
     key = cfg.get("api_key")
     return {"Authorization": f"Bearer {key}"} if key else {}
 
-
 async def run_sanity_check(
     base_url: str,
     cfg: dict[str, Any],
-    prompt: str = "1+1=",
-    expected: str = "2",
+    quality_gate_cfg: dict[str, Any],
 ) -> tuple[bool, str]:
-    """Prueft mit einem deterministischen Prompt, ob der Server korrekt antwortet."""
-    payload = {
-        "prompt": prompt,
-        "n_predict": 10,
-        "temperature": 0.0,
-        "stream": False,
-    }
-    try:
-        async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
-            r = await client.post(
-                base_url.rstrip("/") + "/completion",
-                json=payload,
-                timeout=30,
-            )
-            r.raise_for_status()
-            content = r.json().get("content", "").strip()
-            if expected in content:
-                return True, f"Sanity check bestanden: {content}"
-            return False, f"Sanity check fehlgeschlagen. Erwartet '{expected}', erhalten: {content!r}"
-    except Exception as exc:
-        return False, f"Sanity check Fehler: {exc}"
+    """Prueft anhand definierter Tests, ob das Modell sinnvolle Ausgaben erzeugt."""
+    tests = quality_gate_cfg.get("tests", [])
+    if not tests:
+        return True, "Keine Tests im Quality Gate definiert."
+
+    passed = 0
+    errors = []
+
+    async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
+        for i, test in enumerate(tests):
+            prompt = test.get("prompt", "")
+            expected_regex = test.get("expected_regex")
+            max_tokens = test.get("max_tokens", 50)
+
+            payload = {
+                "prompt": prompt,
+                "n_predict": max_tokens,
+                "temperature": 0.0,
+                "stream": False,
+            }
+            try:
+                r = await client.post(
+                    base_url.rstrip("/") + "/completion",
+                    json=payload,
+                    timeout=30,
+                )
+                r.raise_for_status()
+                content = r.json().get("content", "").strip()
+
+                if expected_regex:
+                    if re.search(expected_regex, content):
+                        passed += 1
+                    else:
+                        errors.append(f"Test {i+1} fehlgeschlagen. Erwartet Regex '{expected_regex}', erhalten: {content!r}")
+                else:
+                    # Wenn kein regex, dann reicht es, dass es nicht abstuerzt
+                    passed += 1
+            except Exception as exc:
+                errors.append(f"Test {i+1} Fehler: {exc}")
+
+    if errors:
+        return False, "; ".join(errors)
+    return True, f"Sanity check bestanden ({passed}/{len(tests)} Tests)."
 
 
 async def wait_health_async(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
@@ -150,19 +171,30 @@ def stop_llama_server(proc: subprocess.Popen[Any]) -> None:
 async def _one_completion_async(
     client: httpx.AsyncClient,
     base_url: str,
-    prompt: str,
+    prompt_or_messages: Any,
     cfg: dict[str, Any],
     request_id: int,
 ) -> dict[str, Any]:
     max_tokens = int(cfg["max_tokens"])
+    chat_format = cfg.get("chat_format", False)
+
     payload: dict[str, Any] = {
-        "prompt": f"{prompt}\nBenchmark request id: {request_id}",
         "n_predict": max_tokens,
         "temperature": float(cfg.get("temperature", 0.0)),
         "stream": True,
-        "return_tokens": True,
         "cache_prompt": False,
     }
+
+    endpoint_path = "/completion"
+    if chat_format:
+        endpoint_path = "/v1/chat/completions"
+        payload["messages"] = prompt_or_messages
+        # n_predict is not standard in OpenAI API, max_tokens is
+        payload["max_tokens"] = max_tokens
+        payload.pop("n_predict", None)
+    else:
+        payload["prompt"] = f"{prompt_or_messages}\nBenchmark request id: {request_id}"
+        payload["return_tokens"] = True
     if cfg.get("ignore_eos", True):
         payload["ignore_eos"] = True
     if cfg.get("seed") is not None:
@@ -176,7 +208,7 @@ async def _one_completion_async(
     final_data: dict[str, Any] = {}
     error: str | None = None
     try:
-        async with client.stream("POST", base_url.rstrip("/") + "/completion", json=payload, timeout=timeout) as resp:
+        async with client.stream("POST", base_url.rstrip("/") + endpoint_path, json=payload, timeout=timeout) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line:
@@ -190,8 +222,20 @@ async def _one_completion_async(
                     data = json.loads(text)
                 except Exception:
                     continue
-                tokens = data.get("tokens") or []
-                content = data.get("content") or ""
+
+                # In chat_format, we need to extract from choices[0].delta
+                if chat_format:
+                    choices = data.get("choices") or []
+                    if choices:
+                        delta = choices[0].get("delta") or {}
+                        content = delta.get("content") or ""
+                        # Note: OpenAI stream usually doesn't return tokens count in stream
+                        # Some servers send usage in the last chunk
+                        tokens = [1] if content else []
+                else:
+                    tokens = data.get("tokens") or []
+                    content = data.get("content") or ""
+
                 if ttft is None and (tokens or content):
                     ttft = time.perf_counter() - started
                 token_count += len(tokens)
@@ -202,7 +246,9 @@ async def _one_completion_async(
     finished = time.perf_counter()
 
     timings = final_data.get("timings") or {}
-    exact_total = timings.get("predicted_n") or timings.get("tokens_predicted")
+    usage = final_data.get("usage") or {} # for openai format
+
+    exact_total = timings.get("predicted_n") or timings.get("tokens_predicted") or usage.get("completion_tokens")
     if exact_total is not None:
         with contextlib.suppress(Exception):
             token_count = int(exact_total)
@@ -220,12 +266,15 @@ async def _one_completion_async(
         "server_timings": timings,
     }
 
-async def _run_level_async(base_url: str, cfg: dict[str, Any], concurrency: int, count: int) -> list[dict[str, Any]]:
+async def _run_level_async(base_url: str, cfg: dict[str, Any], concurrency: int, count: int, datasets: list[Any] | None = None) -> list[dict[str, Any]]:
+    import random
     semaphore = asyncio.Semaphore(concurrency)
     async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
         async def wrapped_task(i):
+            # Select random item from dataset if available, otherwise use default prompt
+            item = random.choice(datasets) if datasets else str(cfg["prompt"])
             async with semaphore:
-                return await _one_completion_async(client, base_url, str(cfg["prompt"]), cfg, i)
+                return await _one_completion_async(client, base_url, item, cfg, i)
 
         tasks = [wrapped_task(i) for i in range(count)]
         return await asyncio.gather(*tasks)
@@ -241,9 +290,22 @@ async def _run_endpoint_load_async(
     warmup_n = int(cfg.get("warmup_requests", 0) or 0)
     warmup_info: dict[str, Any] = {"requests": warmup_n}
 
+    datasets = None
+    if cfg.get("dataset_path"):
+        try:
+            dataset_path = Path(cfg["dataset_path"])
+            datasets = []
+            with dataset_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        datasets.append(json.loads(line))
+        except Exception as e:
+            raise ValueError(f"Fehler beim Laden des Datensatzes {cfg['dataset_path']}: {e}") from e
+
     if warmup_n > 0:
         w_started = time.perf_counter()
-        w_results = await _run_level_async(base_url, cfg, 1, warmup_n)
+        w_results = await _run_level_async(base_url, cfg, 1, warmup_n, datasets=datasets)
         warmup_info.update({
             "duration_seconds": time.perf_counter() - w_started,
             "successful": sum(1 for x in w_results if x["ok"]),
@@ -260,7 +322,7 @@ async def _run_endpoint_load_async(
     for concurrency in levels:
         requests_n = max(int(cfg["requests_per_level"]), concurrency)
         level_started = time.perf_counter()
-        results = await _run_level_async(base_url, cfg, concurrency, requests_n)
+        results = await _run_level_async(base_url, cfg, concurrency, requests_n, datasets=datasets)
         wall = time.perf_counter() - level_started
 
         ok = [x for x in results if x["ok"]]

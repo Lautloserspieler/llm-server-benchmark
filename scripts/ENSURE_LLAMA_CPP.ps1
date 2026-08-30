@@ -189,8 +189,16 @@ function Get-NvidiaInfo {
     $driver = (& $smi.Source --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
     if ($driver) { $driver = $driver.ToString().Trim() }
 
-    if ($caps.Count -eq 0 -and $names.Count -gt 0 -and (@($names | Where-Object { $_ -notmatch 'Blackwell' }).Count -eq 0)) {
-        $caps = @("12.0")
+    if ($caps.Count -eq 0 -and $names.Count -gt 0) {
+        $fallbackCaps = @()
+        foreach ($name in $names) {
+            if ($name -match '\b50\d0\b|\bBlackwell\b') { $fallbackCaps += "12.0" }
+            elseif ($name -match '\b40\d0\b|\bAda\b') { $fallbackCaps += "8.9" }
+            elseif ($name -match '\b30\d0\b|\bA[2-6]000\b') { $fallbackCaps += "8.6" }
+        }
+        if ($fallbackCaps.Count -gt 0) {
+            $caps = @($fallbackCaps | Select-Object -Unique)
+        }
     }
 
     $archs = New-Object System.Collections.Generic.List[string]

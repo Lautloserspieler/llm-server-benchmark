@@ -50,7 +50,8 @@ def _print_doctor(data: dict) -> int:
     print("--------")
     print(f"CPU: {hw.get('cpu', {}).get('name')}")
     print(f"RAM: {(hw.get('memory', {}).get('total_bytes') or 0) / (1024 ** 3):.1f} GiB")
-    print(f"Energieplan: {hw.get('power_scheme') or 'unbekannt'}")
+    power_scheme = (hw.get("power_scheme") or "unbekannt").replace("\ufffd", "?")
+    print(f"Energieplan: {power_scheme}")
     for gpu in hw.get("gpus", []):
         print(f"GPU: {gpu.get('vendor')} {gpu.get('name')} – {gpu.get('memory.total')} MiB VRAM")
 
@@ -257,6 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exitcode 1, wenn die Laeufe nicht unter gleichen Bedingungen entstanden sind",
     )
 
+    exp = sub.add_parser("export", help="Ergebnis-Paket als ZIP erzeugen")
+    exp.add_argument("run_dir", help="Pfad zum Ergebnisordner eines Laufs")
+    exp.add_argument("--output", default=None, help="Pfad fuer die ZIP-Datei (Standard: <run_dir>.zip)")
+
     return p
 
 
@@ -327,6 +332,16 @@ def main(argv: list[str] | None = None) -> int:
         if errors and args.strict:
             return 1
         return 0
+
+    if args.cmd == "export":
+        from .export import export_run
+        try:
+            zip_path = export_run(args.run_dir, args.output)
+            print(f"Ergebnis-Paket erzeugt: {zip_path}")
+            return 0
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     return 2
 

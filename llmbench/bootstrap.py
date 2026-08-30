@@ -120,7 +120,6 @@ def _default_model_entry(path: Path, root: Path, name: str) -> dict[str, Any]:
     return {
         "name": name,
         "path": _rel_or_abs(path, root),
-        "quality_gate": "Nicht bewertet",
         # CPU-Only ist Voraussetzung fuer den Soak-Test (soak.cpu_profile/gpu_profile
         # werden sonst nicht automatisch gefunden) und macht nebenbei den reinen
         # CPU-Pfad direkt vergleichbar, ohne dass jemand von Hand ein Profil anlegt.

@@ -262,6 +262,22 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("run_dir", help="Pfad zum Ergebnisordner eines Laufs")
     exp.add_argument("--output", default=None, help="Pfad fuer die ZIP-Datei (Standard: <run_dir>.zip)")
 
+    dl = sub.add_parser("download", help="Automatischer Download der Standard-Modelle ueber HuggingFace")
+    dl.add_argument("--suite", choices=["small", "mid", "heavy", "all"], default="small")
+    dl.add_argument("--models-dir", default="models")
+
+    stress_ttft = sub.add_parser("stress-ttft", help="Time to First Token (TTFT) Latenz unter extremer Last")
+    stress_ttft.add_argument("--config", default="benchmark.yaml")
+
+    stress_mt = sub.add_parser("stress-multitenant", help="Concurrency-Test mit zwei aktiven llama-server-Instanzen")
+    stress_mt.add_argument("--config", default="benchmark.yaml")
+
+    stress_oom = sub.add_parser("stress-oom", help="KV-Cache OOM Stresstest mit massiven RAG-Prompts")
+    stress_oom.add_argument("--config", default="benchmark.yaml")
+
+    stress_quant = sub.add_parser("stress-quant", help="Quantisierungs-Vergleich fuer Speicherbandbreiten-Engpaesse")
+    stress_quant.add_argument("--config", default="benchmark.yaml")
+
     return p
 
 
@@ -270,6 +286,33 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "setup":
         return run_setup_wizard(args.allow_system_search)
+
+    if args.cmd == "download":
+        from llmbench.download import download_models
+        download_models(args.models_dir, args.suite)
+        return 0
+
+    if args.cmd == "stress-multitenant":
+        import asyncio
+        from llmbench.stress.multitenant import run_multitenant
+        return asyncio.run(run_multitenant(args.config))
+
+    if args.cmd == "stress-oom":
+        import asyncio
+        from llmbench.stress.oom import run_oom_stress
+        return asyncio.run(run_oom_stress(args.config))
+
+    if args.cmd == "stress-quant":
+        import asyncio
+        from llmbench.stress.quant import run_quant_stress
+        return asyncio.run(run_quant_stress(args.config))
+
+    if args.cmd == "stress-ttft":
+        print("TTFT (Time to First Token) wird bereits automatisch bei jedem 'llmbench run' erfasst!")
+        print("Starte den normalen Benchmark-Lauf. Das 95. Perzentil (p95) der Latenz")
+        print("findest du im finalen PDF-Report unter 'Server-Interaktivitaet'.")
+        print("Verwende: llmbench run")
+        return 0
 
     if args.cmd == "init":
         save_example(args.output)

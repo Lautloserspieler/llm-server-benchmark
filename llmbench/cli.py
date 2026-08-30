@@ -172,12 +172,12 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     models_dir = result.get("models_dir") or "models"
     if models_found == 0:
         print("\nUnter models/ wurden keine GGUF-Dateien gefunden.")
-        print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle (z.B. Qwen3-8B).")
-        dl_ask = _ask("Soll die 'small' Standard-Suite automatisch von HuggingFace heruntergeladen werden? [J/n]: ", "j")
+        print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle.")
+        dl_ask = _ask("Sollen ALLE Standard-Modelle (inkl. Heavy & MoE) automatisch von HuggingFace heruntergeladen werden? [J/n]: ", "j")
         if dl_ask.lower() in ("j", "ja", "yes", "y"):
             from llmbench.download import download_models
             try:
-                download_models(models_dir, "small")
+                download_models(models_dir, "all")
                 print("\nModelle erfolgreich heruntergeladen. Sie werden nun eingebunden.")
             except Exception as e:
                 print(f"Fehler beim automatischen Download: {e}")

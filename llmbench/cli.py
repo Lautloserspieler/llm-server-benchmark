@@ -169,14 +169,24 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     else:
         print(f"llama.cpp gefunden: {llama_dir}")
 
-    models_dir = result.get("models_dir")
+    models_dir = result.get("models_dir") or "models"
     if models_found == 0:
-        print("Unter models/ wurden keine GGUF-Dateien gefunden.")
-        val = _ask("Pfad zum Modellordner (Enter zum Ueberspringen): ")
-        if val:
-            models_dir = val
+        print("\nUnter models/ wurden keine GGUF-Dateien gefunden.")
+        print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle (z.B. Qwen3-8B).")
+        dl_ask = _ask("Soll die 'small' Standard-Suite automatisch von HuggingFace heruntergeladen werden? [J/n]: ", "j")
+        if dl_ask.lower() in ("j", "ja", "yes", "y"):
+            from llmbench.download import download_models
+            try:
+                download_models(models_dir, "small")
+                print("\nModelle erfolgreich heruntergeladen. Sie werden nun eingebunden.")
+            except Exception as e:
+                print(f"Fehler beim automatischen Download: {e}")
         else:
-            print("Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen.")
+            val = _ask("Pfad zu einem eigenen Modellordner (Enter zum Ueberspringen): ")
+            if val:
+                models_dir = val
+            else:
+                print("Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen oder 'llmbench download' nutzen.")
     else:
         print(f"{models_found} Modell(e) erkannt.")
 

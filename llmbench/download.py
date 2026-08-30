@@ -7,6 +7,8 @@ Benchmark-Suite automatisiert in das models-Verzeichnis herunterzuladen.
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import TypedDict
 import os
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 

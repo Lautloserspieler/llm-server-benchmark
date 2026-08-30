@@ -5,10 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # Werte, die das Messergebnis beeinflussen. Nur diese gehen in den
 # Konfigurations-Fingerabdruck ein, der zwei Serverlaeufe vergleichbar macht.
@@ -30,7 +30,7 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 
 class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"
-    server_name: Optional[str] = None
+    server_name: str | None = None
     output_dir: str = "results"
     hash_models: bool = True
     hash_tools: bool = True
@@ -50,9 +50,9 @@ class BenchmarkConfig(BaseModel):
     resource_sample_interval: float = 0.5
     timeout_seconds: float = Field(3600.0, gt=0)
     auto_tune: bool = False
-    prompt_tokens: List[int] = Field(default_factory=lambda: [512, 4096, 8192])
-    generation_tokens: List[int] = Field(default_factory=lambda: [128, 512])
-    context_depths: List[int] = Field(default_factory=lambda: [0, 8192, 32768, 65536, 130000])
+    prompt_tokens: list[int] = Field(default_factory=lambda: [512, 4096, 8192])
+    generation_tokens: list[int] = Field(default_factory=lambda: [128, 512])
+    context_depths: list[int] = Field(default_factory=lambda: [0, 8192, 32768, 65536, 130000])
     long_context_prompt_tokens: int = 512
     long_context_generation_tokens: int = 128
 
@@ -65,14 +65,30 @@ class BenchmarkConfig(BaseModel):
             raise ValueError("Alle Eintraege muessen nicht-negative ganze Zahlen sein")
         return v
 
+    @field_validator("flash_attention", mode="before")
+    @classmethod
+    def validate_flash_attention(cls, v):
+        # Das Web-UI schickte frueher das Boolean False statt "off"; ohne diese
+        # Normalisierung vor der Pydantic-Typpruefung scheitert die Validierung.
+        return normalize_flash_attention(v)
+
+class QualityGateTestConfig(BaseModel):
+    prompt: str
+    expected_regex: str | None = None
+    max_tokens: int = 50
+
+class QualityGateConfig(BaseModel):
+    enabled: bool = True
+    tests: list[QualityGateTestConfig] = Field(default_factory=list)
+
 class EndpointConfig(BaseModel):
     enabled: bool = False
     auto_start: bool = True
     base_url: str = "http://127.0.0.1:8080"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     context_size: int = 32768
     parallel_slots: int = 8
-    concurrency: List[int] = Field(default_factory=lambda: [1, 2, 4, 8])
+    concurrency: list[int] = Field(default_factory=lambda: [1, 2, 4, 8])
     requests_per_level: int = 8
     warmup_requests: int = 2
     max_tokens: int = 256
@@ -85,6 +101,8 @@ class EndpointConfig(BaseModel):
         "Erklaere in einem technisch praezisen Absatz, warum reproduzierbare "
         "Benchmarks fuer lokale LLM-Server wichtig sind."
     )
+    dataset_path: str | None = None
+    chat_format: bool = False
 
     @field_validator("concurrency")
     @classmethod
@@ -95,6 +113,34 @@ class EndpointConfig(BaseModel):
             raise ValueError("Alle concurrency-Werte muessen ganze Zahlen >= 1 sein")
         return v
 
+class SoakConfig(BaseModel):
+    # Startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt sie
+    # ueber laengere Zeit unter Dauerlast, um Throttling durch Temperatur
+    # sichtbar zu machen - anders als die kurzen pp/tg-Tests, die abgeschlossen
+    # sind, bevor die Hardware ueberhaupt ins thermische Gleichgewicht kommt.
+    enabled: bool = True
+    cpu_profile: str | None = None
+    gpu_profile: str | None = None
+    host: str = "127.0.0.1"
+    cpu_port: int = 8090
+    gpu_port: int = 8091
+    duration_short_seconds: int = Field(300, gt=0)
+    duration_long_seconds: int = Field(1800, gt=0)
+    sample_interval_seconds: float = 2.0
+    concurrency: int = Field(2, ge=1)
+    max_tokens: int = 256
+    temperature: float = 0.0
+    seed: int = 42
+    context_size: int = 8192
+    startup_timeout_seconds: int = 300
+    # Ab diesem Rueckgang der Tokens/s zwischen erstem und letztem Fuenftel
+    # der Laufzeit gilt Throttling als wahrscheinlich.
+    throttle_tps_drop_fraction: float = Field(0.15, gt=0, lt=1)
+    prompt: str = (
+        "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
+        "Dauerlast thermisch geregelt werden."
+    )
+
 class ProfileConfig(BaseModel):
     name: str
     gpu_layers: int
@@ -102,10 +148,10 @@ class ProfileConfig(BaseModel):
 class ModelConfig(BaseModel):
     name: str
     path: str
-    profiles: List[ProfileConfig]
-    quality_gate: Optional[Any] = None
-    notes: Optional[str] = None
-    endpoint: Optional[dict] = None
+    profiles: list[ProfileConfig]
+    quality_gate: QualityGateConfig | None = None
+    notes: str | None = None
+    endpoint: dict | None = None
 
 class RootConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -113,7 +159,36 @@ class RootConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     endpoint: EndpointConfig = Field(default_factory=EndpointConfig)
-    models: List[ModelConfig] = Field(default_factory=list)
+    soak: SoakConfig = Field(default_factory=SoakConfig)
+    models: list[ModelConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_names(self):
+        # Zwei Modelle oder Profile mit gleichem Namen ueberschreiben sich
+        # gegenseitig im Ergebnisordner, siehe README "Reproduzierbarkeit".
+        issues: list[str] = []
+        seen_models: dict[str, int] = {}
+        for model in self.models:
+            seen_models[model.name] = seen_models.get(model.name, 0) + 1
+        duplicate_models = sorted(name for name, count in seen_models.items() if count > 1)
+        if duplicate_models:
+            issues.append("Doppelte Modellnamen: " + ", ".join(duplicate_models))
+
+        for model in self.models:
+            seen_profiles: dict[str, int] = {}
+            for profile in model.profiles:
+                key = profile.name.lower()
+                seen_profiles[key] = seen_profiles.get(key, 0) + 1
+            duplicates = sorted(name for name, count in seen_profiles.items() if count > 1)
+            if duplicates:
+                issues.append(
+                    f"Profilnamen des Modells '{model.name}' sind nicht eindeutig: "
+                    + ", ".join(duplicates)
+                )
+
+        if issues:
+            raise ValueError("; ".join(issues))
+        return self
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "project": {
@@ -160,6 +235,30 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "Erklaere in einem technisch praezisen Absatz, warum reproduzierbare "
             "Benchmarks fuer lokale LLM-Server wichtig sind."
         ),
+        "dataset_path": None,
+        "chat_format": False,
+    },
+    "soak": {
+        "enabled": True,
+        "cpu_profile": None,
+        "gpu_profile": None,
+        "host": "127.0.0.1",
+        "cpu_port": 8090,
+        "gpu_port": 8091,
+        "duration_short_seconds": 300,
+        "duration_long_seconds": 1800,
+        "sample_interval_seconds": 2.0,
+        "concurrency": 2,
+        "max_tokens": 256,
+        "temperature": 0.0,
+        "seed": 42,
+        "context_size": 8192,
+        "startup_timeout_seconds": 300,
+        "throttle_tps_drop_fraction": 0.15,
+        "prompt": (
+            "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
+            "Dauerlast thermisch geregelt werden."
+        ),
     },
     "models": [],
 }
@@ -182,9 +281,10 @@ def load_config(path: str | Path) -> dict[str, Any]:
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
 
-    # Validierung via Pydantic
-    RootConfig(**cfg_dict)
-
+    # Keine Validierung hier: ein ungueltiges RootConfig(**cfg_dict) wuerde mit
+    # einer rohen ValidationError abbrechen. validate_config() liefert
+    # stattdessen lesbare Fehlermeldungen; der Aufrufer (cli.py) ruft es
+    # unmittelbar nach load_config() auf.
     cfg_dict["_config_path"] = str(p.resolve())
     cfg_dict["_config_dir"] = str(p.resolve().parent)
     return cfg_dict

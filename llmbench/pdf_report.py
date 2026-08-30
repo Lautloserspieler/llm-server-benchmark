@@ -375,3 +375,115 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
     doc.build(story)
     return path
+
+
+def generate_compare_pdf(
+    summaries: list[dict[str, Any]],
+    scores: dict[str, dict[str, Any]],
+    issues: list[dict[str, str]],
+    path: str | Path,
+) -> Path:
+    """Erzeugt einen PDF-Vergleichsbericht aus mehreren Server-Laeufen."""
+    _require_reportlab()
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    path = Path(path)
+    doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=18 * mm, bottomMargin=18 * mm)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle("heading", parent=styles["Heading1"], fontSize=18, textColor=colors.HexColor(INK)))
+    styles.add(ParagraphStyle("sub", parent=styles["Heading2"], fontSize=13, textColor=colors.HexColor(INK)))
+    styles.add(ParagraphStyle("muted_p", parent=styles["Normal"], textColor=colors.HexColor(MUTED), fontSize=8))
+
+    story = []
+    story.append(Paragraph("LLM Server Vergleich", styles["heading"]))
+    story.append(Spacer(1, 6))
+
+    servers = [str(s.get("server_name") or "unbekannt") for s in summaries]
+    story.append(Paragraph(f"Server: {', '.join(servers)}", styles["Normal"]))
+    story.append(Spacer(1, 8))
+
+    # Konsistenzprüfung
+    if issues:
+        errors = [i for i in issues if i["level"] == "error"]
+        if errors:
+            story.append(Paragraph(f"{len(errors)} Abweichung(en), die den Vergleich ungueltig machen:", styles["sub"]))
+        else:
+            story.append(Paragraph("Hinweise zur Vergleichbarkeit:", styles["sub"]))
+        for issue in issues:
+            marker = "FEHLER" if issue["level"] == "error" else "Hinweis"
+            story.append(Paragraph(f"[{marker}] {issue['topic']}: {issue['message']}", styles["Normal"]))
+        story.append(Spacer(1, 8))
+    else:
+        story.append(Paragraph(
+            "Vergleichbarkeit geprueft: Konfiguration, Build, Modelle und Profile stimmen ueberein.",
+            styles["Normal"],
+        ))
+        story.append(Spacer(1, 8))
+
+    # Gesamtscore-Tabelle
+    if scores and any(s.get("total") is not None for s in scores.values()):
+        story.append(Paragraph("Gesamtscore", styles["sub"]))
+        metric_labels = {"tg": "Text Generation", "pp": "Prompt Processing",
+                         "ep_tps": "Endpoint TPS", "eff": "Effizienz"}
+        score_header = ["Metrik"] + servers
+        score_data = [score_header]
+        for metric, label in metric_labels.items():
+            row = [label]
+            for srv in servers:
+                val = scores.get(srv, {}).get("normalized", {}).get(metric)
+                row.append(_fmt(val, 1) if val is not None else "—")
+            score_data.append(row)
+        total_row = ["Gesamtscore"]
+        for srv in servers:
+            val = scores.get(srv, {}).get("total")
+            total_row.append(_fmt(val, 1) if val is not None else "—")
+        score_data.append(total_row)
+
+        tbl = Table(score_data, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(SOFT)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(INK)),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("LINEABOVE", (0, -1), (-1, -1), 1.5, colors.HexColor(INK)),
+        ]))
+        story.append(tbl)
+        story.append(Paragraph(
+            "Score: bester Server je Metrik = 100. "
+            "Gewichte: TG 35%, PP 25%, Endpoint 25%, Effizienz 15%.",
+            styles["muted_p"],
+        ))
+        story.append(Spacer(1, 12))
+
+    # Hardware-Tabelle
+    story.append(Paragraph("Hardware", styles["sub"]))
+    hw_header = ["Server", "CPU", "GPU", "RAM"]
+    hw_data = [hw_header]
+    for s in summaries:
+        hw = s.get("hardware", {})
+        gpus = hw.get("gpus") or []
+        gpu_text = ", ".join(g.get("name", "?") for g in gpus) or "keine"
+        ram = f"{(hw.get('memory', {}).get('total_bytes') or 0) / (1024 ** 3):.1f} GiB"
+        hw_data.append([str(s.get("server_name") or "?"), hw.get("cpu", {}).get("name", "?"), gpu_text, ram])
+    tbl = Table(hw_data, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(SOFT)),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph(
+        "Details, Diagramme und Einzelwerte stehen im HTML-Bericht (comparison.html).",
+        styles["muted_p"],
+    ))
+
+    doc.build(story)
+    return path

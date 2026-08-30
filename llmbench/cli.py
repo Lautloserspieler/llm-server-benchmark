@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -72,6 +73,51 @@ def _ask(prompt: str, default: str = "") -> str:
     return value or default
 
 
+def _auto_install_llama_cpp_windows(root: Path) -> bool:
+    """Install llama.cpp automatically when the interactive setup is used on Windows.
+
+    The normal one-click launcher already installs llama.cpp before bootstrap.
+    This fallback makes `llmbench setup` self-healing as well, so a missing
+    tools/llama.cpp directory never results in a manual path prompt on Windows.
+    """
+    core_script = root / "scripts" / "START_BENCHMARK_CORE.ps1"
+    if not core_script.is_file():
+        print(
+            f"Automatisches llama.cpp-Setup fehlt: {core_script}",
+            file=sys.stderr,
+        )
+        return False
+
+    print("\nllama.cpp fehlt. Starte automatische Installation...")
+    print("Der passende Windows-Build (CUDA bei NVIDIA, sonst CPU) wird von GitHub geladen.")
+
+    try:
+        proc = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(core_script),
+                "-SetupOnly",
+            ],
+            cwd=str(root),
+            check=False,
+        )
+    except OSError as exc:
+        print(f"PowerShell konnte nicht gestartet werden: {exc}", file=sys.stderr)
+        return False
+
+    if proc.returncode != 0:
+        print(
+            f"Automatische llama.cpp-Installation ist mit Exitcode {proc.returncode} fehlgeschlagen.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def run_setup_wizard(allow_system_search: bool = False) -> int:
     print("\n--- LLM Server Benchmark: Einrichtung ---")
     print("Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.\n")
@@ -87,17 +133,38 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
 
     if not result["llama_binaries_found"]:
         print(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
-        val = _ask("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen): ")
-        if not val:
-            print("Einrichtung abgebrochen.")
-            return 1
-        llama_dir = val
-        if not (
-            (Path(llama_dir) / f"llama-bench{ext}").exists()
-            and (Path(llama_dir) / f"llama-server{ext}").exists()
-        ):
-            print("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
-            return 1
+
+        if platform.system() == "Windows":
+            if not _auto_install_llama_cpp_windows(root):
+                print("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
+                return 1
+
+            # Nach der Installation zwingend neu pruefen. Nur ein erfolgreicher
+            # Prozess reicht nicht; beide benoetigten Programme muessen wirklich
+            # im Projektordner liegen.
+            result = bootstrap_config(config_path, root, None, None, allow_system_search)
+            llama_dir = result["llama_dir"]
+            models_found = result["models_found"]
+            if not result["llama_binaries_found"]:
+                print(
+                    "Das automatische Setup wurde beendet, aber llama-bench.exe oder "
+                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp.",
+                    file=sys.stderr,
+                )
+                return 1
+            print(f"llama.cpp automatisch installiert: {llama_dir}")
+        else:
+            val = _ask("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen): ")
+            if not val:
+                print("Einrichtung abgebrochen.")
+                return 1
+            llama_dir = val
+            if not (
+                (Path(llama_dir) / f"llama-bench{ext}").exists()
+                and (Path(llama_dir) / f"llama-server{ext}").exists()
+            ):
+                print("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
+                return 1
     else:
         print(f"llama.cpp gefunden: {llama_dir}")
 
@@ -160,6 +227,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", default="benchmark.yaml")
     run.add_argument("--model", default=None, help="Nur ein benanntes Modell testen")
     run.add_argument("--duration", choices=["short", "medium", "long"], default=None, help="Vordefinierte Dauer: short, medium oder long")
+    run.add_argument(
+        "--hardware",
+        choices=["cpu", "gpu", "both"],
+        default="both",
+        help="Nur CPU-, nur GPU-Profile oder beides testen (Standard: both). "
+             "Der Soak-Test laeuft nur bei 'both', weil er CPU und GPU gleichzeitig braucht.",
+    )
     run.add_argument("--skip-endpoint", action="store_true")
     run.add_argument(
         "--plain",
@@ -182,6 +256,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exitcode 1, wenn die Laeufe nicht unter gleichen Bedingungen entstanden sind",
     )
+
+    exp = sub.add_parser("export", help="Ergebnis-Paket als ZIP erzeugen")
+    exp.add_argument("run_dir", help="Pfad zum Ergebnisordner eines Laufs")
+    exp.add_argument("--output", default=None, help="Pfad fuer die ZIP-Datei (Standard: <run_dir>.zip)")
 
     return p
 
@@ -230,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
             selected_model=args.model,
             skip_endpoint=args.skip_endpoint,
             reporter=make_reporter(force_plain=args.plain),
+            hardware_target=args.hardware,
         )
         print(f"\nBenchmark abgeschlossen: {out}")
         pdf = out / "report.pdf"
@@ -252,6 +331,16 @@ def main(argv: list[str] | None = None) -> int:
         if errors and args.strict:
             return 1
         return 0
+
+    if args.cmd == "export":
+        from .export import export_run
+        try:
+            zip_path = export_run(args.run_dir, args.output)
+            print(f"Ergebnis-Paket erzeugt: {zip_path}")
+            return 0
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     return 2
 

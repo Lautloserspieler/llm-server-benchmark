@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.4.0
+
+### Dauerlast-Test (CPU + GPU gleichzeitig)
+
+- Neuer Testtyp `soak`: startet einen CPU-Only- und einen GPU-Server
+  gleichzeitig und haelt beide ueber laengere Zeit unter Dauerlast, um
+  thermisches Throttling sichtbar zu machen. Die bisherigen pp/tg-Tests
+  dauern nur Sekunden - zu kurz, um die Hardware ueberhaupt ins thermische
+  Gleichgewicht zu bringen.
+- Laeuft standardmaessig als Teil jedes `llmbench run`: ein kurzer Durchgang
+  (`soak.duration_short_seconds`, Standard 5 Minuten) und ein langer
+  (`soak.duration_long_seconds`, Standard 30 Minuten).
+- Throttling-Heuristik: Tokens/s im fruehen Teil des Laufs (10-30 %) gegen
+  Tokens/s im spaeten Teil (70-100 %) verglichen; ein Rueckgang ueber
+  `soak.throttle_tps_drop_fraction` (Standard 15 %) gilt als Hinweis auf
+  Throttling und erscheint als Warnung im Bericht.
+- `llmbench bootstrap` legt fuer neu erkannte Modelle jetzt automatisch ein
+  `CPU-Only`-Profil (`gpu_layers: 0`) zusaetzlich zu `Full-GPU` an - noetig
+  als Grundlage fuer den Soak-Test, macht den reinen CPU-Pfad aber auch fuer
+  die normalen pp/tg-Tests direkt vergleichbar.
+- Ergebnisse stehen in `report.html` und `summary.json`
+  (`models[].soak`); `llmbench compare` und `report.pdf` enthalten sie noch
+  nicht.
+- `ResourceMonitor` kann jetzt mehrere Zielprozesse gleichzeitig als "eigene"
+  Last markieren (`set_target_pids`), damit sich CPU- und GPU-Server im
+  Soak-Test nicht gegenseitig als Fremdlast melden.
+- Abschaltbar ueber `soak.enabled: false`.
+
+### Hardware-Auswahl (`--hardware`)
+
+- Neue Option `llmbench run --hardware {cpu,gpu,both}` (Standard `both`):
+  beschraenkt den Lauf auf Profile mit `gpu_layers: 0` (`cpu`), auf Profile
+  mit `gpu_layers` ungleich 0 (`gpu`, inklusive Hybrid-Profile) oder testet
+  alle Profile (`both`).
+- Der Soak-Test laeuft nur bei `both`, da er CPU und GPU gleichzeitig
+  braucht; bei `cpu` oder `gpu` wird er uebersprungen und das steht als
+  Hinweis im Bericht.
+- Passt ein Modell zur gewaehlten Hardware kein Profil, wird es
+  uebersprungen (Hinweis im Bericht) statt den Lauf abzubrechen; ebenso der
+  Endpoint-Test, falls er ein passendes Profil braucht.
+- `START_BENCHMARK.bat` und `START_BENCHMARK.sh` fragen die Auswahl jetzt
+  interaktiv ab, direkt nach der Frage nach der Testdauer.
+
 ## 1.3.0
 
 ### Live-Anzeige waehrend des Laufs

@@ -9,7 +9,7 @@ Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingun
 - Long-Context-Performance bei 8K, 32K, 64K und ~128K belegtem Kontext
 - CPU-, RAM-, GPU- und VRAM-Auslastung
 - GPU-Leistungsaufnahme, Temperatur und Tokens/s pro Watt
-- Full-GPU- und Hybrid-Profile
+- Full-GPU-, Hybrid- und CPU-Only-Profile, wahlweise nur CPU, nur GPU oder beides (`--hardware`)
 - parallele Requests / Multi-User-Tests
 - TTFT P50 / P95
 - System-TPS und Interactivity-TPS
@@ -17,6 +17,15 @@ Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingun
 - PDF-, HTML-, CSV- und JSON-Berichte
 - SHA256-Prüfung der GGUF-Dateien **und** der llama.cpp-Programmdateien
 - automatische Konsistenzprüfung beim Vergleich mehrerer Serverläufe
+- Dauerlast-Test: CPU- und GPU-Server gleichzeitig, kurz und lang, zur Throttling-Erkennung
+
+## Version 1.4.0
+
+Die kurzen pp/tg-Tests sind vorbei, bevor die Hardware überhaupt warm wird — für Temperatur und Throttling taugen sie nicht. Neu ist deshalb ein Dauerlast-Test (`soak`), der einen CPU-Only- und einen GPU-Server **gleichzeitig** startet und beide über mehrere Minuten unter Last hält, während Temperatur, Leistungsaufnahme und Tokens/s laufend mitgeschrieben werden. Jeder Modelllauf bekommt automatisch einen kurzen (5 Minuten) und einen langen (30 Minuten) Durchgang; ein Rückgang der Tokens/s über die Laufzeit gilt als Hinweis auf Throttling und erscheint als Warnung im Bericht.
+
+`llmbench bootstrap` legt für neu erkannte Modelle jetzt automatisch auch ein `CPU-Only`-Profil an — Voraussetzung für den Soak-Test und nebenbei ein direkt vergleichbarer reiner CPU-Pfad für die normalen Tests. Details unter [Dauerlast-Test (Soak-Test)](#dauerlast-test-soak-test).
+
+Neu ist außerdem `llmbench run --hardware {cpu,gpu,both}`: schränkt den Lauf auf CPU-, auf GPU-Profile oder beides ein. `START_BENCHMARK.bat`/`.sh` fragen das jetzt interaktiv ab, direkt nach der Testdauer.
 
 ## Version 1.3.0
 
@@ -179,18 +188,38 @@ Damit die Zahlen zwischen Läufen vergleichbar bleiben:
 - `endpoint.ignore_eos` (Standard `true`) erzwingt eine feste Antwortlänge. Ohne das misst System-TPS teilweise, wie früh das Modell aufhört zu schreiben.
 - `endpoint.seed` (Standard 42) hält das Sampling deterministisch.
 
+### Dauerlast-Test (Soak-Test)
+
+Die pp/tg-Tests dauern jeweils nur Sekunden — die Hardware erreicht in dieser Zeit kein thermisches Gleichgewicht. Der Soak-Test startet deshalb einen CPU-Only- und einen GPU-Server **gleichzeitig** (genau wie im Mehrbenutzerbetrieb, wenn ein Server beide Lastarten parallel bedient) und hält beide über längere Zeit unter Dauerlast, während Temperatur, Leistungsaufnahme und Tokens/s durchgehend mitgeschrieben werden.
+
+Jeder Modelllauf umfasst automatisch zwei Durchgänge:
+
+- **kurz** (`soak.duration_short_seconds`, Standard 5 Minuten)
+- **lang** (`soak.duration_long_seconds`, Standard 30 Minuten)
+
+Voraussetzung sind zwei Profile je Modell: eines mit `gpu_layers: 0` (CPU) und eines mit `gpu_layers` ungleich 0 (GPU). `llmbench bootstrap` legt für neu erkannte Modelle automatisch `CPU-Only` und `Full-GPU` an. Fehlt eines der beiden, wird der Soak-Test für dieses Modell übersprungen und ein Hinweis im Bericht vermerkt — der restliche Lauf bleibt gültig.
+
+Throttling wird heuristisch erkannt: Fallen die Tokens/s vom frühen Teil des Laufs (10–30 % der Laufzeit) zum späten Teil (70–100 %) um mehr als `soak.throttle_tps_drop_fraction` (Standard 15 %), gilt das als Hinweis auf thermisches Throttling. Die gemessene Maximaltemperatur je GPU steht zusätzlich im Bericht — das Ergebnis lohnt in jedem Fall den eigenen Blick.
+
+Abschaltbar über `soak.enabled: false`. `llmbench compare` und `report.pdf` enthalten die Soak-Ergebnisse aktuell noch nicht, nur `report.html` und `summary.json`.
+
 ## Konfiguration
 
 Die Vorlage liegt in `benchmark.example.yaml`; beim ersten Start entsteht daraus `benchmark.yaml`. Diese Datei ist maschinenspezifisch und per `.gitignore` ausgeschlossen — geteilt wird die Vorlage.
 
-Neue Modelle erhalten zunächst ein Full-GPU-Profil:
+Neue Modelle erhalten zunächst ein Full-GPU- und ein CPU-Only-Profil:
 
 ```yaml
 profiles:
   - name: "Full-GPU"
     gpu_layers: -1
     threads: auto
+  - name: "CPU-Only"
+    gpu_layers: 0
+    threads: auto
 ```
+
+`gpu_layers: 0` erzwingt reine CPU-Inferenz — direkt vergleichbar mit dem Full-GPU-Profil und Voraussetzung für den Soak-Test oben. Nicht gewünscht: das Profil aus `benchmark.yaml` entfernen oder `soak.enabled: false` setzen.
 
 Hybridprofile lassen sich ergänzen:
 
@@ -216,12 +245,19 @@ llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml
 llmbench run --config benchmark.yaml --model "Qwen-27B-Q4_0"
 
+# Nur CPU-, nur GPU-Profile oder beides (Standard) testen
+llmbench run --config benchmark.yaml --hardware cpu
+llmbench run --config benchmark.yaml --hardware gpu
+llmbench run --config benchmark.yaml --hardware both
+
 # Ohne sich aktualisierende Statuszeile, etwa für eine Protokolldatei
 llmbench run --config benchmark.yaml --plain
 
 # Modellerkennung erneut ausführen
 llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
 ```
+
+`--hardware cpu` testet nur Profile mit `gpu_layers: 0`, `--hardware gpu` nur Profile mit `gpu_layers` ungleich 0 (auch Hybrid-Profile), `--hardware both` (Standard) alle Profile. Der Soak-Test läuft nur bei `both`, weil er CPU und GPU gleichzeitig braucht. `START_BENCHMARK.bat`/`.sh` fragen die Auswahl interaktiv ab, direkt nach der Testdauer.
 
 Ohne Installation als Paket funktioniert auch `python -m llmbench ...` aus dem Projektordner.
 

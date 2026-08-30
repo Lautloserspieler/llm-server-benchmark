@@ -18,7 +18,7 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e ".[web]"
+python -m pip install -e "."
 
 echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp
@@ -62,4 +62,20 @@ elif [ "$choice" = "3" ]; then
 fi
 
 echo "Verwende Dauer: $duration"
-python -m llmbench run --config "$CONFIG" --duration "$duration"
+
+echo ""
+echo "Womit soll getestet werden?"
+echo "  1: Nur CPU"
+echo "  2: Nur GPU"
+echo "  3: CPU und GPU gleichzeitig (Standard, inkl. Dauerlast-Test)"
+read -p "Auswahl [1-3, Standard=3]: " hw_choice
+
+hardware="both"
+if [ "$hw_choice" = "1" ]; then
+    hardware="cpu"
+elif [ "$hw_choice" = "2" ]; then
+    hardware="gpu"
+fi
+
+echo "Verwende Hardware-Auswahl: $hardware"
+python -m llmbench run --config "$CONFIG" --duration "$duration" --hardware "$hardware"

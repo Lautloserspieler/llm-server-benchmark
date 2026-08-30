@@ -3,16 +3,15 @@ import json
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
-from typing import Any, List, Dict
 
 st.set_page_config(page_title="LLM Server Benchmark Dashboard", layout="wide")
 
 def load_summary(path: Path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 def load_endpoint_data(path: Path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 st.title("📊 LLM Server Benchmark Dashboard")
@@ -120,8 +119,8 @@ for model in summary.get("models", []):
         # TPS vs Concurrency
         levels = ep.get("levels", [])
         if levels:
-            concurrency = [l["concurrency"] for l in levels]
-            system_tps = [l["system_tps"] for l in levels]
+            concurrency = [level["concurrency"] for level in levels]
+            system_tps = [level["system_tps"] for level in levels]
 
             fig_tps = px.line(x=concurrency, y=system_tps, markers=True,
                              labels={"x": "Concurrency", "y": "System TPS"},
@@ -129,7 +128,7 @@ for model in summary.get("models", []):
             st.plotly_chart(fig_tps, use_container_width=True)
 
             # VRAM Usage
-            vram_usage = [l.get("telemetry", {}).get("max_memory_used_bytes", 0) / (1024**2) for l in levels]
+            vram_usage = [level.get("telemetry", {}).get("max_memory_used_bytes", 0) / (1024**2) for level in levels]
             fig_vram = px.line(x=concurrency, y=vram_usage, markers=True,
                               labels={"x": "Concurrency", "y": "Max VRAM (MB)"},
                               title=f"VRAM Usage vs Concurrency - {model_name}")

@@ -10,7 +10,9 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $EnsurePython = Join-Path $PSScriptRoot "ENSURE_PYTHON.ps1"
 $CoreScript = Join-Path $PSScriptRoot "START_BENCHMARK_CORE.ps1"
-$LocalPythonDir = Join-Path $Root ".runtime\python"
+$RuntimeRoot = Join-Path $Root ".runtime"
+$LocalPythonDir = Join-Path $RuntimeRoot "python"
+$PythonPathFile = Join-Path $RuntimeRoot "python-path.txt"
 
 if (-not (Test-Path $EnsurePython)) {
     throw "Python-Bootstrap fehlt: $EnsurePython"
@@ -19,24 +21,58 @@ if (-not (Test-Path $CoreScript)) {
     throw "Benchmark-Core fehlt: $CoreScript"
 }
 
+# Python zuerst sicherstellen. ENSURE_PYTHON.ps1 kann Python projektlokal
+# bereitstellen, wenn auf dem Rechner kein nutzbarer Interpreter gefunden wird.
 & $EnsurePython
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# Falls Python projektlokal installiert wurde, für den Benchmark-Prozess sichtbar machen.
-if (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
-    $env:PATH = "$LocalPythonDir;$LocalPythonDir\Scripts;$env:PATH"
+$ResolvedPython = $null
+if (Test-Path $PythonPathFile) {
+    $ResolvedPython = (Get-Content $PythonPathFile -Raw).Trim()
 }
 
-# Hashtable-Splatting, nicht Array-Splatting: nur so werden die Werte
-# garantiert an die Parameternamen gebunden. Mit einem Array konnte
-# "-Config" als Wert durchrutschen und der Dateiname im naechsten
-# Parameter landen.
+if ($ResolvedPython -and (Test-Path $ResolvedPython)) {
+    $PythonDir = Split-Path -Parent $ResolvedPython
+    $env:PATH = "$PythonDir;$PythonDir\Scripts;$env:PATH"
+    Write-Host "Python fuer Benchmark: $ResolvedPython"
+} elseif (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
+    $ResolvedPython = Join-Path $LocalPythonDir "python.exe"
+    $env:PATH = "$LocalPythonDir;$LocalPythonDir\Scripts;$env:PATH"
+    Write-Host "Python fuer Benchmark: $ResolvedPython"
+} else {
+    throw "Python-Bootstrap war erfolgreich, aber es wurde kein nutzbarer Interpreterpfad uebergeben."
+}
+
+# WICHTIG:
+# Der normale Windows-Startpfad baut llama.cpp NICHT mehr aus dem Quellcode.
+# START_BENCHMARK_CORE.ps1 ermittelt den passenden offiziellen Windows-x64
+# Release-Build (CUDA bei NVIDIA, sonst CPU), laedt die ZIP-Dateien direkt von
+# GitHub herunter, entpackt sie nach tools\llama.cpp und prueft anschliessend
+# llama-bench.exe/llama-server.exe mit --list-devices.
+#
+# Der alte Source-Build bleibt nur als separates Diagnose-/Fallback-Werkzeug im
+# Repository erhalten und wird durch START_BENCHMARK.bat nicht mehr aufgerufen.
+
 $forward = @{ Config = $Config }
 if ($LlamaCppTag) { $forward["LlamaCppTag"] = $LlamaCppTag }
 if ($SetupOnly) { $forward["SetupOnly"] = $true }
 if ($ForceUpdateLlamaCpp) { $forward["ForceUpdateLlamaCpp"] = $true }
 
-& $CoreScript @forward
-exit $LASTEXITCODE
+try {
+    & $CoreScript @forward
+    $rc = $LASTEXITCODE
+    if ($rc -ne 0) {
+        throw "Benchmark-Core wurde mit Fehlercode $rc beendet."
+    }
+    exit 0
+} catch {
+    Write-Host ""
+    Write-Host "Setup/Benchmark fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Erwarteter llama.cpp-Zielordner:" -ForegroundColor Yellow
+    Write-Host (Join-Path $Root "tools\llama.cpp")
+    Write-Host "Dort muessen nach dem Download llama-bench.exe und llama-server.exe liegen."
+    exit 1
+}

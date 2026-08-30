@@ -52,9 +52,62 @@ endpoint:
   ignore_eos: true
   timeout_seconds: 600
   startup_timeout_seconds: 300
+
+  # Option 1: Einzelner fester Prompt fuer die Tests (Standard)
   prompt: >-
     Erklaere in einem technisch praezisen Absatz, warum reproduzierbare Benchmarks
     fuer lokale LLM-Server wichtig sind.
+  
+  # Option 2: Realistische Datensaetze (JSONL Format, pro Zeile ein JSON)
+  # dataset_path: "path/to/sharegpt_dataset.jsonl"
+  
+  # Setze auf 'true', um den OpenAI-kompatiblen /v1/chat/completions Endpoint statt /completion zu nutzen (noetig bei Messages-Arrays in Datensaetzen)
+  chat_format: false
+
+soak:
+  # Startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt beide
+  # unter Dauerlast, um Throttling durch Temperatur sichtbar zu machen. Braucht
+  # je Modell ein Profil mit gpu_layers: 0 (CPU) und eins mit gpu_layers != 0
+  # (GPU) - `llmbench bootstrap` legt beide automatisch an.
+  enabled: true
+  # null = automatisch das erste Profil mit gpu_layers: 0 bzw. != 0 verwenden.
+  cpu_profile: null
+  gpu_profile: null
+  host: "127.0.0.1"
+  cpu_port: 8090
+  gpu_port: 8091
+  duration_short_seconds: 300
+  duration_long_seconds: 1800
+  sample_interval_seconds: 2.0
+  concurrency: 2
+  max_tokens: 256
+  temperature: 0.0
+  seed: 42
+  context_size: 8192
+  startup_timeout_seconds: 300
+  # Ab diesem Rueckgang der Tokens/s zwischen frueher und spaeter Laufzeit
+  # gilt Throttling als wahrscheinlich.
+  throttle_tps_drop_fraction: 0.15
+  prompt: >-
+    Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei Dauerlast
+    thermisch geregelt werden.
 
 # Wird durch die automatische Modellerkennung ergaenzt.
-models: []
+models:
+  # Beispiel fuer ein Modell mit Quality Gate
+  # - name: "Qwen-27B-Q4_0"
+  #   path: "models/qwen-27b-q4_0.gguf"
+  #   quality_gate:
+  #     enabled: true
+  #     tests:
+  #       - prompt: "Rechne: 12 + 15 = "
+  #         expected_regex: "27"
+  #         max_tokens: 10
+  #       - prompt: "Nenne die Hauptstadt von Frankreich. Antworte nur mit dem Namen der Stadt."
+  #         expected_regex: "Paris"
+  #         max_tokens: 10
+  #   profiles:
+  #     - name: "Full-GPU"
+  #       gpu_layers: -1
+  #     - name: "CPU-Only"
+  #       gpu_layers: 0

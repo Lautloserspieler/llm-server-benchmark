@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,17 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
         "error",
         "Die Server wurden mit unterschiedlichen Benchmark-Einstellungen gemessen",
     )
+    # Feature 5: Bei Fingerprint-Mismatch die konkreten Werte zeigen
+    fingerprints = _collect(summaries, lambda s: s.get("config_fingerprint"))
+    known_fps = {k: v for k, v in fingerprints.items() if v not in (None, "", [], {})}
+    if len(set(json.dumps(v, sort_keys=True) for v in known_fps.values())) > 1:
+        diff_details = _config_diff_details(summaries)
+        if diff_details:
+            issues.append({
+                "level": "error",
+                "topic": "Benchmark-Konfiguration (Details)",
+                "message": f"Abweichende Werte: {diff_details}",
+            })
     _mismatch(
         "llama.cpp-Build",
         _collect(summaries, lambda s: (s.get("tools") or {}).get("llama_cpp_build_ids")),
@@ -144,6 +156,26 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
             })
 
     return issues
+
+
+def _config_diff_details(summaries: list[dict[str, Any]]) -> str:
+    """Listet die konkreten Benchmark-Einstellungen auf, die sich zwischen Servern unterscheiden."""
+    configs = {_server(s): (s.get("config") or {}).get("benchmark") or {} for s in summaries}
+    if len(configs) < 2:
+        return ""
+    keys_to_check = [
+        "repetitions", "batch_size", "ubatch_size", "flash_attention",
+        "cache_type_k", "cache_type_v", "prompt_tokens", "generation_tokens",
+        "context_depths",
+    ]
+    diffs = []
+    for key in keys_to_check:
+        values = {srv: cfg.get(key) for srv, cfg in configs.items()}
+        known = {k: v for k, v in values.items() if v is not None}
+        if len(set(json.dumps(v, sort_keys=True) for v in known.values())) > 1:
+            parts = [f"{srv}={json.dumps(v, ensure_ascii=False)}" for srv, v in known.items()]
+            diffs.append(f"{key}: {', '.join(parts)}")
+    return "; ".join(diffs)
 
 
 # ---------------------------------------------------------------- Datensaetze
@@ -224,6 +256,30 @@ def _efficiency_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
                     "max_temperature_c": max(
                         (g.get("max_temperature_c") or 0.0) for g in gpus
                     ) if gpus else None,
+                })
+    return out
+
+
+def _soak_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """Soak-Test-Ergebnisse je Modell und Durchgang (short/long)."""
+    out = []
+    for m in summary.get("models", []):
+        model_name = m.get("model", {}).get("name")
+        for run in m.get("soak") or []:
+            if run.get("status") != "ok":
+                continue
+            for path_label, path_data in (("CPU", run.get("cpu") or {}), ("GPU", run.get("gpu") or {})):
+                out.append({
+                    "server": _server(summary),
+                    "model": model_name,
+                    "label": run.get("label"),
+                    "path": path_label,
+                    "avg_tps": path_data.get("avg_tps"),
+                    "early_tps": path_data.get("early_window_avg_tps"),
+                    "late_tps": path_data.get("late_window_avg_tps"),
+                    "throttling": path_data.get("throttling_suspected", False),
+                    "requests": path_data.get("requests", 0),
+                    "successful": path_data.get("successful", 0),
                 })
     return out
 
@@ -380,6 +436,156 @@ def _efficiency_table_html(records: list[dict[str, Any]], servers: list[str]) ->
         f"{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
 
+def _soak_table_html(records: list[dict[str, Any]], servers: list[str]) -> str:
+    if not records:
+        return "<p class='muted'>Keine Soak-Test-Ergebnisse in den verglichenen Laeufen.</p>"
+    keys = sorted({(r["model"], r["label"], r["path"]) for r in records})
+    lookup = {(r["server"], r["model"], r["label"], r["path"]): r for r in records}
+    rows = []
+    for model, label, path in keys:
+        cells = []
+        for server in servers:
+            rec = lookup.get((server, model, label, path))
+            if not rec:
+                cells.append("<td class='num muted'>—</td><td class='num muted'>—</td>")
+                continue
+            throttle = "<span class='status-timeout'>Ja</span>" if rec.get("throttling") else "Nein"
+            cells.append(
+                f"<td class='num'>{fnum(rec.get('avg_tps'))}</td>"
+                f"<td>{throttle}</td>"
+            )
+        rows.append(
+            f"<tr><td>{esc(model)}</td><td>{esc(label)}</td><td>{esc(path)}</td>"
+            f"{''.join(cells)}</tr>"
+        )
+    header = "".join(
+        f"<th class='num'>{esc(s)}<br><span class='small'>TPS</span></th>"
+        f"<th>{esc(s)}<br><span class='small'>Throttling</span></th>"
+        for s in servers
+    )
+    return (
+        "<div class='table-wrap'><table><thead><tr><th>Modell</th><th>Dauer</th><th>Pfad</th>"
+        f"{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def _compute_scores(records: list[dict[str, Any]], endpoint_records: list[dict[str, Any]],
+                    efficiency: list[dict[str, Any]], servers: list[str]) -> dict[str, dict[str, Any]]:
+    """Berechnet einen gewichteten Gesamtscore je Server. Bester Server pro Metrik = 100."""
+    server_metrics: dict[str, dict[str, list[float]]] = {
+        s: {"tg": [], "pp": [], "ep_tps": [], "eff": []} for s in servers
+    }
+
+    for r in records:
+        if r.get("status") != "ok" or r.get("avg_ts") is None:
+            continue
+        srv = r["server"]
+        if srv not in server_metrics:
+            continue
+        kind = r.get("kind", "")
+        if kind == "generation":
+            server_metrics[srv]["tg"].append(float(r["avg_ts"]))
+        elif kind == "prompt":
+            server_metrics[srv]["pp"].append(float(r["avg_ts"]))
+
+    for r in endpoint_records:
+        srv = r.get("server")
+        if srv not in server_metrics:
+            continue
+        if r.get("system_tps") is not None:
+            server_metrics[srv]["ep_tps"].append(float(r["system_tps"]))
+
+    for r in efficiency:
+        srv = r.get("server")
+        if srv not in server_metrics:
+            continue
+        if r.get("tokens_per_watt") is not None:
+            server_metrics[srv]["eff"].append(float(r["tokens_per_watt"]))
+
+    averages: dict[str, dict[str, float | None]] = {}
+    for srv in servers:
+        m = server_metrics[srv]
+        averages[srv] = {
+            "tg": statistics.fmean(m["tg"]) if m["tg"] else None,
+            "pp": statistics.fmean(m["pp"]) if m["pp"] else None,
+            "ep_tps": statistics.fmean(m["ep_tps"]) if m["ep_tps"] else None,
+            "eff": statistics.fmean(m["eff"]) if m["eff"] else None,
+        }
+
+    weights = {"tg": 0.35, "pp": 0.25, "ep_tps": 0.25, "eff": 0.15}
+    metrics = ["tg", "pp", "ep_tps", "eff"]
+    max_per_metric: dict[str, float | None] = {}
+    for metric in metrics:
+        vals = [averages[s][metric] for s in servers if averages[s][metric] is not None]
+        max_per_metric[metric] = max(vals) if vals else None
+
+    scores: dict[str, dict[str, Any]] = {}
+    for srv in servers:
+        normalized: dict[str, float | None] = {}
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for metric in metrics:
+            val = averages[srv][metric]
+            mx = max_per_metric[metric]
+            if val is not None and mx is not None and mx > 0:
+                norm = (val / mx) * 100
+                normalized[metric] = round(norm, 1)
+                weighted_sum += norm * weights[metric]
+                total_weight += weights[metric]
+            else:
+                normalized[metric] = None
+        total = round(weighted_sum / total_weight, 1) if total_weight > 0 else None
+        scores[srv] = {"normalized": normalized, "total": total, "averages": averages[srv]}
+    return scores
+
+
+def _score_html(scores: dict[str, dict[str, Any]], servers: list[str]) -> str:
+    if not scores or not any(s.get("total") is not None for s in scores.values()):
+        return ""
+    metric_labels = {
+        "tg": "Text Generation", "pp": "Prompt Processing",
+        "ep_tps": "Endpoint TPS", "eff": "Effizienz",
+    }
+    header = "".join(f"<th class='num'>{esc(s)}</th>" for s in servers)
+    rows = []
+    for metric, label in metric_labels.items():
+        cells = []
+        vals = [scores[s]["normalized"].get(metric) for s in servers if scores[s]["normalized"].get(metric) is not None]
+        best = max(vals) if vals else None
+        for srv in servers:
+            val = scores[srv]["normalized"].get(metric)
+            if val is None:
+                cells.append("<td class='num muted'>—</td>")
+            else:
+                is_best = best is not None and abs(val - best) < 0.1
+                bold = "<strong>" if is_best else ""
+                bold_end = "</strong>" if is_best else ""
+                cells.append(f"<td class='num'>{bold}{fnum(val, 1)}{bold_end}</td>")
+        rows.append(f"<tr><td>{esc(label)}</td>{''.join(cells)}</tr>")
+
+    total_cells = []
+    total_vals = [scores[s]["total"] for s in servers if scores[s]["total"] is not None]
+    best_total = max(total_vals) if total_vals else None
+    for srv in servers:
+        val = scores[srv]["total"]
+        if val is None:
+            total_cells.append("<td class='num muted'>—</td>")
+        else:
+            is_best = best_total is not None and abs(val - best_total) < 0.1
+            bold = "<strong>" if is_best else ""
+            bold_end = "</strong>" if is_best else ""
+            total_cells.append(f"<td class='num'>{bold}{fnum(val, 1)}{bold_end}</td>")
+    rows.append(
+        f"<tr style='border-top:2px solid var(--line)'>"
+        f"<td><strong>Gesamtscore</strong></td>{''.join(total_cells)}</tr>"
+    )
+    return (
+        "<div class='table-wrap'><table><thead><tr><th>Metrik</th>"
+        f"{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        "<p class='muted small'>Score: bester Server je Metrik = 100. "
+        "Gewichte: Text Generation 35%, Prompt Processing 25%, Endpoint TPS 25%, Effizienz 15%.</p>"
+    )
+
 
 def _hardware_table_html(summaries: list[dict[str, Any]]) -> str:
     rows = []
@@ -412,6 +618,8 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
     records = [r for s in summaries for r in _records(s)]
     endpoint_records = [r for s in summaries for r in _endpoint_records(s)]
     efficiency = [r for s in summaries for r in _efficiency_records(s)]
+    soak_records = [r for s in summaries for r in _soak_records(s)]
+    scores = _compute_scores(records, endpoint_records, efficiency, servers)
 
     write_json(out / "comparison.json", {
         "servers": servers,
@@ -419,6 +627,8 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         "records": records,
         "endpoint": endpoint_records,
         "efficiency": efficiency,
+        "soak": soak_records,
+        "scores": scores,
     })
 
     bench_fields = ["server", "model", "profile", "kind", "test", "status", "error",
@@ -436,6 +646,9 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
             w.writeheader()
             w.writerows(endpoint_records)
 
+    score_section = _score_html(scores, servers)
+    score_block = f"<h2>Gesamtscore</h2>{score_section}" if score_section else ""
+
     page = (
         "<!doctype html><html lang='de'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -444,12 +657,22 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         "<p class='muted'>Gleiche Modell-, Profil- und Testkombinationen stehen nebeneinander. "
         "Der jeweils hoechste Tokens/s-Wert ist fett markiert, darunter der Abstand zum Besten.</p>"
         + _issues_html(issues)
+        + score_block
         + "<h2>Hardware</h2>" + _hardware_table_html(summaries)
         + "<h2>Benchmark-Vergleich</h2>" + _bench_table_html(records, servers)
         + "<h2>Endpoint- und Mehrbenutzer-Vergleich</h2>" + _endpoint_table_html(endpoint_records, servers)
         + "<h2>Effizienz (Tokens/s pro Watt)</h2>" + _efficiency_table_html(efficiency, servers)
+        + "<h2>Dauerlast-Test (Soak)</h2>" + _soak_table_html(soak_records, servers)
         + "</main></body></html>"
     )
     report = out / "comparison.html"
     report.write_text(page, encoding="utf-8")
+
+    try:
+        from .pdf_report import generate_compare_pdf
+        generate_compare_pdf(summaries, scores, issues, out / "comparison.pdf")
+    except Exception as exc:
+        import sys
+        print(f"Vergleichs-PDF konnte nicht erzeugt werden: {exc}", file=sys.stderr)
+
     return report, issues

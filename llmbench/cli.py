@@ -120,82 +120,84 @@ def _auto_install_llama_cpp_windows(root: Path) -> bool:
 
 
 def run_setup_wizard(allow_system_search: bool = False) -> int:
-    print("\n--- LLM Server Benchmark: Einrichtung ---")
-    print("Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.\n")
+    from llmbench.utils import console, print_panel, print_err, print_msg
+    from rich.prompt import Prompt
+
+    print_panel(
+        "Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.",
+        title="LLM Server Benchmark - Einrichtung"
+    )
 
     root = Path(".").resolve()
     config_path = "benchmark.yaml"
 
-    print("Suche llama.cpp und Modelle im Projektordner...")
+    print_msg("Suche llama.cpp und Modelle im Projektordner...", style="blue")
     result = bootstrap_config(config_path, root, None, None, allow_system_search)
     llama_dir = result["llama_dir"]
     models_found = result["models_found"]
     ext = ".exe" if platform.system() == "Windows" else ""
 
     if not result["llama_binaries_found"]:
-        print(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
+        print_err(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
 
         if platform.system() == "Windows":
             if not _auto_install_llama_cpp_windows(root):
-                print("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
+                print_err("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
                 return 1
 
-            # Nach der Installation zwingend neu pruefen. Nur ein erfolgreicher
-            # Prozess reicht nicht; beide benoetigten Programme muessen wirklich
-            # im Projektordner liegen.
             result = bootstrap_config(config_path, root, None, None, allow_system_search)
             llama_dir = result["llama_dir"]
             models_found = result["models_found"]
             if not result["llama_binaries_found"]:
-                print(
+                print_err(
                     "Das automatische Setup wurde beendet, aber llama-bench.exe oder "
-                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp.",
-                    file=sys.stderr,
+                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp."
                 )
                 return 1
-            print(f"llama.cpp automatisch installiert: {llama_dir}")
+            print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
         else:
-            val = _ask("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen): ")
+            val = Prompt.ask("[cyan]Pfad zum llama.cpp-Ordner (Enter zum Abbrechen)[/cyan]")
             if not val:
-                print("Einrichtung abgebrochen.")
+                print_msg("Einrichtung abgebrochen.", style="red")
                 return 1
             llama_dir = val
             if not (
                 (Path(llama_dir) / f"llama-bench{ext}").exists()
                 and (Path(llama_dir) / f"llama-server{ext}").exists()
             ):
-                print("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
+                print_err("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
                 return 1
     else:
-        print(f"llama.cpp gefunden: {llama_dir}")
+        print_msg(f"llama.cpp gefunden: {llama_dir}", style="green")
 
     models_dir = result.get("models_dir") or "models"
     if models_found == 0:
-        print("\nUnter models/ wurden keine GGUF-Dateien gefunden.")
-        print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle.")
-        dl_ask = _ask("Sollen ALLE Standard-Modelle (inkl. Heavy & MoE) automatisch von HuggingFace heruntergeladen werden? [J/n]: ", "j")
-        if dl_ask.lower() in ("j", "ja", "yes", "y"):
+        console.print("\n[bold yellow]Unter models/ wurden keine GGUF-Dateien gefunden.[/bold yellow]")
+        console.print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle.")
+        dl_ask = Prompt.ask(
+            "[cyan]Sollen ALLE Standard-Modelle (inkl. Heavy & MoE) automatisch von HuggingFace heruntergeladen werden?[/cyan]",
+            choices=["j", "n"],
+            default="j"
+        )
+        if dl_ask.lower() == "j":
             from llmbench.download import download_models
             try:
                 download_models(models_dir, "all")
-                print("\nModelle erfolgreich heruntergeladen. Sie werden nun eingebunden.")
+                print_msg("\nModelle erfolgreich heruntergeladen. Sie werden nun eingebunden.", style="bold green")
             except Exception as e:
-                print(f"Fehler beim automatischen Download: {e}")
+                print_err(f"Fehler beim automatischen Download: {e}")
         else:
-            val = _ask("Pfad zu einem eigenen Modellordner (Enter zum Ueberspringen): ")
+            val = Prompt.ask("[cyan]Pfad zu einem eigenen Modellordner (Enter zum Ueberspringen)[/cyan]")
             if val:
                 models_dir = val
             else:
-                print("Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen oder 'llmbench download' nutzen.")
+                console.print("[yellow]Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen oder 'llmbench download' nutzen.[/yellow]")
     else:
-        print(f"{models_found} Modell(e) erkannt.")
+        print_msg(f"{models_found} Modell(e) erkannt.", style="green")
 
-    # Der Servername ist die Spaltenueberschrift im spaeteren Vergleich.
-    # Ohne Nachfrage steht dort der Hostname, was selten hilfreich ist.
     import socket
-
     suggestion = socket.gethostname()
-    server_name = _ask(f"Name dieses Servers fuer den Vergleich [{suggestion}]: ", suggestion)
+    server_name = Prompt.ask(f"[cyan]Name dieses Servers fuer den Vergleich[/cyan]", default=suggestion)
 
     result = bootstrap_config(config_path, root, llama_dir, models_dir, allow_system_search)
 
@@ -207,10 +209,9 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     )
 
     for warning in result.get("warnings", []):
-        print(f"Hinweis: {warning}")
+        console.print(f"[bold yellow]Hinweis:[/bold yellow] {warning}")
 
-    print(f"\nFertig. Konfiguration: {cfg_file}")
-    print("Naechster Schritt: llmbench doctor --config benchmark.yaml")
+    print_panel(f"Konfiguration gespeichert: {cfg_file}\nNaechster Schritt: llmbench doctor --config benchmark.yaml", title="Fertig")
     return 0
 
 

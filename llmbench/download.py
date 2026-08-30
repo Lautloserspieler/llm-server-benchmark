@@ -58,34 +58,37 @@ def download_models(models_dir: str | Path, suite: str = "small") -> None:
             "Bitte fuehre 'pip install huggingface_hub' oder das Setup erneut aus."
         )
 
+    import warnings
+    warnings.filterwarnings("ignore", message="The `local_dir_use_symlinks` argument is deprecated")
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+    from llmbench.utils import console, print_panel, print_msg, print_err
+
     out_dir = Path(models_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    # HF-Token checken (fuer Gated Models, obwohl diese vermutlich public sind)
     token = os.environ.get("HF_TOKEN")
-
     target_models = get_suite_models(suite)
     
-    print(f"Starte Download der Suite '{suite}' ({len(target_models)} Modelle) nach {out_dir}")
-    print("Nutze HuggingFace Cache. Bereits geladene Dateien werden uebersprungen.")
-    print("-" * 60)
+    print_panel(
+        f"Zielverzeichnis: {out_dir}\n"
+        f"Anzahl Modelle: {len(target_models)}\n"
+        f"HF-Cache: Aktiv (bereits geladene Dateien werden uebersprungen)",
+        title=f"Starte Modell-Download: Suite '{suite}'"
+    )
 
     for name, config in target_models.items():
-        print(f"\nUeberpruefe/Lade: {name}")
-        print(f"Repository: {config['repo_id']}")
-        print(f"Muster: {config['pattern']}")
-        
-        try:
-            downloaded_path = snapshot_download(
-                repo_id=config["repo_id"],
-                allow_patterns=config["pattern"],
-                local_dir=str(out_dir),
-                local_dir_use_symlinks=False,  # Symlinks koennen unter Windows problematisch sein
-                token=token,
-            )
-            print(f"[OK] {name} ist bereit in {downloaded_path}")
-        except Exception as e:
-            print(f"[FEHLER] Fehler beim Herunterladen von {name}: {e}")
+        with console.status(f"[cyan]Ueberpruefe/Lade {name} ({config['repo_id']})...[/cyan]", spinner="dots"):
+            try:
+                downloaded_path = snapshot_download(
+                    repo_id=config["repo_id"],
+                    allow_patterns=config["pattern"],
+                    local_dir=str(out_dir),
+                    local_dir_use_symlinks=False,
+                    token=token,
+                )
+                print_msg(f"[OK] {name} ist bereit in {downloaded_path}", style="bold green")
+            except Exception as e:
+                print_err(f"Fehler beim Herunterladen von {name}: {e}")
 
-    print("-" * 60)
-    print("Download-Lauf abgeschlossen.")
+    print_msg("\nAlle Downloads abgeschlossen!", style="bold blue")

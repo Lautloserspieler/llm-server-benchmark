@@ -10,7 +10,13 @@ import os
 from pathlib import Path
 from typing import TypedDict
 
+import os
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
 try:
+    import huggingface_hub.utils
+    huggingface_hub.utils.disable_progress_bars()
     from huggingface_hub import snapshot_download
 except ImportError:
     snapshot_download = None

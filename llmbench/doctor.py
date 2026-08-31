@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from .config import config_fingerprint, resolve_path
 from .hardware import collect_hardware
 from .llama_bench import probe_build
-from .utils import command_exists, resolve_executable, run_capture
+from .utils import command_exists, file_fingerprint, resolve_executable, run_capture
 
-# Optionen, die llmbench an llama-bench uebergibt. Fehlt eine im installierten
-# Build, scheitert der Lauf erst nach der ersten langen Messung.
-# Geprueft wird die Langform: "-d" allein kaeme auch in "-dev" oder "--delay"
-# vor und wuerde nie als fehlend erkannt.
 REQUIRED_BENCH_FLAGS = {
     "-fa": "--flash-attn",
     "-ctk": "--cache-type-k",
@@ -45,8 +40,6 @@ def _check_flags(exe: str) -> dict[str, Any]:
         "missing_required": missing,
         "missing_optional": missing_optional,
     }
-    # Der Wertebereich von -fa hat sich in llama.cpp geaendert (frueher 0/1,
-    # heute on/off/auto). llmbench normalisiert darauf - hier nur vermerken.
     if "--flash-attn" in text:
         result["flash_attn_values"] = "on|off|auto" if "on|off|auto" in text else "unbekannt"
     return result
@@ -58,7 +51,7 @@ def _vram_total_bytes(hardware: dict[str, Any]) -> int | None:
         value = gpu.get("memory.total")
         if value:
             try:
-                total += int(float(value)) * 1024 * 1024  # nvidia-smi liefert MiB
+                total += int(float(value)) * 1024 * 1024
             except (TypeError, ValueError):
                 continue
     return total or None
@@ -94,18 +87,23 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
     vram = _vram_total_bytes(hardware)
     ram = (hardware.get("memory") or {}).get("total_bytes")
     models = []
-    for m in cfg.get("models", []):
-        p = Path(resolve_path(m["path"], cfg))
-        exists = p.exists()
-        size = p.stat().st_size if exists else None
+    for model in cfg.get("models", []):
+        configured_path = resolve_path(model["path"], cfg)
+        fingerprint = file_fingerprint(configured_path, with_hash=False)
+        exists = bool(fingerprint.get("exists"))
+        size = fingerprint.get("size_bytes")
         entry: dict[str, Any] = {
-            "name": m.get("name"),
-            "path": str(p),
+            "name": model.get("name"),
+            "path": str(fingerprint.get("path") or configured_path),
             "exists": exists,
             "size_bytes": size,
         }
+        if fingerprint.get("shard_count"):
+            entry["shard_count"] = fingerprint["shard_count"]
+        if fingerprint.get("error"):
+            entry["hint"] = str(fingerprint["error"])
+
         if size and vram:
-            # Faustregel: Gewichte plus KV-Cache und Overhead.
             entry["fits_in_vram"] = size * 1.2 <= vram
             if not entry["fits_in_vram"]:
                 entry["hint"] = (

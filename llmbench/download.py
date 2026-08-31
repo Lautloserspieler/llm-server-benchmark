@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
+import shutil
 import threading
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -11,6 +13,9 @@ from typing import Any, TypedDict
 from rich.filesize import decimal
 from rich.progress import BarColumn, Progress, ProgressColumn, Task, TextColumn
 from rich.text import Text
+
+from .bootstrap import logical_model_path, shard_info, shard_set_complete
+from .utils import safe_name
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
@@ -23,6 +28,8 @@ except ImportError:
 class ModelConfig(TypedDict):
     repo_id: str
     pattern: list[str]
+    filename_hint: str
+    estimated_gib: float
 
 
 MODELS: dict[str, dict[str, ModelConfig]] = {
@@ -30,26 +37,36 @@ MODELS: dict[str, dict[str, ModelConfig]] = {
         "Qwen3-8B": {
             "repo_id": "Qwen/Qwen3-8B-GGUF",
             "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "filename_hint": "qwen3-8b",
+            "estimated_gib": 6.0,
         },
         "R1-Distill-Qwen-7B": {
             "repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF",
             "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "filename_hint": "deepseek-r1-distill-qwen-7b",
+            "estimated_gib": 6.0,
         },
     },
     "mid": {
         "Qwen3.8-27B": {
             "repo_id": "bartowski/Qwen3.8-27B-GGUF",
             "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "filename_hint": "qwen3.8-27b",
+            "estimated_gib": 18.0,
         },
     },
     "heavy": {
         "Qwen2.5-72B-Instruct": {
             "repo_id": "Qwen/Qwen2.5-72B-Instruct-GGUF",
             "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "filename_hint": "qwen2.5-72b-instruct",
+            "estimated_gib": 48.0,
         },
         "Mixtral-8x22B": {
             "repo_id": "MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF",
             "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "filename_hint": "mixtral-8x22b",
+            "estimated_gib": 90.0,
         },
     },
 }
@@ -93,14 +110,7 @@ class _AdaptiveSpeedColumn(ProgressColumn):
 
 
 class RichTqdm:
-    """Kleine tqdm-kompatible Rich-Bridge fuer ``huggingface_hub``.
-
-    ``snapshot_download`` startet den aggregierten Byte-Balken absichtlich mit
-    ``total=0`` und addiert die Dateigroessen erst, sobald die Metadaten der
-    einzelnen Dateien eintreffen. Deshalb muss eine spaetere Aenderung von
-    ``bar.total`` auch an den Rich-Task weitergegeben werden. Genau das fehlte
-    vorher und fuehrte zu Anzeigen wie ``2.4 GB / 0 bytes`` bei ``0.0 %``.
-    """
+    """tqdm-kompatible Rich-Bridge fuer ``huggingface_hub``."""
 
     _global_progress: Progress | None = None
     _lock = threading.RLock()
@@ -133,10 +143,9 @@ class RichTqdm:
                 )
                 RichTqdm._global_progress.start()
 
-            display_total = self._display_total(self._total)
             self.task_id = RichTqdm._global_progress.add_task(
                 self.desc,
-                total=display_total,
+                total=self._display_total(self._total),
                 completed=self.n,
                 unit=self.unit,
             )
@@ -177,11 +186,7 @@ class RichTqdm:
         if progress is None or self.task_id is None:
             return
         with self._lock:
-            progress.update(
-                self.task_id,
-                completed=0,
-                total=self._display_total(self._total),
-            )
+            progress.update(self.task_id, completed=0, total=self._display_total(self._total))
 
     def refresh(self, *_args: Any, **_kwargs: Any) -> None:
         progress = RichTqdm._global_progress
@@ -251,7 +256,6 @@ class RichTqdm:
 
 
 def get_suite_models(suite: str) -> dict[str, ModelConfig]:
-    """Sammelt alle Modelle fuer die gewuenschte Suite."""
     target_models: dict[str, ModelConfig] = {}
     if suite == "all":
         for category in MODELS.values():
@@ -263,8 +267,60 @@ def get_suite_models(suite: str) -> dict[str, ModelConfig]:
     return target_models
 
 
+def _matches_patterns(filename: str, patterns: list[str]) -> bool:
+    lowered = filename.lower()
+    return any(fnmatch.fnmatch(lowered, pattern.lower()) for pattern in patterns)
+
+
+def find_downloaded_model(models_dir: str | Path, config: ModelConfig) -> Path | None:
+    """Findet ein vollstaendiges lokales Exemplar eines Manifest-Modells."""
+    root = Path(models_dir)
+    if not root.exists():
+        return None
+    hint = config["filename_hint"].lower()
+    candidates: set[Path] = set()
+    for file_path in root.rglob("*.gguf"):
+        name = file_path.name.lower()
+        if hint not in name or not _matches_patterns(file_path.name, config["pattern"]):
+            continue
+        first = logical_model_path(file_path).resolve()
+        if shard_info(first) and not shard_set_complete(first):
+            continue
+        if first.exists():
+            candidates.add(first)
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: str(item).lower())[0]
+
+
+def verify_suite(models_dir: str | Path, suite: str = "all") -> tuple[bool, list[str]]:
+    missing = [
+        name for name, config in get_suite_models(suite).items()
+        if find_downloaded_model(models_dir, config) is None
+    ]
+    return not missing, missing
+
+
+def _warn_free_space(out_dir: Path, missing: list[tuple[str, ModelConfig]]) -> None:
+    from llmbench.utils import print_msg
+
+    if not missing:
+        return
+    estimated = sum(config["estimated_gib"] for _name, config in missing)
+    try:
+        free_gib = shutil.disk_usage(out_dir).free / (1024 ** 3)
+    except OSError:
+        return
+    if free_gib < estimated:
+        print_msg(
+            f"WARNUNG: ca. {estimated:.0f} GiB koennen fuer die fehlenden Modelle benoetigt werden, "
+            f"aber auf dem Ziellaufwerk sind nur {free_gib:.1f} GiB frei.",
+            style="bold yellow",
+        )
+
+
 def download_models(models_dir: str | Path, suite: str = "small") -> None:
-    """Laedt die Modelle der angegebenen Suite herunter."""
+    """Laedt fehlende Modelle und meldet Erfolg nur bei vollstaendiger Suite."""
     if snapshot_download is None:
         raise RuntimeError(
             "Das Paket 'huggingface_hub' ist nicht installiert. "
@@ -274,38 +330,66 @@ def download_models(models_dir: str | Path, suite: str = "small") -> None:
     import warnings
 
     warnings.filterwarnings("ignore", message="The `local_dir_use_symlinks` argument is deprecated")
-
     from llmbench.utils import print_err, print_msg, print_panel
 
     out_dir = Path(models_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-
     token = os.environ.get("HF_TOKEN")
     target_models = get_suite_models(suite)
 
+    missing_before = [
+        (name, config) for name, config in target_models.items()
+        if find_downloaded_model(out_dir, config) is None
+    ]
+    _warn_free_space(out_dir, missing_before)
+
     print_panel(
         f"Zielverzeichnis: {out_dir}\n"
-        f"Anzahl Modelle: {len(target_models)}\n"
-        "HF-Cache: Aktiv (bereits geladene Dateien werden uebersprungen)",
+        f"Modelle in Suite: {len(target_models)}\n"
+        f"Bereits vollstaendig: {len(target_models) - len(missing_before)}\n"
+        "HF-Cache: Aktiv (bereits geladene Dateien werden wiederverwendet)",
         title=f"Starte Modell-Download: Suite '{suite}'",
     )
 
+    failures: list[str] = []
     try:
         for name, config in target_models.items():
-            print_msg(f"\n[cyan]Ueberpruefe/Lade {name} ({config['repo_id']})...[/cyan]")
+            existing = find_downloaded_model(out_dir, config)
+            if existing is not None:
+                print_msg(f"[OK] {name} bereits vorhanden: {existing}", style="green")
+                continue
+
+            print_msg(f"\n[cyan]Lade {name} ({config['repo_id']})...[/cyan]")
+            target_dir = out_dir / safe_name(name)
+            target_dir.mkdir(parents=True, exist_ok=True)
             try:
-                downloaded_path = snapshot_download(
+                snapshot_download(
                     repo_id=config["repo_id"],
                     allow_patterns=config["pattern"],
-                    local_dir=str(out_dir),
+                    local_dir=str(target_dir),
                     local_dir_use_symlinks=False,
                     token=token,
                     tqdm_class=RichTqdm,
                 )
-                print_msg(f"[OK] {name} ist bereit in {downloaded_path}", style="bold green")
+                found = find_downloaded_model(out_dir, config)
+                if found is None:
+                    raise RuntimeError(
+                        "Download endete ohne ein vollstaendiges passendes GGUF-Modell; "
+                        "bei Shard-Modellen muessen alle Teile vorhanden sein."
+                    )
+                print_msg(f"[OK] {name} ist bereit: {found}", style="bold green")
             except Exception as exc:
-                print_err(f"Fehler beim Herunterladen von {name}: {exc}")
+                message = f"{name}: {exc}"
+                failures.append(message)
+                print_err(f"Fehler beim Herunterladen von {message}")
     finally:
         RichTqdm.close_all()
 
-    print_msg("\nAlle Downloads abgeschlossen!", style="bold blue")
+    complete, missing = verify_suite(out_dir, suite)
+    if failures or not complete:
+        details = failures[:]
+        if missing:
+            details.append("Fehlende/unvollstaendige Modelle: " + ", ".join(missing))
+        raise RuntimeError("Modell-Download unvollstaendig. " + " | ".join(details))
+
+    print_msg("\nAlle Modelle der angeforderten Suite sind vollstaendig vorhanden.", style="bold blue")

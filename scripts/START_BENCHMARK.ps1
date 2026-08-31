@@ -60,10 +60,25 @@ function Test-BenchmarkInstallationReady {
     if (-not (Test-Path $LlamaState -PathType Leaf)) { return $false }
 
     try {
-        & $VenvPython -c "import llmbench, yaml, pydantic, psutil" *> $null
+        # V2 braucht zusaetzlich Rich und huggingface_hub fuer den automatischen
+        # Modelldownload. Fehlen diese nach einem git pull in einer alten .venv,
+        # muss einmal der Core laufen und pip install -e . aktualisieren.
+        & $VenvPython -c "import llmbench, yaml, pydantic, psutil, rich, huggingface_hub" *> $null
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
+    }
+}
+
+function Get-DoctorData {
+    $doctorJsonText = (& $VenvPython -m llmbench doctor --config $Config --json | Out-String).Trim()
+    if (-not $doctorJsonText) {
+        throw "Vorpruefung lieferte keine auswertbaren Daten."
+    }
+    try {
+        return ($doctorJsonText | ConvertFrom-Json)
+    } catch {
+        throw "Vorpruefung konnte nicht ausgewertet werden: $($_.Exception.Message)"
     }
 }
 
@@ -82,25 +97,33 @@ function Invoke-BenchmarkRun {
     }
 
     # Nicht nur models\ pruefen: benchmark.yaml darf bewusst auch GGUF-Dateien
-    # ausserhalb des Projektordners referenzieren. Der alte Launcher brach in
-    # diesem Fall faelschlich mit 'Setup abgeschlossen' ab.
-    $doctorJsonText = (& $VenvPython -m llmbench doctor --config $Config --json | Out-String).Trim()
-    if (-not $doctorJsonText) {
-        throw "Vorpruefung lieferte keine auswertbaren Daten."
-    }
-    try {
-        $doctorData = $doctorJsonText | ConvertFrom-Json
-    } catch {
-        throw "Vorpruefung konnte nicht ausgewertet werden: $($_.Exception.Message)"
-    }
-
+    # ausserhalb des Projektordners referenzieren.
+    $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)
+
     if ($configuredModels.Count -eq 0) {
         Write-Host ""
-        Write-Host "Kein Modell konfiguriert." -ForegroundColor Yellow
-        Write-Host "Lege eine .gguf-Datei unter folgendem Ordner ab oder trage einen externen Pfad in benchmark.yaml ein:"
-        Write-Host "  $ModelsDir" -ForegroundColor Yellow
-        exit 0
+        Write-Host "=== Keine Modelle vorhanden - V2 Auto-Download ===" -ForegroundColor Cyan
+        Write-Host "Die Standard-Benchmark-Modelle werden automatisch von HuggingFace geladen."
+        Write-Host "Bereits vorhandene Dateien im HuggingFace-Cache werden wiederverwendet."
+
+        & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "Automatischer Modell-Download ist fehlgeschlagen (Exitcode $LASTEXITCODE)."
+        }
+
+        # Nach dem Download die neuen GGUF-Dateien zwingend in benchmark.yaml
+        # aufnehmen und anschliessend erneut pruefen.
+        & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "Die heruntergeladenen Modelle konnten nicht in benchmark.yaml eingebunden werden."
+        }
+
+        $doctorData = Get-DoctorData
+        $configuredModels = @($doctorData.models)
+        if ($configuredModels.Count -eq 0) {
+            throw "Der Auto-Download wurde beendet, aber es wurde weiterhin kein GGUF-Modell erkannt."
+        }
     }
 
     Write-Host "Gefundene/konfigurierte Modelle: $($configuredModels.Count)"

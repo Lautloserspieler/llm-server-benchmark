@@ -19,22 +19,28 @@ if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 fi
 
-echo "[+] Installiere llmbench..."
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e "."
 
 echo ""
-echo "[OK] Installation abgeschlossen."
+echo "[OK] Programm und Abhaengigkeiten sind bereit."
 echo ""
 echo "Hinweis: llama-bench und llama-server werden unter Linux/macOS nicht"
-echo "automatisch heruntergeladen. Lege beide unter tools/llama.cpp/ ab"
-echo "(Download: https://github.com/ggml-org/llama.cpp/releases oder selbst bauen)."
-echo ""
-echo "Starte jetzt die Einrichtung..."
+echo "automatisch heruntergeladen. Lege beide unter tools/llama.cpp/ ab und"
+echo "verwende auf allen Vergleichsservern denselben Build."
 echo ""
 
+mkdir -p models
+if ! python -m llmbench download --suite all --models-dir models --verify-only >/dev/null 2>&1; then
+    echo "[+] V2-Standard-Suite ist unvollstaendig. Lade fehlende Modelle/Shards..."
+    python -m llmbench download --suite all --models-dir models
+fi
+python -m llmbench download --suite all --models-dir models --verify-only
+
+echo ""
+echo "Starte jetzt die Konfiguration..."
 python -m llmbench setup
 
 echo ""

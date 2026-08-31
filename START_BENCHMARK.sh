@@ -23,36 +23,33 @@ python -m pip install -e "."
 echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp
 if [ ! -f "tools/llama.cpp/llama-bench" ] || [ ! -f "tools/llama.cpp/llama-server" ]; then
-    echo "HINWEIS: Der automatische Download von llama.cpp ist derzeit nur unter"
-    echo "Windows implementiert. Bitte llama-bench und llama-server fuer dieses"
-    echo "System bauen oder herunterladen und in tools/llama.cpp/ ablegen:"
-    echo "  https://github.com/ggml-org/llama.cpp/releases"
-    echo ""
-    echo "Wichtig fuer den Serververgleich: auf allen Servern denselben Build"
-    echo "verwenden. 'llmbench compare' prueft das und meldet Abweichungen."
+    echo "FEHLER: Unter Linux/macOS muessen llama-bench und llama-server"
+    echo "unter tools/llama.cpp/ liegen. Verwende auf allen Servern denselben Build."
+    exit 1
 fi
+
+echo "=== V2 Standard-Suite ==="
+mkdir -p models
+if ! python -m llmbench download --suite all --models-dir models --verify-only >/dev/null 2>&1; then
+    echo "Mindestens ein Standard-Modell fehlt oder ist unvollstaendig."
+    echo "Fehlende Dateien werden automatisch von HuggingFace geladen."
+    python -m llmbench download --suite all --models-dir models
+fi
+python -m llmbench download --suite all --models-dir models --verify-only
 
 echo "=== Konfiguration und Modellerkennung ==="
-mkdir -p models
 python -m llmbench bootstrap --config "$CONFIG" --root "$ROOT_DIR" \
     --llama-dir "tools/llama.cpp" --models-dir models
-
-if [ -z "$(find models -name '*.gguf' -print -quit 2>/dev/null)" ]; then
-    echo ""
-    echo "Einrichtung beendet. Es wurden keine GGUF-Modelle gefunden."
-    echo "Lege eine oder mehrere .gguf-Dateien unter models/ ab und starte erneut."
-    exit 0
-fi
 
 echo "=== Vorabpruefung ==="
 python -m llmbench doctor --config "$CONFIG"
 
 echo "=== Benchmark ==="
 echo "Wie lange soll der Test laufen?"
-echo "  1: kurz (short)   - schnelle Überprüfung"
+echo "  1: kurz (short)    - schnelle Ueberpruefung"
 echo "  2: mittel (medium) - Standardwerte"
-echo "  3: lang (long)    - präzise Ergebnisse"
-read -p "Auswahl [1-3, Standard=2]: " choice
+echo "  3: lang (long)     - praezise Ergebnisse"
+read -r -p "Auswahl [1-3, Standard=2]: " choice
 
 duration="medium"
 if [ "$choice" = "1" ]; then
@@ -61,14 +58,12 @@ elif [ "$choice" = "3" ]; then
     duration="long"
 fi
 
-echo "Verwende Dauer: $duration"
-
 echo ""
 echo "Womit soll getestet werden?"
 echo "  1: Nur CPU"
 echo "  2: Nur GPU"
-echo "  3: CPU und GPU gleichzeitig (Standard, inkl. Dauerlast-Test)"
-read -p "Auswahl [1-3, Standard=3]: " hw_choice
+echo "  3: CPU und GPU (Standard, inkl. Dauerlast-Test)"
+read -r -p "Auswahl [1-3, Standard=3]: " hw_choice
 
 hardware="both"
 if [ "$hw_choice" = "1" ]; then
@@ -77,5 +72,9 @@ elif [ "$hw_choice" = "2" ]; then
     hardware="gpu"
 fi
 
-echo "Verwende Hardware-Auswahl: $hardware"
-python -m llmbench run --config "$CONFIG" --duration "$duration" --hardware "$hardware"
+read -r -p "Zusaetzliche V2-Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten? [j/N]: " stress_choice
+args=(python -m llmbench run --config "$CONFIG" --duration "$duration" --hardware "$hardware")
+if [[ "$stress_choice" =~ ^[jJyY]$ ]]; then
+    args+=(--stress)
+fi
+"${args[@]}"

@@ -21,19 +21,11 @@ $LlamaState = Join-Path $LlamaDir ".llama-build.json"
 $ModelsDir = Join-Path $Root "models"
 $ConfigPath = if ([System.IO.Path]::IsPathRooted($Config)) { $Config } else { Join-Path $Root $Config }
 
-if (-not (Test-Path $EnsurePython)) {
-    throw "Python-Bootstrap fehlt: $EnsurePython"
-}
-if (-not (Test-Path $CoreScript)) {
-    throw "Benchmark-Core fehlt: $CoreScript"
-}
+if (-not (Test-Path $EnsurePython)) { throw "Python-Bootstrap fehlt: $EnsurePython" }
+if (-not (Test-Path $CoreScript)) { throw "Benchmark-Core fehlt: $CoreScript" }
 
-# Python zuerst sicherstellen. ENSURE_PYTHON.ps1 kann Python projektlokal
-# bereitstellen, wenn auf dem Rechner kein nutzbarer Interpreter gefunden wird.
 & $EnsurePython
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $ResolvedPython = $null
 if (Test-Path $PythonPathFile) {
@@ -60,9 +52,6 @@ function Test-BenchmarkInstallationReady {
     if (-not (Test-Path $LlamaState -PathType Leaf)) { return $false }
 
     try {
-        # V2 braucht zusaetzlich Rich und huggingface_hub fuer den automatischen
-        # Modelldownload. Fehlen diese nach einem git pull in einer alten .venv,
-        # muss einmal der Core laufen und pip install -e . aktualisieren.
         & $VenvPython -c "import llmbench, yaml, pydantic, psutil, rich, huggingface_hub" *> $null
         return ($LASTEXITCODE -eq 0)
     } catch {
@@ -72,9 +61,7 @@ function Test-BenchmarkInstallationReady {
 
 function Get-DoctorData {
     $doctorJsonText = (& $VenvPython -m llmbench doctor --config $Config --json | Out-String).Trim()
-    if (-not $doctorJsonText) {
-        throw "Vorpruefung lieferte keine auswertbaren Daten."
-    }
+    if (-not $doctorJsonText) { throw "Vorpruefung lieferte keine auswertbaren Daten." }
     try {
         return ($doctorJsonText | ConvertFrom-Json)
     } catch {
@@ -82,48 +69,46 @@ function Get-DoctorData {
     }
 }
 
+function Ensure-V2ModelSuite {
+    New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
+
+    & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir --verify-only *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "V2-Standard-Suite: vollstaendig vorhanden." -ForegroundColor Green
+        return
+    }
+
+    Write-Host ""
+    Write-Host "=== V2 Standard-Suite unvollstaendig - Auto-Download ===" -ForegroundColor Cyan
+    Write-Host "Fehlende Modelle oder GGUF-Shards werden automatisch von HuggingFace geladen."
+    Write-Host "Vorhandene Dateien und HuggingFace-Cache werden wiederverwendet."
+    & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Automatischer Modell-Download ist fehlgeschlagen (Exitcode $LASTEXITCODE)."
+    }
+
+    & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir --verify-only
+    if ($LASTEXITCODE -ne 0) {
+        throw "Die V2-Standard-Suite ist nach dem Download weiterhin unvollstaendig."
+    }
+}
+
 function Invoke-BenchmarkRun {
     Write-Host ""
     Write-Host "=== Vorhandene Installation erkannt ===" -ForegroundColor Green
-    Write-Host "Setup wird uebersprungen. Starte direkt mit Modellerkennung und Vorpruefung."
+    Write-Host "Setup wird uebersprungen. Pruefe Modelle und starte den Benchmark."
 
-    # Bootstrap ist absichtlich leichtgewichtig und bleibt bei jedem Start aktiv:
-    # neue GGUF-Dateien unter models\ werden dadurch automatisch in eine bestehende
-    # benchmark.yaml aufgenommen, ohne Python/llama.cpp erneut einzurichten.
-    New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
+    Ensure-V2ModelSuite
+
+    # Bootstrap entfernt auch alte, versehentlich eingetragene Folge-Shards und
+    # bindet gesplittete GGUFs nur ueber 00001-of-XXXXX ein.
     & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
-    if ($LASTEXITCODE -ne 0) {
-        throw "benchmark.yaml konnte nicht aktualisiert werden."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "benchmark.yaml konnte nicht aktualisiert werden." }
 
-    # Nicht nur models\ pruefen: benchmark.yaml darf bewusst auch GGUF-Dateien
-    # ausserhalb des Projektordners referenzieren.
     $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)
-
     if ($configuredModels.Count -eq 0) {
-        Write-Host ""
-        Write-Host "=== Keine Modelle vorhanden - V2 Auto-Download ===" -ForegroundColor Cyan
-        Write-Host "Die Standard-Benchmark-Modelle werden automatisch von HuggingFace geladen."
-        Write-Host "Bereits vorhandene Dateien im HuggingFace-Cache werden wiederverwendet."
-
-        & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir
-        if ($LASTEXITCODE -ne 0) {
-            throw "Automatischer Modell-Download ist fehlgeschlagen (Exitcode $LASTEXITCODE)."
-        }
-
-        # Nach dem Download die neuen GGUF-Dateien zwingend in benchmark.yaml
-        # aufnehmen und anschliessend erneut pruefen.
-        & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
-        if ($LASTEXITCODE -ne 0) {
-            throw "Die heruntergeladenen Modelle konnten nicht in benchmark.yaml eingebunden werden."
-        }
-
-        $doctorData = Get-DoctorData
-        $configuredModels = @($doctorData.models)
-        if ($configuredModels.Count -eq 0) {
-            throw "Der Auto-Download wurde beendet, aber es wurde weiterhin kein GGUF-Modell erkannt."
-        }
+        throw "Trotz vollstaendiger Standard-Suite wurde kein GGUF-Modell konfiguriert."
     }
 
     Write-Host "Gefundene/konfigurierte Modelle: $($configuredModels.Count)"
@@ -135,9 +120,7 @@ function Invoke-BenchmarkRun {
     Write-Host ""
     Write-Host "=== Vorpruefung ===" -ForegroundColor Cyan
     & $VenvPython -m llmbench doctor --config $Config
-    if ($LASTEXITCODE -ne 0) {
-        throw "Vorpruefung fehlgeschlagen. Siehe Ausgabe oben."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "Vorpruefung fehlgeschlagen. Siehe Ausgabe oben." }
 
     Write-Host ""
     Write-Host "=== Benchmark ===" -ForegroundColor Cyan
@@ -156,7 +139,7 @@ function Invoke-BenchmarkRun {
     Write-Host "Womit soll getestet werden?"
     Write-Host "  1: Nur CPU"
     Write-Host "  2: Nur GPU"
-    Write-Host "  3: CPU und GPU gleichzeitig (Standard, inkl. Dauerlast-Test)"
+    Write-Host "  3: CPU und GPU (Standard, inkl. Dauerlast-Test)"
     $hwChoice = Read-Host "Auswahl [1-3, Standard=3]"
 
     $hardware = "both"
@@ -164,15 +147,17 @@ function Invoke-BenchmarkRun {
     elseif ($hwChoice -eq "2") { $hardware = "gpu" }
     Write-Host "Verwende Hardware-Auswahl: $hardware"
 
-    & $VenvPython -m llmbench run --config $Config --duration $duration --hardware $hardware
-    if ($LASTEXITCODE -ne 0) {
-        throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)."
+    Write-Host ""
+    $stressChoice = Read-Host "Zusaetzliche V2-Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten? [j/N]"
+    $runArgs = @("-m", "llmbench", "run", "--config", $Config, "--duration", $duration, "--hardware", $hardware)
+    if ($stressChoice -match "^[jJyY]") {
+        $runArgs += "--stress"
     }
+
+    & $VenvPython @runArgs
+    if ($LASTEXITCODE -ne 0) { throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)." }
 }
 
-# Normaler Start: Wenn die Installation bereits vollstaendig vorhanden ist,
-# darf der Launcher NICHT wieder in den Setup-Core springen.
-# -SetupOnly und -ForceUpdateLlamaCpp erzwingen weiterhin bewusst den Core-Pfad.
 if (-not $SetupOnly -and -not $ForceUpdateLlamaCpp -and (Test-BenchmarkInstallationReady)) {
     try {
         Invoke-BenchmarkRun
@@ -188,9 +173,6 @@ Write-Host ""
 Write-Host "Installation ist noch nicht vollstaendig oder ein Setup wurde explizit angefordert."
 Write-Host "Starte einmalig den Setup-Core..." -ForegroundColor Yellow
 
-# Der Setup-Core installiert nur dann Komponenten, wenn sie fehlen oder explizit
-# aktualisiert werden sollen. Nach erfolgreichem Setup nimmt der naechste normale
-# Start automatisch den Fast-Start oben.
 $forward = @{ Config = $Config }
 if ($LlamaCppTag) { $forward["LlamaCppTag"] = $LlamaCppTag }
 if ($SetupOnly) { $forward["SetupOnly"] = $true }
@@ -199,9 +181,7 @@ if ($ForceUpdateLlamaCpp) { $forward["ForceUpdateLlamaCpp"] = $true }
 try {
     & $CoreScript @forward
     $rc = $LASTEXITCODE
-    if ($rc -ne 0) {
-        throw "Benchmark-Core wurde mit Fehlercode $rc beendet."
-    }
+    if ($rc -ne 0) { throw "Benchmark-Core wurde mit Fehlercode $rc beendet." }
     exit 0
 } catch {
     Write-Host ""

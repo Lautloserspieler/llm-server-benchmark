@@ -29,3 +29,30 @@ jobs:
 
       - name: Pytest
         run: pytest -q
+
+      - name: Validate PowerShell launchers
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $scripts = @(
+            'scripts/START_BENCHMARK.ps1',
+            'scripts/START_BENCHMARK_CORE.ps1',
+            'scripts/ENSURE_PYTHON.ps1',
+            'scripts/ENSURE_LLAMA_CPP.ps1'
+          )
+          $failed = $false
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Host "PowerShell syntax errors in $script" -ForegroundColor Red
+              $errors | ForEach-Object { Write-Host $_.Message -ForegroundColor Red }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }

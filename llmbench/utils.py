@@ -7,9 +7,9 @@ import re
 import socket
 import subprocess
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from collections.abc import Iterable
 from typing import Any
 
 from rich.console import Console
@@ -17,11 +17,14 @@ from rich.panel import Panel
 
 console = Console()
 
+
 def print_msg(msg: str, style: str = "cyan") -> None:
     console.print(msg, style=style)
 
+
 def print_err(msg: str) -> None:
     console.print(f"[bold red]FEHLER:[/bold red] {msg}")
+
 
 def print_panel(msg: str, title: str = "LLM Benchmark") -> None:
     console.print(Panel(msg, title=title, border_style="cyan"))
@@ -32,8 +35,6 @@ def utc_now_iso() -> str:
 
 
 def utc_now_compact() -> str:
-    """Zeitstempel fuer Ordnernamen. Bewusst UTC, damit Laeufe von Servern in
-    verschiedenen Zeitzonen chronologisch sortierbar bleiben."""
     return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
 
 
@@ -69,20 +70,57 @@ def sha256_file(path: str | Path, chunk_size: int = 8 * 1024 * 1024) -> str:
 
 
 def file_fingerprint(path: str | Path, with_hash: bool = True) -> dict[str, Any]:
-    """Groesse, Aenderungszeit und optional SHA256 einer Datei."""
+    """Groesse, Aenderungszeit und optional SHA256 einer Datei/eines GGUF-Sets.
+
+    Bei gesplitteten GGUFs wird der komplette Shard-Satz als eine logische Datei
+    behandelt. Der kombinierte Hash ist damit auf zwei Servern nur identisch,
+    wenn wirklich alle Shards bytegleich vorhanden sind.
+    """
     p = Path(path)
     if not p.exists():
         return {"path": str(p), "exists": False}
-    stat = p.stat()
+
+    files = [p]
+    if p.suffix.lower() == ".gguf":
+        with contextlib.suppress(Exception):
+            from .bootstrap import logical_model_path, model_shards, shard_info, shard_set_complete
+
+            logical = logical_model_path(p)
+            if shard_info(logical):
+                p = logical
+                if not p.exists() or not shard_set_complete(p):
+                    return {
+                        "path": str(p),
+                        "exists": False,
+                        "error": "GGUF-Shard-Satz ist unvollstaendig",
+                    }
+                files = model_shards(p)
+
+    stats = [item.stat() for item in files]
     info: dict[str, Any] = {
         "path": str(p),
         "exists": True,
-        "size_bytes": stat.st_size,
-        "modified_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+        "size_bytes": sum(stat.st_size for stat in stats),
+        "modified_at": datetime.fromtimestamp(
+            max(stat.st_mtime for stat in stats), timezone.utc
+        ).isoformat(timespec="seconds"),
     }
+    if len(files) > 1:
+        info["shards"] = [item.name for item in files]
+        info["shard_count"] = len(files)
+
     if with_hash:
         with contextlib.suppress(OSError):
-            info["sha256"] = sha256_file(p)
+            if len(files) == 1:
+                info["sha256"] = sha256_file(files[0])
+            else:
+                aggregate = hashlib.sha256()
+                for item in files:
+                    aggregate.update(item.name.encode("utf-8"))
+                    aggregate.update(b"\0")
+                    aggregate.update(sha256_file(item).encode("ascii"))
+                    aggregate.update(b"\n")
+                info["sha256"] = aggregate.hexdigest()
     return info
 
 

@@ -71,17 +71,25 @@ def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware
 
 def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     path = resolve_path(model["path"], cfg)
-    p = Path(path)
+    fingerprint = file_fingerprint(
+        path,
+        with_hash=bool(cfg["project"].get("hash_models", True)),
+    )
     meta: dict[str, Any] = {
         "name": model["name"],
-        "path": path,
-        "exists": p.exists(),
-        "size_bytes": p.stat().st_size if p.exists() else None,
+        "path": str(fingerprint.get("path") or path),
+        "exists": bool(fingerprint.get("exists")),
+        "size_bytes": fingerprint.get("size_bytes"),
         "quality_gate": model.get("quality_gate"),
         "notes": model.get("notes"),
     }
-    if p.exists() and cfg["project"].get("hash_models", True):
-        meta["sha256"] = file_fingerprint(p, with_hash=True).get("sha256")
+    if fingerprint.get("sha256"):
+        meta["sha256"] = fingerprint["sha256"]
+    if fingerprint.get("shard_count"):
+        meta["shard_count"] = fingerprint["shard_count"]
+        meta["shards"] = fingerprint.get("shards") or []
+    if fingerprint.get("error"):
+        meta["fingerprint_error"] = fingerprint["error"]
     return meta
 
 

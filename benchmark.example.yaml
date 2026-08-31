@@ -3,13 +3,10 @@ project:
   # Ueberschrift dieses Servers im Vergleich. null = Hostname verwenden.
   server_name: null
   output_dir: "results"
-  # SHA256 der Modelle bzw. der llama.cpp-Binaries berechnen.
-  # Beides ist der Nachweis, dass zwei Server wirklich dasselbe getestet haben.
   hash_models: true
   hash_tools: true
 
 tools:
-  # Diese Pfade werden beim ersten Start automatisch gesetzt.
   llama_bench: "tools/llama.cpp/llama-bench.exe"
   llama_server: "tools/llama.cpp/llama-server.exe"
 
@@ -18,13 +15,10 @@ benchmark:
   delay_seconds: 1
   batch_size: 2048
   ubatch_size: 512
-  # auto, on oder off
   flash_attention: auto
   cache_type_k: f16
   cache_type_v: f16
   resource_sample_interval: 0.5
-  # Obergrenze je Einzeltest. Ohne sie kann ein Lauf bei zu grosser
-  # Kontexttiefe unbegrenzt haengen.
   timeout_seconds: 3600
   prompt_tokens: [512, 4096, 8192]
   generation_tokens: [128, 512]
@@ -41,36 +35,21 @@ endpoint:
   parallel_slots: 8
   concurrency: [1, 2, 4, 8]
   requests_per_level: 8
-  # Aufwaermlaeufe vor der Messung, damit Concurrency 1 nicht den
-  # Kaltstart des Servers mitmisst.
   warmup_requests: 2
   max_tokens: 256
   temperature: 0.0
   seed: 42
-  # Feste Antwortlaenge erzwingen, sonst schwanken die Tokenzahlen
-  # zwischen Laeufen und System-TPS wird unvergleichbar.
   ignore_eos: true
   timeout_seconds: 600
   startup_timeout_seconds: 300
-
-  # Option 1: Einzelner fester Prompt fuer die Tests (Standard)
   prompt: >-
     Erklaere in einem technisch praezisen Absatz, warum reproduzierbare Benchmarks
     fuer lokale LLM-Server wichtig sind.
-  
-  # Option 2: Realistische Datensaetze (JSONL Format, pro Zeile ein JSON)
   # dataset_path: "path/to/sharegpt_dataset.jsonl"
-  
-  # Setze auf 'true', um den OpenAI-kompatiblen /v1/chat/completions Endpoint statt /completion zu nutzen (noetig bei Messages-Arrays in Datensaetzen)
   chat_format: false
 
 soak:
-  # Startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt beide
-  # unter Dauerlast, um Throttling durch Temperatur sichtbar zu machen. Braucht
-  # je Modell ein Profil mit gpu_layers: 0 (CPU) und eins mit gpu_layers != 0
-  # (GPU) - `llmbench bootstrap` legt beide automatisch an.
   enabled: true
-  # null = automatisch das erste Profil mit gpu_layers: 0 bzw. != 0 verwenden.
   cpu_profile: null
   gpu_profile: null
   host: "127.0.0.1"
@@ -85,26 +64,28 @@ soak:
   seed: 42
   context_size: 8192
   startup_timeout_seconds: 300
-  # Ab diesem Rueckgang der Tokens/s zwischen frueher und spaeter Laufzeit
-  # gilt Throttling als wahrscheinlich.
   throttle_tps_drop_fraction: 0.15
   prompt: >-
     Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei Dauerlast
     thermisch geregelt werden.
 
-# Wird durch die automatische Modellerkennung ergaenzt.
+stress:
+  # stress-ttft erhoeht die Parallelitaet deutlich ueber den normalen Endpoint-Test.
+  ttft_concurrency: [1, 2, 4, 8, 16, 32]
+  # stress-oom startet llama-server fuer jede Stufe neu. So wird sichtbar, ob
+  # bereits das Anlegen des KV-Caches oder erst der lange Request scheitert.
+  oom_contexts: [4096, 8192, 16384, 32768, 65536, 96000, 130000]
+
+# Wird durch die automatische Modellerkennung ergaenzt. Gesplittete GGUFs
+# (00001-of-XXXXX bis XXXXX-of-XXXXX) erscheinen dabei als genau ein Modell.
 models:
-  # Beispiel fuer ein Modell mit Quality Gate
-  # - name: "Qwen-27B-Q4_0"
-  #   path: "models/qwen-27b-q4_0.gguf"
+  # - name: "Qwen-27B-Q4_K_M"
+  #   path: "models/Qwen-27B-Q4_K_M.gguf"
   #   quality_gate:
   #     enabled: true
   #     tests:
   #       - prompt: "Rechne: 12 + 15 = "
   #         expected_regex: "27"
-  #         max_tokens: 10
-  #       - prompt: "Nenne die Hauptstadt von Frankreich. Antworte nur mit dem Namen der Stadt."
-  #         expected_regex: "Paris"
   #         max_tokens: 10
   #   profiles:
   #     - name: "Full-GPU"

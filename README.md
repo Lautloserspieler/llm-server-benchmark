@@ -1,278 +1,325 @@
 # LLM Server Benchmark
 
-Reproduzierbares Benchmark-Tool für lokale LLM-Server und Workstations auf Basis von **llama.cpp**.
+Reproduzierbares Benchmark-Tool fuer lokale LLM-Server und Workstations auf Basis von **llama.cpp**.
 
-Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingungen — und der **Nachweis**, dass die Bedingungen tatsächlich identisch waren.
+Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingungen - inklusive Nachweis, dass Build, Modell-Dateien und Benchmark-Einstellungen wirklich uebereinstimmen.
 
-- Prompt Processing / Input Tokens pro Sekunde
-- Text Generation / Output Tokens pro Sekunde
-- Long-Context-Performance bei 8K, 32K, 64K und ~128K belegtem Kontext
+## Funktionen
+
+- Prompt Processing / Input-Tokens pro Sekunde
+- Text Generation / Output-Tokens pro Sekunde
+- Long-Context-Tests bei real belegtem KV-Cache
 - CPU-, RAM-, GPU- und VRAM-Auslastung
-- GPU-Leistungsaufnahme, Temperatur und Tokens/s pro Watt
-- Full-GPU-, Hybrid- und CPU-Only-Profile, wahlweise nur CPU, nur GPU oder beides (`--hardware`)
-- parallele Requests / Multi-User-Tests
+- NVIDIA-Leistungsaufnahme, Temperatur und Tokens/s pro Watt
+- CPU-, GPU- und Hybrid-Profile
+- parallele Endpoint-/Multi-User-Tests
 - TTFT P50 / P95
 - System-TPS und Interactivity-TPS
-- Live-Anzeige im Terminal während des Laufs
+- kurzer und langer Dauerlast-/Soak-Test
+- V2-Stresstests fuer TTFT, Multi-Tenant und KV-/Kontext-Grenzen
+- echter Quantisierungsvergleich fuer mehrere Quants desselben Basismodells
+- automatische Standard-Modell-Suite ueber Hugging Face
+- vollstaendige Unterstuetzung gesplitteter GGUF-Modelle
 - PDF-, HTML-, CSV- und JSON-Berichte
-- SHA256-Prüfung der GGUF-Dateien **und** der llama.cpp-Programmdateien
-- automatische Konsistenzprüfung beim Vergleich mehrerer Serverläufe
-- Dauerlast-Test: CPU- und GPU-Server gleichzeitig, kurz und lang, zur Throttling-Erkennung
-
-## Version 1.4.0
-
-Die kurzen pp/tg-Tests sind vorbei, bevor die Hardware überhaupt warm wird — für Temperatur und Throttling taugen sie nicht. Neu ist deshalb ein Dauerlast-Test (`soak`), der einen CPU-Only- und einen GPU-Server **gleichzeitig** startet und beide über mehrere Minuten unter Last hält, während Temperatur, Leistungsaufnahme und Tokens/s laufend mitgeschrieben werden. Jeder Modelllauf bekommt automatisch einen kurzen (5 Minuten) und einen langen (30 Minuten) Durchgang; ein Rückgang der Tokens/s über die Laufzeit gilt als Hinweis auf Throttling und erscheint als Warnung im Bericht.
-
-`llmbench bootstrap` legt für neu erkannte Modelle jetzt automatisch auch ein `CPU-Only`-Profil an — Voraussetzung für den Soak-Test und nebenbei ein direkt vergleichbarer reiner CPU-Pfad für die normalen Tests. Details unter [Dauerlast-Test (Soak-Test)](#dauerlast-test-soak-test).
-
-Neu ist außerdem `llmbench run --hardware {cpu,gpu,both}`: schränkt den Lauf auf CPU-, auf GPU-Profile oder beides ein. `START_BENCHMARK.bat`/`.sh` fragen das jetzt interaktiv ab, direkt nach der Testdauer.
-
-## Version 1.3.0
-
-Während eines Laufs war bisher nichts zu sehen. Neu ist deshalb eine Statuszeile im Terminal, die laufend zeigt, welcher Test gerade läuft, wie weit er ist, was die Hardware dabei tut und wie lange der Gesamtlauf noch dauert:
-
-```text
-[3/9] qwen-27b-q4_0 · Full-GPU · long_context
-    pp512                     1284.30 t/s   ±12.10
-    tg128                       58.70 t/s   ±0.40
-  laeuft 04:12 · run 2/5 · CPU 18% · GPU 98% · 11.4/12.0 GiB · 187 W · 71 °C · noch ca. 23:41
-```
-
-Fertige Einzelergebnisse bleiben als feste Zeilen stehen, die Statuszeile darunter aktualisiert sich. Ohne Terminal, etwa bei Umleitung in eine Datei, schaltet die Ausgabe selbsttätig auf einzelne Zeilen um; erzwingen lässt sich das mit `--plain`.
-
-Am Ende steht eine Ergebnistabelle direkt im Terminal, und jeder Lauf erzeugt zusätzlich einen PDF-Bericht mit Diagrammen.
-
-Das Web-Dashboard ist entfallen — die Live-Anzeige ersetzt es.
-
-## Version 1.2.0
-
-Der Schwerpunkt dieser Version war der Nachweis der Vergleichbarkeit. Bis 1.1.1 hat das Werkzeug korrekt gemessen, aber nicht festgehalten, *unter welchen Bedingungen*. Zwei Server konnten unbemerkt mit verschiedenen Einstellungen, verschiedenen llama.cpp-Builds oder verschiedenen Modelldateien verglichen werden.
-
-Neu:
-
-- Die tatsächlich verwendete Konfiguration, ein **Konfigurations-Fingerabdruck**, der llama.cpp-Build und der SHA256 von `llama-bench` landen in `summary.json`.
-- `llmbench compare` prüft vor dem Vergleich, ob die Läufe überhaupt vergleichbar sind, und stellt Abweichungen an den Anfang des Berichts.
-- Die automatische Erkennung durchsucht nur noch das Projekt, nicht mehr PATH und Systemordner.
-- Endpoint-Tests laufen mit denselben Parametern wie `llama-bench`, mit festem Seed, fester Antwortlänge und Aufwärmläufen.
-- Jeder Einzeltest hat ein Zeitlimit.
-
-Die vollständige Liste steht in `CHANGELOG.md`.
+- SHA256-Pruefung der Modelle und llama.cpp-Binaries
+- Konsistenzpruefung beim Vergleich mehrerer Server
 
 ## Schnellstart
 
 ### Windows
 
 ```text
-1. Repository herunterladen oder klonen
-2. GGUF-Dateien nach models/ kopieren
-3. START_BENCHMARK.bat ausführen
+1. Repository klonen oder herunterladen
+2. START_BENCHMARK.bat starten
+3. Setup/Download fertig laufen lassen
+4. Benchmark-Dauer und Hardware-Auswahl waehlen
 ```
 
-`START_BENCHMARK.bat` richtet bei Bedarf Python ein, lädt den passenden llama.cpp-Build herunter, erzeugt die Konfiguration und startet den Benchmark. Ist Python 3.10+ bereits vorhanden, genügt auch `setup.bat`.
+`START_BENCHMARK.bat` richtet bei Bedarf Python projektlokal ein, installiert die Python-Abhaengigkeiten, installiert bzw. prueft llama.cpp, prueft die komplette V2-Modell-Suite und laedt fehlende Modelle oder GGUF-Shards automatisch nach.
 
-### Linux und macOS
+Ist die Installation bereits vollstaendig, wird das Setup uebersprungen und direkt der Benchmark-Pfad gestartet.
+
+Wenn Python 3.10+ bereits vorhanden ist, kann alternativ `setup.bat` benutzt werden.
+
+### Linux / macOS
 
 ```bash
 ./setup.sh
+./START_BENCHMARK.sh
 ```
 
-`setup.sh` legt `.venv` an und installiert `llmbench` mit allen Abhängigkeiten.
+Python-Abhaengigkeiten und die V2-Modell-Suite werden automatisch eingerichtet. **llama.cpp selbst wird unter Linux/macOS nicht automatisch installiert.** `llama-bench` und `llama-server` muessen unter `tools/llama.cpp/` liegen.
 
-> **Wichtig:** Unter Linux und macOS wird llama.cpp **nicht** automatisch heruntergeladen. Lade `llama-bench` und `llama-server` von den [offiziellen Releases](https://github.com/ggml-org/llama.cpp/releases) oder baue sie selbst, und lege beide unter `tools/llama.cpp/` ab. Für einen Serververgleich auf allen Servern denselben Build verwenden — `llmbench compare` meldet Abweichungen.
+Fuer faire Serververgleiche auf allen Rechnern denselben llama.cpp-Build verwenden.
 
-## Modelle
+## Automatische V2-Modell-Suite
 
-GGUF-Modelle werden nicht automatisch heruntergeladen — sie sind keine Programmabhängigkeit und oft viele Gigabyte groß.
+Standardmaessig verwaltet `llmbench` folgende Q4_K_M-Modelle:
+
+- Qwen3-8B
+- DeepSeek-R1-Distill-Qwen-7B
+- Qwen3.8-27B
+- Qwen2.5-72B-Instruct
+- Mixtral-8x22B-Instruct
+
+Die komplette Suite ist sehr gross. Vor dem Download wird der freie Speicher geprueft und bei wahrscheinlich zu wenig Platz gewarnt.
+
+Manuell ausfuehren:
+
+```powershell
+llmbench download --suite small
+llmbench download --suite mid
+llmbench download --suite heavy
+llmbench download --suite all
+```
+
+Nur pruefen, ohne etwas herunterzuladen:
+
+```powershell
+llmbench download --suite all --verify-only
+```
+
+Der Downloader meldet Erfolg erst, wenn alle angeforderten logischen Modelle vollstaendig vorhanden sind. Einzelne fehlgeschlagene Downloads werden nicht mehr verschluckt.
+
+### Gesplittete GGUF-Dateien
+
+Sehr grosse Modelle koennen beispielsweise so vorliegen:
 
 ```text
-models/
-  gemma-12b-q4_0.gguf
-  gpt-oss-20b-q4_0.gguf
-  qwen-27b-q4_0.gguf
+model-Q4_K_M-00001-of-00012.gguf
+model-Q4_K_M-00002-of-00012.gguf
+...
+model-Q4_K_M-00012-of-00012.gguf
 ```
 
-Beim nächsten Start werden alle GGUF-Dateien unter `models/` erkannt und in `benchmark.yaml` eingetragen. Vorhandene Profile und manuelle Anpassungen bleiben erhalten. Dateien mit gleichem Namen in verschiedenen Unterordnern bekommen automatisch eindeutige Modellnamen, damit sich ihre Ergebnisse nicht gegenseitig überschreiben.
+`llmbench` behandelt diesen Satz als **ein einziges Modell**:
 
-Modelldateien sind über `.gitignore` vom Repository ausgeschlossen.
+- nur `00001-of-XXXXX.gguf` wird in `benchmark.yaml` eingetragen,
+- ein unvollstaendiger Shard-Satz gilt nicht als testbares Modell,
+- alte versehentlich einzeln eingetragene Folge-Shards werden beim Bootstrap entfernt,
+- Groesse und SHA256-Nachweis beziehen alle Shards ein.
 
-## Reproduzierbarkeit
+Eigene GGUF-Dateien koennen weiterhin unter `models/` abgelegt werden. `llmbench bootstrap` erkennt sie rekursiv und ergaenzt `benchmark.yaml`, ohne bestehende Profile zu ueberschreiben.
 
-Für einen fairen Serververgleich müssen übereinstimmen:
+## llama.cpp reproduzierbar halten
 
-1. dieselbe llama.cpp-Version,
-2. exakt dieselben GGUF-Dateien,
-3. dieselbe Quantisierung,
-4. dieselbe Benchmark-Konfiguration,
-5. möglichst derselbe Treiber- und Softwarestand.
+Nach der ersten Installation wird llama.cpp nicht bei jedem Benchmark automatisch aktualisiert. Sonst koennten zwei Server unbemerkt mit verschiedenen Builds gemessen werden.
 
-### Was automatisch geprüft wird
-
-Jeder Lauf schreibt in `summary.json`:
-
-| Feld | Bedeutung |
-| --- | --- |
-| `config_fingerprint` | Hash über alle ergebnisrelevanten Einstellungen |
-| `config` | die vollständige verwendete Konfiguration |
-| `tools.llama_bench.binary.sha256` | Prüfsumme der Programmdatei |
-| `tools.llama_cpp_build_ids` | Build-Commit und -Nummer aus llama.cpp selbst |
-| `llmbench_version` | Version dieses Werkzeugs |
-| `models[].model.sha256` | Prüfsumme jeder getesteten GGUF-Datei |
-
-`llmbench compare` vergleicht diese Angaben über alle Läufe und meldet Abweichungen als Fehler oder Hinweis, bevor eine einzige Zahl gegenübergestellt wird.
-
-Den Fingerabdruck eines Servers zeigt auch `llmbench doctor` an. Vor einer Vergleichsserie lohnt der kurze Blick: Auf allen Servern muss derselbe Wert stehen.
-
-### llama.cpp wird bewusst eingefroren
-
-Nach der ersten Installation wird llama.cpp **nicht** bei jedem Start aktualisiert, sonst könnten zwei Server unbemerkt mit verschiedenen Builds messen. Ein bewusstes Update erfolgt über `UPDATE_DEPENDENCIES.bat`.
-
-#### Build festschreiben
-
-Ohne feste Vorgabe installiert das Setup den neuesten llama.cpp-Build — und der hängt davon ab, *wann* jemand das Setup gestartet hat. Zwei Server, die eine Woche auseinander eingerichtet werden, bekommen verschiedene Builds.
-
-Für eine Vergleichsserie deshalb den Build festschreiben. Der erste Server nennt nach der Installation den verwendeten Tag; diesen in eine Datei `llama-cpp-version.txt` im Projektordner schreiben:
+Einen festen Build kann man in `llama-cpp-version.txt` hinterlegen, zum Beispiel:
 
 ```text
 b10456
 ```
 
-Alle weiteren Server installieren dann genau diesen Build. Die Datei gehört ins Repository — sie ist Teil der Testbedingungen. Alternativ einmalig per Parameter:
+Unter Windows kann ein Build auch explizit angegeben werden:
 
 ```powershell
 .\START_BENCHMARK.bat -LlamaCppTag b10456
 ```
 
-Oder über die Umgebungsvariable `LLMBENCH_LLAMACPP_TAG`. Reihenfolge: Parameter, dann Umgebungsvariable, dann `llama-cpp-version.txt`, dann neuester Build.
+Der tatsaechlich verwendete Build wird in den Ergebnisdaten festgehalten. `llmbench compare` meldet Unterschiede.
 
-Welcher Build tatsächlich installiert wurde, steht in `tools/llama.cpp/.llama-build.json` und in jedem Ergebnis unter `tools.llama_cpp_build_ids`. `llmbench compare` meldet Abweichungen als Fehler.
-
-Die automatische Erkennung sucht ausschließlich in `tools/llama.cpp` und `bin/` innerhalb des Projekts. Sie greift **nicht** mehr auf das Arbeitsverzeichnis, den PATH oder Systemordner zu — genau das hatte zuvor dazu geführt, dass ein zufällig installiertes llama.cpp den eingefrorenen Build verdrängen konnte. Das alte Verhalten ist über `--allow-system-search` weiterhin erreichbar.
-
-## NVIDIA-Treiber
-
-Ein bestehender NVIDIA-Grafiktreiber wird **nicht** automatisch ersetzt. Die für den gewählten CUDA-Build nötigen CUDA-Runtime-DLLs werden dagegen automatisch installiert; ein separates CUDA Toolkit ist nicht erforderlich. Ohne NVIDIA-GPU installiert das Setup den CPU-Build.
-
-## Benchmark-Suite
+## Normaler Benchmark
 
 ### Prompt Processing
 
-Standardmäßig `pp512`, `pp4096`, `pp8192`. Messwert: **Input Tokens/s**.
+Standard: `pp512`, `pp4096`, `pp8192`.
+
+Messwert: Input-Tokens/s.
 
 ### Text Generation
 
-Standardmäßig `tg128`, `tg512`. Messwert: **Output Tokens/s**.
+Standard: `tg128`, `tg512`.
+
+Messwert: Output-Tokens/s.
 
 ### Long Context
 
-Standardmäßig 0, 8.192, 32.768, 65.536 und 130.000 Tokens Kontexttiefe. `llama-bench -d` füllt den KV-Cache tatsächlich bis zur jeweiligen Tiefe — gemessen wird also die Leistung bei real belegtem Kontext, nicht nur ein eingestelltes Kontextfenster.
+Der Long-Context-Test verwendet `llama-bench -d`, sodass der KV-Cache tatsaechlich bis zur jeweiligen Tiefe belegt wird.
 
-Jeder Einzeltest ist über `benchmark.timeout_seconds` (Standard: 1 Stunde) begrenzt. Passt eine Kontexttiefe nicht in den Speicher, wird der Test als `timeout` vermerkt und der Lauf fortgesetzt, statt unbegrenzt zu hängen.
+Zu grosse Kontextstufen laufen nicht unbegrenzt: `benchmark.timeout_seconds` setzt ein Zeitlimit und der restliche Lauf wird fortgesetzt.
 
-### Hardware-Telemetrie
+### Hardware-Auswahl
 
-Erfasst werden CPU, RAM, GPU-Auslastung, VRAM, Leistungsaufnahme und Temperatur, dazu der Windows-Energieplan bzw. der Linux-CPU-Governor.
+```powershell
+llmbench run --hardware cpu
+llmbench run --hardware gpu
+llmbench run --hardware both
+```
 
-GPU-Telemetrie wird über NVML gelesen und ist damit **NVIDIA-spezifisch**. AMD- und Intel-GPUs werden erkannt und im Bericht aufgeführt, liefern aber keine Auslastungs- und Leistungsdaten.
+- `cpu`: nur Profile mit `gpu_layers: 0`
+- `gpu`: GPU- und Hybrid-Profile
+- `both`: alle Profile; nur hier kann der kombinierte CPU/GPU-Soak-Test laufen
 
-Weil NVML die gesamte Karte misst, erkennt der Monitor zusätzlich fremde Prozesse auf der GPU und erfasst einen Ruhewert vor der Last. Beides erscheint als Hinweis im Bericht — eine GPU, auf der noch etwas anderes lief, liefert keine belastbaren Vergleichswerte.
-
-### Endpoint- und Multi-User-Test
-
-Optional startet das Tool `llama-server` selbst und testet 1, 2, 4 und 8 parallele Requests. Der Server wird dabei mit denselben Kernparametern gestartet wie `llama-bench` (Batch, UBatch, Flash Attention, KV-Cache-Typen).
-
-Gemessen werden System-TPS, Tokens/s pro Request, TTFT P50 und P95 sowie die Erfolgsquote.
-
-Damit die Zahlen zwischen Läufen vergleichbar bleiben:
-
-- `endpoint.warmup_requests` (Standard 2) wärmt den Server vor der Messung auf; diese Requests werden verworfen.
-- `endpoint.ignore_eos` (Standard `true`) erzwingt eine feste Antwortlänge. Ohne das misst System-TPS teilweise, wie früh das Modell aufhört zu schreiben.
-- `endpoint.seed` (Standard 42) hält das Sampling deterministisch.
-
-### Dauerlast-Test (Soak-Test)
-
-Die pp/tg-Tests dauern jeweils nur Sekunden — die Hardware erreicht in dieser Zeit kein thermisches Gleichgewicht. Der Soak-Test startet deshalb einen CPU-Only- und einen GPU-Server **gleichzeitig** (genau wie im Mehrbenutzerbetrieb, wenn ein Server beide Lastarten parallel bedient) und hält beide über längere Zeit unter Dauerlast, während Temperatur, Leistungsaufnahme und Tokens/s durchgehend mitgeschrieben werden.
-
-Jeder Modelllauf umfasst automatisch zwei Durchgänge:
-
-- **kurz** (`soak.duration_short_seconds`, Standard 5 Minuten)
-- **lang** (`soak.duration_long_seconds`, Standard 30 Minuten)
-
-Voraussetzung sind zwei Profile je Modell: eines mit `gpu_layers: 0` (CPU) und eines mit `gpu_layers` ungleich 0 (GPU). `llmbench bootstrap` legt für neu erkannte Modelle automatisch `CPU-Only` und `Full-GPU` an. Fehlt eines der beiden, wird der Soak-Test für dieses Modell übersprungen und ein Hinweis im Bericht vermerkt — der restliche Lauf bleibt gültig.
-
-Throttling wird heuristisch erkannt: Fallen die Tokens/s vom frühen Teil des Laufs (10–30 % der Laufzeit) zum späten Teil (70–100 %) um mehr als `soak.throttle_tps_drop_fraction` (Standard 15 %), gilt das als Hinweis auf thermisches Throttling. Die gemessene Maximaltemperatur je GPU steht zusätzlich im Bericht — das Ergebnis lohnt in jedem Fall den eigenen Blick.
-
-Abschaltbar über `soak.enabled: false`. `llmbench compare` und `report.pdf` enthalten die Soak-Ergebnisse aktuell noch nicht, nur `report.html` und `summary.json`.
-
-## Konfiguration
-
-Die Vorlage liegt in `benchmark.example.yaml`; beim ersten Start entsteht daraus `benchmark.yaml`. Diese Datei ist maschinenspezifisch und per `.gitignore` ausgeschlossen — geteilt wird die Vorlage.
-
-Neue Modelle erhalten zunächst ein Full-GPU- und ein CPU-Only-Profil:
+Neu erkannte Modelle erhalten automatisch:
 
 ```yaml
 profiles:
-  - name: "Full-GPU"
+  - name: Full-GPU
     gpu_layers: -1
     threads: auto
-  - name: "CPU-Only"
+  - name: CPU-Only
     gpu_layers: 0
     threads: auto
 ```
 
-`gpu_layers: 0` erzwingt reine CPU-Inferenz — direkt vergleichbar mit dem Full-GPU-Profil und Voraussetzung für den Soak-Test oben. Nicht gewünscht: das Profil aus `benchmark.yaml` entfernen oder `soak.enabled: false` setzen.
+## Endpoint- und Multi-User-Test
 
-Hybridprofile lassen sich ergänzen:
+Wenn `endpoint.enabled: true` gesetzt ist, startet das Tool optional selbst `llama-server` und misst mehrere Parallelitaetsstufen.
+
+Erfasst werden unter anderem:
+
+- System-TPS
+- Tokens/s pro Request
+- TTFT P50
+- TTFT P95
+- Erfolgsquote
+
+Aufwaerm-Requests werden vor der Messung verworfen. Fester Seed und `ignore_eos` helfen, die Laeufe reproduzierbar zu halten.
+
+## Dauerlast-/Soak-Test
+
+Der Soak-Test startet einen CPU-Only- und einen GPU-Server gleichzeitig und haelt beide unter Last.
+
+Standard:
+
+- kurz: 5 Minuten
+- lang: 30 Minuten
+
+Dabei werden Temperatur, Leistungsaufnahme und Tokens/s ueber die Laufzeit beobachtet. Ein deutlicher TPS-Rueckgang wird als moegliches Throttling markiert.
+
+Abschaltbar:
 
 ```yaml
-profiles:
-  - name: "Hybrid-30L-10T"
-    gpu_layers: 30
-    threads: 10
+soak:
+  enabled: false
 ```
 
-Profilnamen müssen je Modell eindeutig sein, Modellnamen im gesamten Projekt — `llmbench doctor` meldet Verstöße.
+## V2-Stresstests
 
-## CLI
+Alle Stresstests koennen einzeln ausgefuehrt werden:
+
+```powershell
+llmbench stress-ttft --config benchmark.yaml
+llmbench stress-multitenant --config benchmark.yaml
+llmbench stress-oom --config benchmark.yaml
+llmbench stress-quant --config benchmark.yaml
+```
+
+Oder nach einem normalen Lauf gemeinsam:
+
+```powershell
+llmbench run --config benchmark.yaml --stress
+```
+
+`START_BENCHMARK.bat` und `START_BENCHMARK.sh` fragen interaktiv, ob die zusaetzlichen Stresstests gestartet werden sollen.
+
+### TTFT-Stress
+
+Startet einen echten Endpoint-Test mit hoher Parallelitaet. Standardmaessig werden die normalen Concurrency-Stufen um 16 und 32 erweitert.
+
+Konfigurierbar:
+
+```yaml
+stress:
+  ttft_concurrency: [1, 2, 4, 8, 16, 32]
+```
+
+### Multi-Tenant
+
+Startet zwei konfigurierte Modelle gleichzeitig auf getrennten Ports und misst beide Endpoints parallel. Rohdaten werden in getrennten Ergebnisordnern gespeichert, damit sie sich nicht gegenseitig ueberschreiben.
+
+Mindestens zwei Modelle in `benchmark.yaml` sind erforderlich.
+
+### KV-/Kontext-OOM-Test
+
+Der Server wird fuer jede Kontextstufe neu gestartet. Dadurch kann unterschieden werden, ob bereits das Anlegen des KV-Caches scheitert oder erst der lange Request.
+
+```yaml
+stress:
+  oom_contexts: [4096, 8192, 16384, 32768, 65536, 96000, 130000]
+```
+
+Der Test versucht zusaetzlich ueber `/tokenize` die tatsaechliche Prompt-Tokenzahl zu bestimmen.
+
+### Quantisierungsvergleich
+
+`stress-quant` vergleicht **nur verschiedene Quantisierungen desselben Basismodells**. Damit ist ein Q4-vs-Q8-Vergleich sinnvoll; verschiedene Modelle werden nicht mehr faelschlich miteinander verglichen.
+
+Die automatische Standard-Suite ist Q4_K_M. Fuer diesen Test muessen deshalb zusaetzlich mindestens zwei Quants desselben Modells vorhanden sein, zum Beispiel:
+
+```text
+models/
+  same-model-Q4_K_M.gguf
+  same-model-Q8_0.gguf
+```
+
+Die strukturierten Ergebnisse landen in `stress_quant/quant.json` bzw. bei `--stress` im Stress-Unterordner des normalen Laufs.
+
+## Konfiguration
+
+Vorlage: `benchmark.example.yaml`
+
+Beim ersten Setup entsteht daraus `benchmark.yaml`. Bestehende Modelleintraege und Profile bleiben bei spaeteren Bootstrap-Laeufen erhalten.
+
+Wichtige Befehle:
 
 ```powershell
 # Einrichtung
 llmbench setup
 
-# Vorabprüfung inklusive Konfigurations-Fingerabdruck
+# Konfiguration/Hardware/Modelle pruefen
 llmbench doctor --config benchmark.yaml
 
-# Benchmark
-llmbench run --config benchmark.yaml
-llmbench run --config benchmark.yaml --model "Qwen-27B-Q4_0"
-
-# Nur CPU-, nur GPU-Profile oder beides (Standard) testen
-llmbench run --config benchmark.yaml --hardware cpu
-llmbench run --config benchmark.yaml --hardware gpu
-llmbench run --config benchmark.yaml --hardware both
-
-# Ohne sich aktualisierende Statuszeile, etwa für eine Protokolldatei
-llmbench run --config benchmark.yaml --plain
-
-# Modellerkennung erneut ausführen
+# Modelle und Tools erneut erkennen
 llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
+
+# Normaler Benchmark
+llmbench run --config benchmark.yaml
+
+# Kurz/mittel/lang
+llmbench run --config benchmark.yaml --duration short
+llmbench run --config benchmark.yaml --duration medium
+llmbench run --config benchmark.yaml --duration long
+
+# Ein Modell
+llmbench run --config benchmark.yaml --model "Qwen3-8B"
+
+# Statusausgabe fuer Logdateien vereinfachen
+llmbench run --config benchmark.yaml --plain
 ```
 
-`--hardware cpu` testet nur Profile mit `gpu_layers: 0`, `--hardware gpu` nur Profile mit `gpu_layers` ungleich 0 (auch Hybrid-Profile), `--hardware both` (Standard) alle Profile. Der Soak-Test läuft nur bei `both`, weil er CPU und GPU gleichzeitig braucht. `START_BENCHMARK.bat`/`.sh` fragen die Auswahl interaktiv ab, direkt nach der Testdauer.
+## Reproduzierbarkeit
 
-Ohne Installation als Paket funktioniert auch `python -m llmbench ...` aus dem Projektordner.
+Fuer einen fairen Vergleich muessen mindestens uebereinstimmen:
 
-`llmbench doctor` prüft zusätzlich, ob der installierte llama.cpp-Build alle benötigten Optionen kennt, ob die Modelle in den VRAM passen und ob genug Plattenplatz frei ist.
+1. llama.cpp-Build
+2. exakte GGUF-Daten
+3. Quantisierung
+4. Benchmark-Konfiguration
+5. moeglichst Treiber- und Softwarestand
+
+Jeder Lauf speichert unter anderem:
+
+| Feld | Bedeutung |
+| --- | --- |
+| `config_fingerprint` | Hash der ergebnisrelevanten Benchmark-Einstellungen |
+| `config` | verwendete Konfiguration |
+| `tools.llama_bench.binary.sha256` | SHA256 von llama-bench |
+| `tools.llama_cpp_build_ids` | Build-Kennung aus llama.cpp |
+| `llmbench_version` | Tool-Version |
+| `models[].model.sha256` | SHA256 des Modells bzw. kombinierter Hash aller GGUF-Shards |
 
 ## Ergebnisse
 
-Jeder Lauf erzeugt einen eigenen Ordner mit UTC-Zeitstempel:
+Ein normaler Lauf erzeugt beispielsweise:
 
 ```text
 results/
   SERVERNAME_YYYYMMDD-HHMMSSZ/
     hardware.json
-    summary.json          # Ergebnisse, Konfiguration, Build-Nachweis
-    summary.partial.json  # Zwischenstand nach jedem Modell
+    summary.json
+    summary.partial.json
     benchmarks.csv
     report.pdf
     report.html
@@ -284,11 +331,15 @@ results/
       endpoint/
         endpoint_load.json
         llama-server.log
+    stress/                 # nur bei --stress
+      index.json
+      ttft/
+      multitenant/
+      oom/
+      quant/
 ```
 
-Die `raw_*.json` enthalten den exakten Befehl, stdout, stderr, Laufzeit und die vollständige Telemetrie mit allen Einzelmesspunkten. `summary.json` enthält davon nur die Aggregate und bleibt dadurch auch nach mehrstündigen Läufen handhabbar.
-
-`report.pdf` ist der Bericht zum Weitergeben: Serverdaten, Nachweis der Testbedingungen, Ergebnistabellen und Balkendiagramme je Modell und Profil, Telemetrie und Endpoint-Werte. Prompt Processing und Text Generation bekommen dabei getrennte Diagramme, weil sie um eine Größenordnung auseinanderliegen. Lässt sich das PDF nicht erzeugen, etwa weil `reportlab` fehlt, bleibt der Lauf gültig und der Grund steht als Hinweis in `summary.json`.
+Rohdaten enthalten die exakten Befehle, stdout/stderr und Telemetrie. `summary.json` bleibt auf Aggregate beschraenkt.
 
 ## Mehrere Server vergleichen
 
@@ -296,17 +347,13 @@ Die `raw_*.json` enthalten den exakten Befehl, stdout, stderr, Laufzeit und die 
 llmbench compare "results/ServerA_..." "results/ServerB_..." --out comparison
 ```
 
-Erzeugt werden `comparison.html`, `comparison.csv`, `comparison.json` und — sofern Endpoint-Tests gelaufen sind — `comparison_endpoint.csv`.
-
-Der Bericht beginnt mit der Konsistenzprüfung und enthält anschließend Hardware, Benchmark-Vergleich (inklusive Abstand zum jeweils besten Server), Endpoint-Vergleich und eine Effizienztabelle in Tokens/s pro Watt. Fehlgeschlagene und abgebrochene Tests sind als solche gekennzeichnet und verschwinden nicht als leere Zelle.
-
-Für automatisierte Abläufe:
+Strenger CI-/Automationsmodus:
 
 ```powershell
 llmbench compare "results/ServerA_..." "results/ServerB_..." --strict
 ```
 
-`--strict` liefert Exitcode 1, sobald die Läufe nicht unter gleichen Bedingungen entstanden sind.
+`--strict` liefert Exitcode 1, wenn die Laeufe unter unterschiedlichen Bedingungen entstanden sind.
 
 ## Tests
 
@@ -316,14 +363,12 @@ pytest -q
 ruff check .
 ```
 
+GitHub Actions testet Python 3.10 und 3.12 unter Windows und Ubuntu. Unter Windows werden zusaetzlich die PowerShell-Launcher geparst.
+
 ## MLPerf-Einordnung
 
-Dieses Projekt ist **kein** offizieller MLPerf-Submission-Runner. Es verwendet jedoch serverseitig sinnvolle Messgrößen wie Throughput, Interaktivität, TTFT und Parallelität für reproduzierbare interne Hardwarevergleiche.
-
-- llama.cpp: https://github.com/ggml-org/llama.cpp
-- llama-bench: https://github.com/ggml-org/llama.cpp/tree/master/tools/llama-bench
-- MLPerf Endpoints: https://mlcommons.org/benchmarks/endpoints/
+Dieses Projekt ist kein offizieller MLPerf-Submission-Runner. Es verwendet jedoch fuer interne Hardwarevergleiche relevante Messgroessen wie Throughput, Interaktivitaet, TTFT und Parallelitaet.
 
 ## Lizenz
 
-MIT – siehe `LICENSE`.
+MIT - siehe `LICENSE`.

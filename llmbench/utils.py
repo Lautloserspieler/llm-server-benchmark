@@ -12,6 +12,20 @@ from pathlib import Path
 from collections.abc import Iterable
 from typing import Any
 
+from rich.console import Console
+from rich.panel import Panel
+
+console = Console()
+
+def print_msg(msg: str, style: str = "cyan") -> None:
+    console.print(msg, style=style)
+
+def print_err(msg: str) -> None:
+    console.print(f"[bold red]FEHLER:[/bold red] {msg}")
+
+def print_panel(msg: str, title: str = "LLM Benchmark") -> None:
+    console.print(Panel(msg, title=title, border_style="cyan"))
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")

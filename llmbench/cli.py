@@ -120,72 +120,84 @@ def _auto_install_llama_cpp_windows(root: Path) -> bool:
 
 
 def run_setup_wizard(allow_system_search: bool = False) -> int:
-    print("\n--- LLM Server Benchmark: Einrichtung ---")
-    print("Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.\n")
+    from llmbench.utils import console, print_panel, print_err, print_msg
+    from rich.prompt import Prompt
+
+    print_panel(
+        "Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.",
+        title="LLM Server Benchmark - Einrichtung"
+    )
 
     root = Path(".").resolve()
     config_path = "benchmark.yaml"
 
-    print("Suche llama.cpp und Modelle im Projektordner...")
+    print_msg("Suche llama.cpp und Modelle im Projektordner...", style="blue")
     result = bootstrap_config(config_path, root, None, None, allow_system_search)
     llama_dir = result["llama_dir"]
     models_found = result["models_found"]
     ext = ".exe" if platform.system() == "Windows" else ""
 
     if not result["llama_binaries_found"]:
-        print(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
+        print_err(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
 
         if platform.system() == "Windows":
             if not _auto_install_llama_cpp_windows(root):
-                print("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
+                print_err("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
                 return 1
 
-            # Nach der Installation zwingend neu pruefen. Nur ein erfolgreicher
-            # Prozess reicht nicht; beide benoetigten Programme muessen wirklich
-            # im Projektordner liegen.
             result = bootstrap_config(config_path, root, None, None, allow_system_search)
             llama_dir = result["llama_dir"]
             models_found = result["models_found"]
             if not result["llama_binaries_found"]:
-                print(
+                print_err(
                     "Das automatische Setup wurde beendet, aber llama-bench.exe oder "
-                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp.",
-                    file=sys.stderr,
+                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp."
                 )
                 return 1
-            print(f"llama.cpp automatisch installiert: {llama_dir}")
+            print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
         else:
-            val = _ask("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen): ")
+            val = Prompt.ask("[cyan]Pfad zum llama.cpp-Ordner (Enter zum Abbrechen)[/cyan]")
             if not val:
-                print("Einrichtung abgebrochen.")
+                print_msg("Einrichtung abgebrochen.", style="red")
                 return 1
             llama_dir = val
             if not (
                 (Path(llama_dir) / f"llama-bench{ext}").exists()
                 and (Path(llama_dir) / f"llama-server{ext}").exists()
             ):
-                print("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
+                print_err("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
                 return 1
     else:
-        print(f"llama.cpp gefunden: {llama_dir}")
+        print_msg(f"llama.cpp gefunden: {llama_dir}", style="green")
 
-    models_dir = result.get("models_dir")
+    models_dir = result.get("models_dir") or "models"
     if models_found == 0:
-        print("Unter models/ wurden keine GGUF-Dateien gefunden.")
-        val = _ask("Pfad zum Modellordner (Enter zum Ueberspringen): ")
-        if val:
-            models_dir = val
+        console.print("\n[bold yellow]Unter models/ wurden keine GGUF-Dateien gefunden.[/bold yellow]")
+        console.print("Die neue V2 Benchmark-Suite erfordert standardisierte Modelle.")
+        dl_ask = Prompt.ask(
+            "[cyan]Sollen ALLE Standard-Modelle (inkl. Heavy & MoE) automatisch von HuggingFace heruntergeladen werden?[/cyan]",
+            choices=["j", "n"],
+            default="j"
+        )
+        if dl_ask.lower() == "j":
+            from llmbench.download import download_models
+            try:
+                download_models(models_dir, "all")
+                print_msg("\nModelle erfolgreich heruntergeladen. Sie werden nun eingebunden.", style="bold green")
+            except Exception as e:
+                print_err(f"Fehler beim automatischen Download: {e}")
         else:
-            print("Keine Modelle konfiguriert. Du kannst sie spaeter in benchmark.yaml ergaenzen.")
+            val = Prompt.ask("[cyan]Pfad zu einem eigenen Modellordner (Enter zum Überspringen)[/cyan]")
+            if val:
+                models_dir = val
+            else:
+                console.print("[yellow]Keine Modelle konfiguriert. Du kannst sie später in benchmark.yaml ergänzen oder 'llmbench download' nutzen.[/yellow]")
     else:
-        print(f"{models_found} Modell(e) erkannt.")
+        print_msg(f"{models_found} Modell(e) erkannt.", style="green")
 
-    # Der Servername ist die Spaltenueberschrift im spaeteren Vergleich.
-    # Ohne Nachfrage steht dort der Hostname, was selten hilfreich ist.
     import socket
-
     suggestion = socket.gethostname()
-    server_name = _ask(f"Name dieses Servers fuer den Vergleich [{suggestion}]: ", suggestion)
+    server_name = Prompt.ask(f"[cyan]Name dieses Servers für den Vergleich[/cyan]", default=suggestion)
 
     result = bootstrap_config(config_path, root, llama_dir, models_dir, allow_system_search)
 
@@ -197,10 +209,9 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     )
 
     for warning in result.get("warnings", []):
-        print(f"Hinweis: {warning}")
+        console.print(f"[bold yellow]Hinweis:[/bold yellow] {warning}")
 
-    print(f"\nFertig. Konfiguration: {cfg_file}")
-    print("Naechster Schritt: llmbench doctor --config benchmark.yaml")
+    print_panel(f"Konfiguration gespeichert: {cfg_file}\nNächster Schritt: llmbench doctor --config benchmark.yaml", title="Fertig")
     return 0
 
 
@@ -262,6 +273,22 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("run_dir", help="Pfad zum Ergebnisordner eines Laufs")
     exp.add_argument("--output", default=None, help="Pfad fuer die ZIP-Datei (Standard: <run_dir>.zip)")
 
+    dl = sub.add_parser("download", help="Automatischer Download der Standard-Modelle ueber HuggingFace")
+    dl.add_argument("--suite", choices=["small", "mid", "heavy", "all"], default="small")
+    dl.add_argument("--models-dir", default="models")
+
+    stress_ttft = sub.add_parser("stress-ttft", help="Time to First Token (TTFT) Latenz unter extremer Last")
+    stress_ttft.add_argument("--config", default="benchmark.yaml")
+
+    stress_mt = sub.add_parser("stress-multitenant", help="Concurrency-Test mit zwei aktiven llama-server-Instanzen")
+    stress_mt.add_argument("--config", default="benchmark.yaml")
+
+    stress_oom = sub.add_parser("stress-oom", help="KV-Cache OOM Stresstest mit massiven RAG-Prompts")
+    stress_oom.add_argument("--config", default="benchmark.yaml")
+
+    stress_quant = sub.add_parser("stress-quant", help="Quantisierungs-Vergleich fuer Speicherbandbreiten-Engpaesse")
+    stress_quant.add_argument("--config", default="benchmark.yaml")
+
     return p
 
 
@@ -270,6 +297,33 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "setup":
         return run_setup_wizard(args.allow_system_search)
+
+    if args.cmd == "download":
+        from llmbench.download import download_models
+        download_models(args.models_dir, args.suite)
+        return 0
+
+    if args.cmd == "stress-multitenant":
+        import asyncio
+        from llmbench.stress.multitenant import run_multitenant
+        return asyncio.run(run_multitenant(args.config))
+
+    if args.cmd == "stress-oom":
+        import asyncio
+        from llmbench.stress.oom import run_oom_stress
+        return asyncio.run(run_oom_stress(args.config))
+
+    if args.cmd == "stress-quant":
+        import asyncio
+        from llmbench.stress.quant import run_quant_stress
+        return asyncio.run(run_quant_stress(args.config))
+
+    if args.cmd == "stress-ttft":
+        print("TTFT (Time to First Token) wird bereits automatisch bei jedem 'llmbench run' erfasst!")
+        print("Starte den normalen Benchmark-Lauf. Das 95. Perzentil (p95) der Latenz")
+        print("findest du im finalen PDF-Report unter 'Server-Interaktivitaet'.")
+        print("Verwende: llmbench run")
+        return 0
 
     if args.cmd == "init":
         save_example(args.output)

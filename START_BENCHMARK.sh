@@ -23,9 +23,13 @@ python -m pip install -e "."
 echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp
 if [ ! -f "tools/llama.cpp/llama-bench" ] || [ ! -f "tools/llama.cpp/llama-server" ]; then
-    echo "FEHLER: Unter Linux/macOS muessen llama-bench und llama-server"
-    echo "unter tools/llama.cpp/ liegen. Verwende auf allen Servern denselben Build."
-    exit 1
+    echo "llama.cpp fehlt. Suche einen passenden vorgebauten Build auf GitHub..."
+    if ! python -m llmbench install-llama-cpp --root "$ROOT_DIR"; then
+        echo "FEHLER: Automatische llama.cpp-Installation fehlgeschlagen."
+        echo "Lege llama-bench und llama-server manuell unter tools/llama.cpp/ ab."
+        echo "Verwende auf allen Servern denselben Build."
+        exit 1
+    fi
 fi
 
 echo "=== V2 Standard-Suite ==="

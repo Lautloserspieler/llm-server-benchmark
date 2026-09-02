@@ -2,6 +2,28 @@
 
 ## 1.4.0
 
+### Automatische llama.cpp-Installation unter Linux/macOS
+
+- `setup.sh`, `START_BENCHMARK.sh` und `llmbench setup` installieren
+  llama.cpp jetzt automatisch, statt mit einer Fehlermeldung abzubrechen,
+  wenn `llama-bench`/`llama-server` unter `tools/llama.cpp/` fehlen -
+  analog zum bisherigen Windows-Verhalten in `START_BENCHMARK_CORE.ps1`.
+- Neues Modul `llmbench/llama_cpp_setup.py` laedt den passenden vorgebauten
+  Release von GitHub (`ggml-org/llama.cpp`): bei erkannter GPU zuerst einen
+  Vulkan-Build (`llama-*-bin-ubuntu-vulkan-<arch>.tar.gz`, funktioniert auch
+  auf NVIDIA-/AMD-/Intel-GPUs, da llama.cpp fuer Linux keine vorgebauten
+  CUDA-Pakete veroeffentlicht), sonst bzw. wenn der Vulkan-Build auf dem
+  Zielsystem nicht startet (z. B. fehlender Vulkan-Treiber) automatisch
+  einen CPU-Build (`llama-*-bin-ubuntu-<arch>.tar.gz`). macOS nutzt den
+  passenden `llama-*-bin-macos-<arch>.tar.gz`-Release (Metal ist bei arm64
+  bereits eingebaut).
+- Neuer Befehl `llmbench install-llama-cpp [--root .] [--tag b10604] [--force]`
+  fuer die manuelle Installation oder ein festes Build-Pin, analog zu
+  `START_BENCHMARK.bat -LlamaCppTag`. Respektiert wie unter Windows
+  `llama-cpp-version.txt` bzw. die Umgebungsvariable `LLMBENCH_LLAMACPP_TAG`.
+- Ein bereits vorhandener, lauffaehiger Build wird nicht neu heruntergeladen
+  (Pruefung ueber `.llama-build.json` und einen Startprobe-Aufruf).
+
 ### Farbige Ergebnisuebersicht im Terminal
 
 - `llmbench run` zeigt die Ergebnisse nach jedem Lauf jetzt zusaetzlich direkt

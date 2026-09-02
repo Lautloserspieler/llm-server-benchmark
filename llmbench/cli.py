@@ -102,6 +102,19 @@ def _auto_install_llama_cpp_windows(root: Path) -> bool:
     return True
 
 
+def _auto_install_llama_cpp_unix(root: Path) -> bool:
+    from llmbench.llama_cpp_setup import ensure_llama_cpp
+
+    print("\nllama.cpp fehlt. Suche einen passenden vorgebauten Build auf GitHub...")
+    try:
+        state = ensure_llama_cpp(root, log=lambda msg: print(msg))
+    except Exception as exc:
+        print(f"Automatische llama.cpp-Installation fehlgeschlagen: {exc}", file=sys.stderr)
+        return False
+    print(f"llama.cpp {state.get('tag')} ({state.get('backend')}) wurde installiert.")
+    return True
+
+
 def run_setup_wizard(allow_system_search: bool = False) -> int:
     from llmbench.download import download_models, verify_suite
     from llmbench.utils import console, print_err, print_msg, print_panel
@@ -131,6 +144,16 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
                 print_err(
                     "Das automatische Setup wurde beendet, aber llama-bench.exe oder "
                     "llama-server.exe fehlen weiterhin unter tools\\llama.cpp."
+                )
+                return 1
+            print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
+        elif _auto_install_llama_cpp_unix(root):
+            result = bootstrap_config(config_path, root, None, None, allow_system_search)
+            llama_dir = result["llama_dir"]
+            if not result["llama_binaries_found"]:
+                print_err(
+                    "Das automatische Setup wurde beendet, aber llama-bench oder "
+                    "llama-server fehlen weiterhin unter tools/llama.cpp."
                 )
                 return 1
             print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
@@ -263,6 +286,17 @@ def build_parser() -> argparse.ArgumentParser:
     boot.add_argument("--models-dir", default="models")
     boot.add_argument("--allow-system-search", action="store_true")
 
+    install_llama = sub.add_parser(
+        "install-llama-cpp",
+        help="llama.cpp unter Linux/macOS automatisch von GitHub laden (Vulkan bei GPU, sonst CPU)",
+    )
+    install_llama.add_argument("--root", default=".")
+    install_llama.add_argument("--llama-dir", default=None, help="Ziel, Standard: <root>/tools/llama.cpp")
+    install_llama.add_argument("--tag", default=None, help="Feste llama.cpp-Release-Kennung, z.B. b10604")
+    install_llama.add_argument(
+        "--force", action="store_true", help="Auch neu installieren, wenn bereits ein lauffaehiger Build vorhanden ist"
+    )
+
     comp = sub.add_parser("compare", help="Mehrere Serverlaeufe vergleichen")
     comp.add_argument("inputs", nargs="+", help="Run-Ordner oder summary.json-Dateien")
     comp.add_argument("--out", default="comparison")
@@ -371,6 +405,19 @@ def main(argv: list[str] | None = None) -> int:
             args.config, args.root, args.llama_dir, args.models_dir, args.allow_system_search
         )
         print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "install-llama-cpp":
+        from llmbench.llama_cpp_setup import ensure_llama_cpp
+
+        root = Path(args.root).resolve()
+        llama_dir = Path(args.llama_dir) if args.llama_dir else None
+        try:
+            state = ensure_llama_cpp(root, llama_dir=llama_dir, tag=args.tag, force=args.force, log=print)
+        except Exception as exc:
+            print(f"llama.cpp-Installation fehlgeschlagen: {exc}", file=sys.stderr)
+            return 1
+        print(f"llama.cpp {state.get('tag')} ({state.get('backend')}) bereit.")
         return 0
 
     if args.cmd in {"doctor", "run"}:

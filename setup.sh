@@ -27,9 +27,10 @@ python -m pip install -e "."
 echo ""
 echo "[OK] Programm und Abhaengigkeiten sind bereit."
 echo ""
-echo "Hinweis: llama-bench und llama-server werden unter Linux/macOS nicht"
-echo "automatisch heruntergeladen. Lege beide unter tools/llama.cpp/ ab und"
-echo "verwende auf allen Vergleichsservern denselben Build."
+echo "Hinweis: llama-bench und llama-server werden bei Bedarf automatisch"
+echo "als vorgebauter Release von GitHub geladen (Vulkan bei erkannter GPU,"
+echo "sonst CPU). Fuer denselben Build auf allen Vergleichsservern kann eine"
+echo "feste Version in llama-cpp-version.txt eingetragen werden."
 echo ""
 
 mkdir -p models

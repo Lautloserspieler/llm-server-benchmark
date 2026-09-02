@@ -19,6 +19,7 @@ Ziel ist die direkte Vergleichbarkeit mehrerer Server unter identischen Bedingun
 - V2-Stresstests fuer TTFT, Multi-Tenant und KV-/Kontext-Grenzen
 - echter Quantisierungsvergleich fuer mehrere Quants desselben Basismodells
 - automatische Standard-Modell-Suite ueber Hugging Face
+- automatische llama.cpp-Installation unter Windows, Linux und macOS
 - vollstaendige Unterstuetzung gesplitteter GGUF-Modelle
 - PDF-, HTML-, CSV- und JSON-Berichte
 - SHA256-Pruefung der Modelle und llama.cpp-Binaries
@@ -48,9 +49,15 @@ Wenn Python 3.10+ bereits vorhanden ist, kann alternativ `setup.bat` benutzt wer
 ./START_BENCHMARK.sh
 ```
 
-Python-Abhaengigkeiten und die V2-Modell-Suite werden automatisch eingerichtet. **llama.cpp selbst wird unter Linux/macOS nicht automatisch installiert.** `llama-bench` und `llama-server` muessen unter `tools/llama.cpp/` liegen.
+Python-Abhaengigkeiten, die V2-Modell-Suite und llama.cpp selbst werden automatisch eingerichtet. Fehlen `llama-bench`/`llama-server` unter `tools/llama.cpp/`, laedt `llmbench` einen passenden vorgebauten Release direkt von GitHub: bei erkannter GPU zuerst einen Vulkan-Build (laeuft auch auf NVIDIA-/AMD-/Intel-GPUs), sonst bzw. bei Startproblemen automatisch einen CPU-Build. Manuell auch einzeln aufrufbar:
 
-Fuer faire Serververgleiche auf allen Rechnern denselben llama.cpp-Build verwenden.
+```bash
+llmbench install-llama-cpp --root .
+```
+
+llama.cpp veroeffentlicht fuer Linux keine vorgebauten CUDA-Pakete (nur fuer Windows); der Vulkan-Build ist der automatische Weg zu GPU-Beschleunigung unter Linux. Fuer eine native CUDA-Beschleunigung bleibt nur ein manueller Build aus dem llama.cpp-Quellcode.
+
+Fuer faire Serververgleiche auf allen Rechnern denselben llama.cpp-Build verwenden - siehe [llama.cpp reproduzierbar halten](#llamacpp-reproduzierbar-halten), das gilt genauso unter Linux/macOS.
 
 ## Automatische V2-Modell-Suite
 
@@ -115,6 +122,12 @@ Unter Windows kann ein Build auch explizit angegeben werden:
 
 ```powershell
 .\START_BENCHMARK.bat -LlamaCppTag b10456
+```
+
+Unter Linux/macOS entweder ebenfalls ueber `llama-cpp-version.txt`, ueber die Umgebungsvariable `LLMBENCH_LLAMACPP_TAG` oder explizit:
+
+```bash
+llmbench install-llama-cpp --root . --tag b10456
 ```
 
 Der tatsaechlich verwendete Build wird in den Ergebnisdaten festgehalten. `llmbench compare` meldet Unterschiede.

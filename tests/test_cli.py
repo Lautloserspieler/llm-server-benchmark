@@ -35,6 +35,54 @@ def test_build_parser_run_rejects_invalid_hardware_choice():
         build_parser().parse_args(["run", "--hardware", "npu"])
 
 
+def test_build_parser_install_llama_cpp_defaults_and_options():
+    args = build_parser().parse_args(["install-llama-cpp"])
+    assert args.root == "."
+    assert args.llama_dir is None
+    assert args.tag is None
+    assert args.force is False
+
+    args = build_parser().parse_args([
+        "install-llama-cpp", "--root", "/srv/bench", "--llama-dir", "tools/llama.cpp",
+        "--tag", "b10604", "--force",
+    ])
+    assert args.root == "/srv/bench"
+    assert args.llama_dir == "tools/llama.cpp"
+    assert args.tag == "b10604"
+    assert args.force is True
+
+
+def test_main_install_llama_cpp_calls_ensure_llama_cpp(tmp_path: Path, monkeypatch):
+    captured = {}
+
+    def _fake_ensure_llama_cpp(root, llama_dir=None, tag=None, force=False, **_kwargs):
+        captured.update(root=root, llama_dir=llama_dir, tag=tag, force=force)
+        return {"tag": "bTEST", "backend": "cpu"}
+
+    monkeypatch.setattr("llmbench.llama_cpp_setup.ensure_llama_cpp", _fake_ensure_llama_cpp)
+    rc = main(["install-llama-cpp", "--root", str(tmp_path), "--tag", "b10604"])
+    assert rc == 0
+    assert captured["tag"] == "b10604"
+    assert captured["force"] is False
+
+
+def test_main_install_llama_cpp_reports_failure(tmp_path: Path, capsys):
+    def _fail(*_a, **_k):
+        raise RuntimeError("kein passendes Paket")
+
+    import llmbench.llama_cpp_setup as lcs
+
+    original = lcs.ensure_llama_cpp
+    lcs.ensure_llama_cpp = _fail
+    try:
+        rc = main(["install-llama-cpp", "--root", str(tmp_path)])
+    finally:
+        lcs.ensure_llama_cpp = original
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "kein passendes Paket" in out.err
+
+
 def test_build_parser_compare_requires_at_least_one_input():
     args = build_parser().parse_args(["compare", "results/A", "results/B", "--strict"])
     assert args.inputs == ["results/A", "results/B"]

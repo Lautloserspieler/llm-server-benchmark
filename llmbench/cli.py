@@ -245,7 +245,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nur CPU-, nur GPU-Profile oder beides testen.",
     )
     run.add_argument("--skip-endpoint", action="store_true")
-    run.add_argument("--plain", action="store_true")
+    run.add_argument(
+        "--plain",
+        action="store_true",
+        help="Nur einfache Textausgabe (keine Live-Statuszeile, keine farbige Ergebnisuebersicht).",
+    )
     run.add_argument(
         "--stress",
         action="store_true",
@@ -395,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_endpoint=args.skip_endpoint,
             reporter=make_reporter(force_plain=args.plain),
             hardware_target=args.hardware,
+            plain=args.plain,
         )
         print(f"\nBenchmark abgeschlossen: {out}")
         pdf = out / "report.pdf"

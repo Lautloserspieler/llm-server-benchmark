@@ -20,9 +20,8 @@
   `CPU-Only`-Profil (`gpu_layers: 0`) zusaetzlich zu `Full-GPU` an - noetig
   als Grundlage fuer den Soak-Test, macht den reinen CPU-Pfad aber auch fuer
   die normalen pp/tg-Tests direkt vergleichbar.
-- Ergebnisse stehen in `report.html` und `summary.json`
-  (`models[].soak`); `llmbench compare` und `report.pdf` enthalten sie noch
-  nicht.
+- Ergebnisse stehen in `report.html`, `report.pdf`, `summary.json`
+  (`models[].soak`) sowie in `comparison.html` und `comparison.pdf`.
 - `ResourceMonitor` kann jetzt mehrere Zielprozesse gleichzeitig als "eigene"
   Last markieren (`set_target_pids`), damit sich CPU- und GPU-Server im
   Soak-Test nicht gegenseitig als Fremdlast melden.

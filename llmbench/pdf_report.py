@@ -212,6 +212,52 @@ def _provenance_rows(summary: dict[str, Any]) -> list[list[str]]:
     ]
 
 
+def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: float) -> list[Any]:
+    """Dauerlast-Abschnitt (CPU + GPU gleichzeitig), analog zu report.py._soak_table."""
+    from reportlab.platypus import Paragraph
+
+    if not soak_runs:
+        return []
+
+    block: list[Any] = [Paragraph("Dauerlast-Test (CPU + GPU gleichzeitig)", styles["h3"])]
+    rows = [["Dauer", "Pfad", "Tokens/s", "Frueh", "Spaet", "Erfolgreich", "Throttling"]]
+    max_temps: list[str] = []
+
+    for run in soak_runs:
+        label = str(run.get("label") or "—")
+        if run.get("status") != "ok":
+            status_label = "Zeitüberschreitung" if run.get("status") == "timeout" else "Fehler"
+            rows.append([label, status_label, "—", "—", "—", "—", "—"])
+            if run.get("error"):
+                block.append(Paragraph(f"{label}: {run['error']}", styles["warn"]))
+            continue
+        for path_label, path_data in (("CPU", run.get("cpu") or {}), ("GPU", run.get("gpu") or {})):
+            rows.append([
+                label, path_label,
+                _fmt(path_data.get("avg_tps")),
+                _fmt(path_data.get("early_window_avg_tps")),
+                _fmt(path_data.get("late_window_avg_tps")),
+                f"{path_data.get('successful', 0)}/{path_data.get('requests', 0)}",
+                "Ja" if path_data.get("throttling_suspected") else "Nein",
+            ])
+        for gpu in (run.get("telemetry") or {}).get("gpus") or []:
+            if gpu.get("max_temperature_c"):
+                max_temps.append(
+                    f"{label}: GPU {gpu.get('index', 0)} {_fmt(gpu.get('max_temperature_c'), 0)} °C"
+                )
+
+    if len(rows) > 1:
+        block.append(_table(rows, [
+            width * 0.16, width * 0.10, width * 0.14, width * 0.14,
+            width * 0.14, width * 0.16, width * 0.16,
+        ]))
+    if max_temps:
+        block.append(Paragraph(
+            "Maximaltemperatur während der Dauerlast: " + ", ".join(max_temps), styles["muted"]
+        ))
+    return block
+
+
 def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
     _require_reportlab()
 
@@ -368,6 +414,8 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
             story.append(Paragraph(
                 f"Endpoint-Test fehlgeschlagen: {endpoint.get('error')}", styles["warn"]))
 
+        story.extend(_soak_block(model.get("soak") or [], styles, width))
+
     story.append(Spacer(1, 12))
     story.append(Paragraph(
         "Erzeugt mit llm-server-benchmark. Rohdaten und Telemetrie je Einzeltest "
@@ -382,6 +430,7 @@ def generate_compare_pdf(
     scores: dict[str, dict[str, Any]],
     issues: list[dict[str, str]],
     path: str | Path,
+    soak_records: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Erzeugt einen PDF-Vergleichsbericht aus mehreren Server-Laeufen."""
     _require_reportlab()
@@ -479,6 +528,32 @@ def generate_compare_pdf(
     ]))
     story.append(tbl)
     story.append(Spacer(1, 12))
+
+    # Dauerlast-Vergleich (Soak): eine Zeile je Modell/Dauer/Pfad, ein Wert je Server.
+    if soak_records:
+        story.append(Paragraph("Dauerlast-Test (Soak)", styles["sub"]))
+        keys = sorted({(r["model"], r["label"], r["path"]) for r in soak_records})
+        lookup = {(r["server"], r["model"], r["label"], r["path"]): r for r in soak_records}
+        soak_data = [["Modell", "Dauer", "Pfad"] + servers]
+        for model_name, label, path_label in keys:
+            row = [str(model_name or "—"), str(label or "—"), path_label]
+            for srv in servers:
+                rec = lookup.get((srv, model_name, label, path_label))
+                if not rec:
+                    row.append("—")
+                    continue
+                throttle = " (Throttling)" if rec.get("throttling") else ""
+                row.append(f"{_fmt(rec.get('avg_tps'))}{throttle}")
+            soak_data.append(row)
+        tbl = Table(soak_data, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(SOFT)),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
+            ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 12))
 
     story.append(Paragraph(
         "Details, Diagramme und Einzelwerte stehen im HTML-Bericht (comparison.html).",

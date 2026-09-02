@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from llmbench.compare import check_consistency, compare_summaries
 
 
@@ -15,6 +17,7 @@ def make_summary(
     profile_settings: dict | None = None,
     endpoint: dict | None = None,
     power: float | None = 200.0,
+    soak: list[dict] | None = None,
 ) -> dict:
     if status == "ok":
         bench = {
@@ -37,6 +40,8 @@ def make_summary(
     }
     if endpoint:
         model["endpoint"] = endpoint
+    if soak:
+        model["soak"] = soak
     return {
         "schema_version": 2,
         "llmbench_version": version,
@@ -144,6 +149,39 @@ def test_comparison_contains_endpoint_and_efficiency(tmp_path: Path):
     # 100 Tokens/s bei 200 W
     assert abs(data["efficiency"][0]["tokens_per_watt"] - 0.5) < 1e-9
     assert (tmp_path / "out" / "comparison_endpoint.csv").exists()
+
+
+def test_comparison_contains_soak_results_in_html_and_pdf(tmp_path: Path):
+    """Der Soak-Test muss - wie alle anderen Testarten - in HTML und PDF stehen."""
+    pytest.importorskip("reportlab")
+    pypdf = pytest.importorskip("pypdf")
+
+    soak = [{
+        "label": "short",
+        "status": "ok",
+        "cpu": {"avg_tps": 20.0, "early_window_avg_tps": 21.0, "late_window_avg_tps": 19.0,
+                "successful": 8, "requests": 8, "throttling_suspected": False},
+        "gpu": {"avg_tps": 90.0, "early_window_avg_tps": 100.0, "late_window_avg_tps": 60.0,
+                "successful": 30, "requests": 30, "throttling_suspected": True},
+        "telemetry": {"gpus": [{"index": 0, "max_temperature_c": 84.0}]},
+    }]
+    a = tmp_path / "a"
+    a.mkdir()
+    (a / "summary.json").write_text(
+        json.dumps(make_summary("A", soak=soak)), encoding="utf-8"
+    )
+    report, _ = compare_summaries([a], tmp_path / "out")
+    html = report.read_text(encoding="utf-8")
+    assert "Dauerlast-Test (Soak)" in html
+    assert "90.0" in html
+
+    pdf_path = tmp_path / "out" / "comparison.pdf"
+    assert pdf_path.exists()
+    reader = pypdf.PdfReader(str(pdf_path))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Dauerlast-Test (Soak)" in text
+    assert "90.00" in text
+    assert "Throttling" in text
 
 
 def test_missing_ttft_is_not_rendered_as_zero(tmp_path: Path):

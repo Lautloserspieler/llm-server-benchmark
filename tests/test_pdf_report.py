@@ -106,6 +106,33 @@ def test_pdf_without_endpoint_still_builds(tmp_path: Path):
     assert out.exists()
 
 
+def test_pdf_contains_soak_results_and_throttling_flag(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [{
+        "label": "short",
+        "status": "ok",
+        "cpu": {"avg_tps": 20.0, "early_window_avg_tps": 21.0, "late_window_avg_tps": 19.0,
+                "successful": 8, "requests": 8, "throttling_suspected": False},
+        "gpu": {"avg_tps": 90.0, "early_window_avg_tps": 100.0, "late_window_avg_tps": 60.0,
+                "successful": 30, "requests": 30, "throttling_suspected": True},
+        "telemetry": {"gpus": [{"index": 0, "max_temperature_c": 84.0}]},
+    }]
+    text = _text(generate_run_pdf(summary, tmp_path / "r.pdf"))
+    assert "Dauerlast-Test (CPU + GPU gleichzeitig)" in text
+    assert "90.00" in text
+    assert "Ja" in text
+    assert "84" in text
+
+
+def test_pdf_marks_failed_soak_run(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [
+        {"label": "long", "status": "failed", "error": "Server nicht erreichbar"}
+    ]
+    text = _text(generate_run_pdf(summary, tmp_path / "r.pdf"))
+    assert "Server nicht erreichbar" in text
+
+
 def test_pdf_survives_an_empty_run(tmp_path: Path):
     minimal = {"server_name": "leer", "models": [], "hardware": {}, "warnings": []}
     out = generate_run_pdf(minimal, tmp_path / "leer.pdf")

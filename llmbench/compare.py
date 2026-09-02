@@ -670,7 +670,7 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
 
     try:
         from .pdf_report import generate_compare_pdf
-        generate_compare_pdf(summaries, scores, issues, out / "comparison.pdf")
+        generate_compare_pdf(summaries, scores, issues, out / "comparison.pdf", soak_records)
     except Exception as exc:
         import sys
         print(f"Vergleichs-PDF konnte nicht erzeugt werden: {exc}", file=sys.stderr)

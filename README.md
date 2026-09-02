@@ -312,7 +312,14 @@ Jeder Lauf speichert unter anderem:
 
 ## Ergebnisse
 
-Ein normaler Lauf erzeugt beispielsweise:
+Am Ende eines Laufs erscheint dieselbe Uebersicht auch direkt im Terminal: Hardware-Karten,
+Testbedingungen, Tabellen je Modell/Profil, Endpoint- und Dauerlastwerte sowie alle Hinweise –
+farbig formatiert wie im HTML-/PDF-Bericht. Das ist besonders auf Linux-Servern ohne Desktop
+(SSH-Sitzung) praktisch, wo man die Dateien nicht direkt oeffnet. Mit `--plain` (z. B. beim
+Umleiten in eine Logdatei) gibt es stattdessen eine einfache Klartexttabelle ohne Farben und
+Rahmen; ohne echtes Terminal (Umleitung erkannt) schaltet `llmbench` automatisch darauf um.
+
+Zusaetzlich erzeugt ein normaler Lauf beispielsweise:
 
 ```text
 results/

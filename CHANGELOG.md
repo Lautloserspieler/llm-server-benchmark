@@ -2,6 +2,18 @@
 
 ## 1.4.0
 
+### Farbige Ergebnisuebersicht im Terminal
+
+- `llmbench run` zeigt die Ergebnisse nach jedem Lauf jetzt zusaetzlich direkt
+  im Terminal an - mit denselben Abschnitten wie `report.html`/`report.pdf`
+  (Hardware-Karten, Testbedingungen, Bench-/Telemetrie-Tabellen je Profil,
+  Endpoint- und Dauerlastwerte, Hinweise), farbig formatiert ueber `rich`.
+  Praktisch fuer Linux-Server, die per SSH ohne Desktop betrieben werden und
+  wo man `report.html`/`report.pdf` nicht direkt oeffnet.
+- `--plain` sowie eine Umleitung in eine Datei (kein echtes Terminal) schalten
+  automatisch auf die bisherige einfache Klartexttabelle ohne Farben und
+  Rahmen um.
+
 ### Dauerlast-Test (CPU + GPU gleichzeitig)
 
 - Neuer Testtyp `soak`: startet einen CPU-Only- und einen GPU-Server

@@ -18,9 +18,11 @@ from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html
 from .soak import find_soak_profiles, run_soak_test
+from .terminal_report import print_run_report
 from .tuner import tune_gpu_layers
 from .backends.llama_cpp import LlamaCppBackend
 from .utils import (
+    console,
     ensure_dir,
     file_fingerprint,
     hostname,
@@ -127,6 +129,7 @@ def run_suite(
     skip_endpoint: bool = False,
     reporter: Reporter | None = None,
     hardware_target: str = "both",
+    plain: bool = False,
 ) -> Path:
     if hardware_target not in HARDWARE_TARGETS:
         raise ValueError(f"Ungueltige Hardware-Auswahl: {hardware_target!r}. Erlaubt: {HARDWARE_TARGETS}")
@@ -406,13 +409,16 @@ def run_suite(
         write_json(run_dir / "summary.json", summary)
         reporter.note(f"PDF-Bericht uebersprungen: {exc}")
     reporter.run_finished()
-    print_summary_table(summary)
+    if plain or not console.is_terminal:
+        print_summary_table(summary)
+    else:
+        print_run_report(summary, console)
     return run_dir
 
 
 def print_summary_table(summary: dict[str, Any]) -> None:
-    """Ergebnisuebersicht direkt im Terminal, damit man den Bericht nicht
-    erst oeffnen muss."""
+    """Einfache Ergebnisuebersicht als Klartext: Fallback fuer --plain und
+    fuer Umleitung in eine Datei/ein Log, wo Farben und Rahmen stoeren wuerden."""
     rows: list[tuple[str, str, str, str, str]] = []
     for m in summary.get("models", []):
         model_name = str(m.get("model", {}).get("name") or "?")

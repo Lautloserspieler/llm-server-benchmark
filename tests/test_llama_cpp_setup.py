@@ -219,7 +219,7 @@ def test_ensure_llama_cpp_builds_from_source_when_linux_release_asset_is_missing
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
     monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])
 
-    def fake_source_build(root, llama_dir, ref, state_file, arch, force, log):
+    def fake_source_build(_root, llama_dir, ref, state_file, arch, _force, _log):
         llama_dir.mkdir(parents=True, exist_ok=True)
         _fake_bench_script(llama_dir / "llama-bench")
         (llama_dir / "llama-server").write_text("stub", encoding="utf-8")

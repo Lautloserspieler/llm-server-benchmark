@@ -41,6 +41,67 @@ def test_bootstrap_discovers_gguf_and_preserves_existing(tmp_path: Path):
     assert len(cfg2["models"]) == 2
 
 
+def test_cpu_only_auto_uses_all_available_threads(tmp_path: Path, monkeypatch):
+    root = tmp_path
+    _make_project(root)
+    monkeypatch.setattr("llmbench.bootstrap._available_cpu_threads", lambda: 20)
+    (root / "benchmark.yaml").write_text(
+        yaml.safe_dump({
+            "models": [
+                {
+                    "name": "A",
+                    "path": "models/A.gguf",
+                    "profiles": [
+                        {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"},
+                        {"name": "CPU-Only", "gpu_layers": 0, "threads": "auto"},
+                    ],
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+
+    result = bootstrap_config(
+        root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models"
+    )
+    cfg = yaml.safe_load((root / "benchmark.yaml").read_text(encoding="utf-8"))
+    by_name = {model["name"]: model for model in cfg["models"]}
+
+    a_profiles = {profile["name"]: profile for profile in by_name["A"]["profiles"]}
+    assert a_profiles["Full-GPU"]["threads"] == "auto"
+    assert a_profiles["CPU-Only"]["threads"] == 20
+    assert any("alle 20 verfuegbaren CPU-Threads" in warning for warning in result["warnings"])
+
+    # Neu erkannte Modelle bekommen dieselbe Vollauslastungs-Vorgabe direkt.
+    b_profiles = {profile["name"]: profile for profile in by_name["B"]["profiles"]}
+    assert b_profiles["CPU-Only"]["threads"] == 20
+
+
+def test_explicit_cpu_thread_count_is_preserved(tmp_path: Path, monkeypatch):
+    root = tmp_path
+    _make_project(root)
+    monkeypatch.setattr("llmbench.bootstrap._available_cpu_threads", lambda: 20)
+    (root / "benchmark.yaml").write_text(
+        yaml.safe_dump({
+            "models": [
+                {
+                    "name": "A",
+                    "path": "models/A.gguf",
+                    "profiles": [{"name": "CPU-Only", "gpu_layers": 0, "threads": 8}],
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+
+    bootstrap_config(
+        root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models"
+    )
+    cfg = yaml.safe_load((root / "benchmark.yaml").read_text(encoding="utf-8"))
+    model_a = next(model for model in cfg["models"] if model["name"] == "A")
+    assert model_a["profiles"][0]["threads"] == 8
+
+
 def test_same_filename_in_different_folders_gets_distinct_names(tmp_path: Path):
     """Sonst landen beide Modelle im selben Ergebnisordner und das zweite
     ueberschreibt die Rohdaten des ersten."""

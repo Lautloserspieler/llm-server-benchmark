@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.1
+
+### Energiesparmodus-Warnung fuer Linux-Desktops (z. B. Ubuntu 24.04 LTS)
+
+- `llmbench doctor` erkennt jetzt zusaetzlich das aktive Profil von
+  `power-profiles-daemon` (Standard auf Ubuntu Desktop mit GNOME) und warnt,
+  wenn es nicht auf "performance" steht - Ubuntu Desktop startet
+  standardmaessig im Profil "balanced", was gegenueber Servern mit festem
+  `cpupower`-Governor spuerbar Tokens/s kostet und Serverver­gleiche
+  verfaelscht. Empfohlener Fix wird direkt mitgeliefert
+  (`sudo powerprofilesctl set performance` bzw. `sudo cpupower frequency-set
+  -g performance`, falls kein `power-profiles-daemon` laeuft).
+- `hardware.json`/`report.html`/`report.pdf` zeigen im Feld "Energieplan"
+  jetzt zusaetzlich zum CPU-Governor das aktive power-profiles-daemon-Profil
+  an, falls vorhanden.
+
 ## 1.4.0
 
 ### Automatische llama.cpp-Installation unter Linux/macOS

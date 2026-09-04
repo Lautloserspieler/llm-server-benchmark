@@ -1,7 +1,14 @@
 import json
 import subprocess
 
-from llmbench.hardware import _nvidia_smi_info, _rocm_smi_info, _xpu_smi_info, collect_hardware
+from llmbench.hardware import (
+    _nvidia_smi_info,
+    _power_scheme,
+    _rocm_smi_info,
+    _xpu_smi_info,
+    collect_hardware,
+    linux_power_state,
+)
 
 
 def _cp(returncode=0, stdout="", stderr=""):
@@ -86,6 +93,35 @@ def test_xpu_smi_info_parses_json_output_and_marks_no_telemetry(monkeypatch):
 def test_xpu_smi_info_returns_empty_list_on_invalid_json(monkeypatch):
     monkeypatch.setattr("llmbench.hardware.run_capture", lambda _cmd, **_kwargs: _cp(stdout="not json"))
     assert _xpu_smi_info() == []
+
+
+def test_linux_power_state_reads_power_profiles_daemon(monkeypatch):
+    monkeypatch.setattr("llmbench.hardware.command_exists", lambda name: name == "powerprofilesctl")
+    monkeypatch.setattr("llmbench.hardware.run_capture", lambda _cmd, **_kwargs: _cp(stdout="balanced\n"))
+    monkeypatch.setattr(
+        "llmbench.hardware.Path.glob",
+        lambda _self, _pattern: [],
+    )
+
+    state = linux_power_state()
+    assert state["profile"] == "balanced"
+
+
+def test_linux_power_state_returns_empty_dict_without_powerprofilesctl(monkeypatch):
+    monkeypatch.setattr("llmbench.hardware.command_exists", lambda _name: False)
+    monkeypatch.setattr("llmbench.hardware.Path.glob", lambda _self, _pattern: [])
+
+    assert linux_power_state() == {}
+
+
+def test_power_scheme_combines_profile_and_governor_on_linux(monkeypatch):
+    monkeypatch.setattr("llmbench.hardware.sys.platform", "linux")
+    monkeypatch.setattr(
+        "llmbench.hardware.linux_power_state",
+        lambda: {"profile": "balanced", "governors": ["schedutil"]},
+    )
+
+    assert _power_scheme() == "power-profile=balanced, scaling_governor=schedutil"
 
 
 def test_collect_hardware_combines_all_gpu_vendors(monkeypatch, tmp_path):

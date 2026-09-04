@@ -323,6 +323,22 @@ Jeder Lauf speichert unter anderem:
 | `llmbench_version` | Tool-Version |
 | `models[].model.sha256` | SHA256 des Modells bzw. kombinierter Hash aller GGUF-Shards |
 
+### Energieplan unter Linux
+
+Unter Linux traegt `llmbench` den aktiven CPU-Governor und - falls vorhanden -
+das Profil von `power-profiles-daemon` in `hardware.json`/`report.html`/
+`report.pdf` ein. Auf Ubuntu Desktop (z. B. 24.04 LTS mit GNOME) laeuft
+standardmaessig `power-profiles-daemon` im Profil "balanced", nicht
+"performance" - anders als auf vielen Headless-Servern mit festem
+`cpupower`-Governor. Das kostet spuerbar Tokens/s und faellt beim Vergleich
+mehrerer Server leicht unter den Tisch. `llmbench doctor` warnt deshalb, wenn
+der Energieplan nicht auf "performance" steht:
+
+```bash
+sudo powerprofilesctl set performance   # Ubuntu Desktop (power-profiles-daemon)
+sudo cpupower frequency-set -g performance   # Headless-Server ohne power-profiles-daemon
+```
+
 ## Ergebnisse
 
 Am Ende eines Laufs erscheint dieselbe Uebersicht auch direkt im Terminal: Hardware-Karten,

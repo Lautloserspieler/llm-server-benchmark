@@ -10,7 +10,7 @@ from typing import Any
 
 import psutil
 
-from .utils import run_capture, utc_now_iso
+from .utils import command_exists, run_capture, utc_now_iso
 
 
 def _cpu_name() -> str:
@@ -42,6 +42,32 @@ def _cpu_name() -> str:
     return name or platform.machine()
 
 
+def linux_power_state() -> dict[str, Any]:
+    """CPU-Governor und - falls vorhanden - das aktive power-profiles-daemon-Profil.
+
+    Ubuntu Desktop (z. B. 24.04 LTS mit GNOME) setzt standardmaessig auf
+    `power-profiles-daemon` statt auf einen fest konfigurierten `cpupower`-
+    Governor wie auf vielen Headless-Servern. Der Standardwert dort ist
+    "balanced", nicht "performance" - das kostet spuerbar Tokens/s und wird
+    beim Serververgleich leicht uebersehen, weil `scaling_governor` alleine
+    das nicht immer zuverlaessig zeigt (z. B. bei "schedutil").
+    """
+    state: dict[str, Any] = {}
+    governors: set[str] = set()
+    with contextlib.suppress(Exception):
+        for path in Path("/sys/devices/system/cpu").glob("cpu*/cpufreq/scaling_governor"):
+            governors.add(path.read_text().strip())
+    if governors:
+        state["governors"] = sorted(governors)
+
+    if command_exists("powerprofilesctl"):
+        with contextlib.suppress(Exception):
+            p = run_capture(["powerprofilesctl", "get"], timeout=5)
+            if p.returncode == 0 and p.stdout.strip():
+                state["profile"] = p.stdout.strip()
+    return state
+
+
 def _power_scheme() -> str | None:
     """Der Energieplan aendert die Ergebnisse deutlich und wird beim
     Serververgleich regelmaessig uebersehen."""
@@ -51,12 +77,14 @@ def _power_scheme() -> str | None:
             return p.stdout.strip()
         return None
     if sys.platform.startswith("linux"):
-        governors: set[str] = set()
-        with contextlib.suppress(Exception):
-            for path in Path("/sys/devices/system/cpu").glob("cpu*/cpufreq/scaling_governor"):
-                governors.add(path.read_text().strip())
-        if governors:
-            return "scaling_governor=" + ",".join(sorted(governors))
+        state = linux_power_state()
+        parts = []
+        if state.get("profile"):
+            parts.append("power-profile=" + state["profile"])
+        if state.get("governors"):
+            parts.append("scaling_governor=" + ",".join(state["governors"]))
+        if parts:
+            return ", ".join(parts)
     return None
 
 

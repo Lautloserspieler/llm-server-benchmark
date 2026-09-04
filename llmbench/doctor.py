@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from .config import config_fingerprint, resolve_path
-from .hardware import collect_hardware
+from .hardware import collect_hardware, linux_power_state
 from .llama_bench import probe_build
 from .utils import command_exists, file_fingerprint, resolve_executable, run_capture
 
@@ -55,6 +56,37 @@ def _vram_total_bytes(hardware: dict[str, Any]) -> int | None:
             except (TypeError, ValueError):
                 continue
     return total or None
+
+
+def _power_state_warning() -> str | None:
+    """Warnt, wenn der aktive Energiesparmodus unter Linux die Messwerte verfaelscht.
+
+    Ubuntu Desktop (z. B. 24.04 LTS) laeuft standardmaessig ueber
+    `power-profiles-daemon` im Profil "balanced", nicht "performance" -
+    im Unterschied zu vielen Headless-Servern mit festem `cpupower`-Governor.
+    Das kostet reproduzierbar Tokens/s und wird beim Serververgleich leicht
+    uebersehen.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+    state = linux_power_state()
+    profile = state.get("profile")
+    if profile:
+        if profile == "performance":
+            return None
+        return (
+            f"power-profiles-daemon-Profil ist '{profile}', nicht 'performance'. "
+            "Das kostet Tokens/s und verfaelscht Serververgleiche. "
+            "Vor dem Benchmark: sudo powerprofilesctl set performance"
+        )
+    governors = state.get("governors")
+    if governors and "performance" not in governors:
+        return (
+            "CPU-Governor ist " + ",".join(governors) + ", nicht 'performance'. "
+            "Das kostet Tokens/s und verfaelscht Serververgleiche. "
+            "Vor dem Benchmark: sudo cpupower frequency-set -g performance"
+        )
+    return None
 
 
 def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -130,6 +162,9 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
                 f"Fuer {gpu.get('vendor')} {gpu.get('name')} gibt es keine Telemetrie. "
                 "Auslastung, VRAM und Leistungsaufnahme bleiben leer."
             )
+    power_warning = _power_state_warning()
+    if power_warning:
+        warnings.append(power_warning)
 
     return {
         "checks": checks,

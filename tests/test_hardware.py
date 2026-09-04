@@ -115,6 +115,9 @@ def test_linux_power_state_returns_empty_dict_without_powerprofilesctl(monkeypat
 
 
 def test_power_scheme_combines_profile_and_governor_on_linux(monkeypatch):
+    # os.name entscheidet in _power_scheme() ueber den Windows-Zweig - auf einem
+    # echten Windows-CI-Runner ist das unabhaengig vom gemockten sys.platform "nt".
+    monkeypatch.setattr("llmbench.hardware.os.name", "posix")
     monkeypatch.setattr("llmbench.hardware.sys.platform", "linux")
     monkeypatch.setattr(
         "llmbench.hardware.linux_power_state",

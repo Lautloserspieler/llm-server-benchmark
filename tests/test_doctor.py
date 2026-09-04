@@ -117,6 +117,51 @@ def test_doctor_warns_about_low_disk_space(tmp_path: Path, monkeypatch):
     assert any("frei unter" in w for w in data["warnings"])
 
 
+def test_doctor_warns_when_linux_power_profile_is_not_performance(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "llmbench.doctor.collect_hardware",
+        lambda *_a, **_kw: {"gpus": [], "memory": {}, "disk": {}},
+    )
+    monkeypatch.setattr("llmbench.doctor.command_exists", lambda *_a, **_kw: False)
+    monkeypatch.setattr("llmbench.doctor.sys.platform", "linux")
+    monkeypatch.setattr("llmbench.doctor.linux_power_state", lambda: {"profile": "balanced"})
+
+    cfg = _cfg(tmp_path)
+    data = doctor(cfg)
+
+    assert any("power-profiles-daemon" in w and "balanced" in w for w in data["warnings"])
+
+
+def test_doctor_does_not_warn_when_linux_power_profile_is_performance(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "llmbench.doctor.collect_hardware",
+        lambda *_a, **_kw: {"gpus": [], "memory": {}, "disk": {}},
+    )
+    monkeypatch.setattr("llmbench.doctor.command_exists", lambda *_a, **_kw: False)
+    monkeypatch.setattr("llmbench.doctor.sys.platform", "linux")
+    monkeypatch.setattr("llmbench.doctor.linux_power_state", lambda: {"profile": "performance"})
+
+    cfg = _cfg(tmp_path)
+    data = doctor(cfg)
+
+    assert not any("power-profiles-daemon" in w or "Governor" in w for w in data["warnings"])
+
+
+def test_doctor_warns_about_non_performance_governor_without_power_profiles_daemon(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "llmbench.doctor.collect_hardware",
+        lambda *_a, **_kw: {"gpus": [], "memory": {}, "disk": {}},
+    )
+    monkeypatch.setattr("llmbench.doctor.command_exists", lambda *_a, **_kw: False)
+    monkeypatch.setattr("llmbench.doctor.sys.platform", "linux")
+    monkeypatch.setattr("llmbench.doctor.linux_power_state", lambda: {"governors": ["schedutil"]})
+
+    cfg = _cfg(tmp_path)
+    data = doctor(cfg)
+
+    assert any("Governor" in w and "cpupower" in w for w in data["warnings"])
+
+
 def test_doctor_flags_llama_bench_missing_required_options(tmp_path: Path, monkeypatch):
     exe = tmp_path / "llama-bench"
     exe.write_text("#!/bin/sh\n")

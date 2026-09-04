@@ -100,6 +100,10 @@ def _fake_bench_script(path: Path, exit_code: int = 0, output: str = "Device 0: 
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="probe() fuehrt das Fake-Binary als POSIX-Shell-Skript (#!/bin/sh) aus; unter Windows nicht ausfuehrbar.",
+)
 def test_probe_reports_success_and_failure(tmp_path: Path):
     ok_bench = tmp_path / "llama-bench-ok"
     _fake_bench_script(ok_bench, exit_code=0)
@@ -159,6 +163,10 @@ def _release(tag: str, assets: list[str]) -> dict:
     return {"tag_name": tag, "draft": False, "assets": [{"name": a, "browser_download_url": f"https://example/{a}"} for a in assets]}
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Installierte Fake-Binaries sind POSIX-Shell-Skripte (#!/bin/sh); probe() kann sie unter Windows nicht ausfuehren.",
+)
 def test_ensure_llama_cpp_installs_cpu_build_when_no_gpu(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
@@ -177,6 +185,10 @@ def test_ensure_llama_cpp_installs_cpu_build_when_no_gpu(tmp_path: Path, monkeyp
     assert (tmp_path / "tools" / "llama.cpp" / "llama-bench").exists()
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Installierte Fake-Binaries sind POSIX-Shell-Skripte (#!/bin/sh); probe() kann sie unter Windows nicht ausfuehren.",
+)
 def test_ensure_llama_cpp_falls_back_from_vulkan_to_cpu_when_vulkan_does_not_start(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: True)
@@ -219,7 +231,7 @@ def test_ensure_llama_cpp_builds_from_source_when_linux_release_asset_is_missing
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
     monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])
 
-    def fake_source_build(root, llama_dir, ref, state_file, arch, force, log):
+    def fake_source_build(_root, llama_dir, ref, state_file, arch, _force, _log):
         llama_dir.mkdir(parents=True, exist_ok=True)
         _fake_bench_script(llama_dir / "llama-bench")
         (llama_dir / "llama-server").write_text("stub", encoding="utf-8")
@@ -235,6 +247,10 @@ def test_ensure_llama_cpp_builds_from_source_when_linux_release_asset_is_missing
     assert result["source_build"] is True
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="_existing_install_ok() ruft probe() auf einem POSIX-Shell-Skript (#!/bin/sh) auf; unter Windows nicht ausfuehrbar.",
+)
 def test_ensure_llama_cpp_skips_reinstall_when_already_working(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     llama_dir = tmp_path / "tools" / "llama.cpp"

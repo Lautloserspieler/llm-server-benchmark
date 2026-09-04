@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import platform
 import re
 import shutil
@@ -30,6 +31,40 @@ def _has_binaries(directory: Path) -> bool:
         return (directory / stem).exists() or (directory / f"{stem}.exe").exists()
 
     return present("llama-bench") and present("llama-server")
+
+
+def _available_cpu_threads() -> int:
+    """Ermittelt die fuer den Prozess wirklich nutzbaren logischen CPUs.
+
+    Auf Linux respektiert sched_getaffinity() auch cpuset-/Container-Limits.
+    Auf anderen Plattformen faellt die Erkennung auf os.cpu_count() zurueck.
+    """
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        return max(1, os.cpu_count() or 1)
+
+
+def _normalize_cpu_profile_threads(model: dict[str, Any]) -> bool:
+    """Macht CPU-Only + threads:auto reproduzierbar und nutzt alle CPUs.
+
+    llama.cpp waehlt bei fehlendem -t auf manchen Hybrid-CPUs absichtlich nur
+    einen Teil der Kerne. Fuer einen CPU-Benchmark ist das unerwuenscht: auto
+    bedeutet hier deshalb alle fuer den Prozess verfuegbaren logischen CPUs.
+    Explizite Threadzahlen des Benutzers bleiben unveraendert.
+    """
+    changed = False
+    profiles = model.get("profiles") or []
+    for profile in profiles:
+        try:
+            gpu_layers = int(profile.get("gpu_layers", -1))
+        except (TypeError, ValueError):
+            continue
+        threads = profile.get("threads", "auto")
+        if gpu_layers == 0 and threads in (None, "auto", -1, "-1"):
+            profile["threads"] = _available_cpu_threads()
+            changed = True
+    return changed
 
 
 def shard_info(path: str | Path) -> tuple[str, int, int] | None:
@@ -204,7 +239,7 @@ def _default_model_entry(path: Path, root: Path, name: str) -> dict[str, Any]:
         "path": _rel_or_abs(path, root),
         "profiles": [
             {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"},
-            {"name": "CPU-Only", "gpu_layers": 0, "threads": "auto"},
+            {"name": "CPU-Only", "gpu_layers": 0, "threads": _available_cpu_threads()},
         ],
     }
 
@@ -218,8 +253,11 @@ def bootstrap_config(
 ) -> dict[str, Any]:
     """Legt benchmark.yaml an oder ergaenzt sie und erkennt lokale GGUF-Modelle.
 
-    Vorhandene Modelleintraege und Profileinstellungen bleiben erhalten. Alte,
-    versehentlich eingetragene Folge-Shards werden automatisch entfernt.
+    Vorhandene Modelleintraege und explizite Profileinstellungen bleiben erhalten.
+    CPU-Only-Profile mit ``threads: auto`` werden dagegen auf alle fuer den Prozess
+    verfuegbaren logischen CPUs aufgeloest, damit llama.cpp auf Hybrid-CPUs nicht
+    nur einen Teil der Kerne benchmarked. Alte, versehentlich eingetragene
+    Folge-Shards werden automatisch entfernt.
     """
     root = Path(root).resolve()
     config_path = Path(config_path)
@@ -273,6 +311,13 @@ def bootstrap_config(
     known_names: set[str] = set()
 
     for model in existing_raw:
+        model = dict(model)
+        if _normalize_cpu_profile_threads(model):
+            warnings.append(
+                f"CPU-Only-Profil von '{model.get('name', '?')}' nutzt automatisch "
+                f"alle {_available_cpu_threads()} verfuegbaren CPU-Threads."
+            )
+
         value = model.get("path")
         if not value:
             existing.append(model)
@@ -292,7 +337,6 @@ def bootstrap_config(
             continue
 
         p = logical_model_path(p)
-        model = dict(model)
         model["path"] = _rel_or_abs(p, root)
         existing.append(model)
         if model.get("name"):

@@ -23,10 +23,11 @@ python -m pip install -e "."
 echo "=== llama.cpp ==="
 mkdir -p tools/llama.cpp
 if [ ! -f "tools/llama.cpp/llama-bench" ] || [ ! -f "tools/llama.cpp/llama-server" ]; then
-    echo "llama.cpp fehlt. Suche einen passenden vorgebauten Build auf GitHub..."
+    echo "llama.cpp fehlt. Installiere Release-Build oder kompiliere unter Linux automatisch aus Source..."
     if ! python -m llmbench install-llama-cpp --root "$ROOT_DIR"; then
-        echo "FEHLER: Automatische llama.cpp-Installation fehlgeschlagen."
-        echo "Lege llama-bench und llama-server manuell unter tools/llama.cpp/ ab."
+        echo "FEHLER: Automatische llama.cpp-Installation/Source-Kompilierung fehlgeschlagen."
+        echo "Unter Ubuntu/Debian muessen git, build-essential, cmake und pkg-config verfuegbar sein."
+        echo "Lege alternativ llama-bench und llama-server manuell unter tools/llama.cpp/ ab."
         echo "Verwende auf allen Servern denselben Build."
         exit 1
     fi

@@ -76,6 +76,25 @@ def test_find_asset_returns_none_when_nothing_matches():
     assert lcs.find_asset([{"assets": [{"name": "unrelated.zip"}]}], lcs.asset_pattern("linux", "x64", "cpu")) is None
 
 
+def test_source_build_enabled_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("LLMBENCH_LLAMACPP_SOURCE_BUILD", "0")
+    assert lcs._source_build_enabled() is False
+    monkeypatch.setenv("LLMBENCH_LLAMACPP_SOURCE_BUILD", "1")
+    assert lcs._source_build_enabled() is True
+
+
+def test_source_backend_order_prefers_cuda_when_nvcc_exists(monkeypatch):
+    monkeypatch.delenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", raising=False)
+    monkeypatch.setattr(lcs, "_which_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
+    assert lcs._source_backend_order() == ["cuda", "cpu"]
+
+
+def test_source_backend_order_respects_forced_cpu(monkeypatch):
+    monkeypatch.setenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", "cpu")
+    monkeypatch.setattr(lcs, "_which_nvcc", lambda: "/usr/local/cuda/bin/nvcc")
+    assert lcs._source_backend_order() == ["cpu"]
+
+
 def _fake_bench_script(path: Path, exit_code: int = 0, output: str = "Device 0: fake\n") -> None:
     path.write_text(f"#!/bin/sh\necho '{output.strip()}'\nexit {exit_code}\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -154,6 +173,7 @@ def test_ensure_llama_cpp_installs_cpu_build_when_no_gpu(tmp_path: Path, monkeyp
     result = lcs.ensure_llama_cpp(tmp_path, log=lambda _m: None)
     assert result["tag"] == "b111"
     assert result["backend"] == "cpu"
+    assert result["source_build"] is False
     assert (tmp_path / "tools" / "llama.cpp" / "llama-bench").exists()
 
 
@@ -194,6 +214,27 @@ def test_ensure_llama_cpp_falls_back_from_vulkan_to_cpu_when_vulkan_does_not_sta
     assert calls["n"] == 2
 
 
+def test_ensure_llama_cpp_builds_from_source_when_linux_release_asset_is_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
+    monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
+    monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])
+
+    def fake_source_build(root, llama_dir, ref, state_file, arch, force, log):
+        llama_dir.mkdir(parents=True, exist_ok=True)
+        _fake_bench_script(llama_dir / "llama-bench")
+        (llama_dir / "llama-server").write_text("stub", encoding="utf-8")
+        state = {"tag": ref, "backend": "cpu", "source_build": True, "platform": f"linux-{arch}"}
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+        return state
+
+    monkeypatch.setattr(lcs, "build_llama_cpp_from_source", fake_source_build)
+
+    result = lcs.ensure_llama_cpp(tmp_path, log=lambda _m: None)
+    assert result["tag"] == "b333"
+    assert result["backend"] == "cpu"
+    assert result["source_build"] is True
+
+
 def test_ensure_llama_cpp_skips_reinstall_when_already_working(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     llama_dir = tmp_path / "tools" / "llama.cpp"
@@ -211,7 +252,8 @@ def test_ensure_llama_cpp_skips_reinstall_when_already_working(tmp_path: Path, m
     assert result["tag"] == "b999"
 
 
-def test_ensure_llama_cpp_raises_with_no_matching_asset(tmp_path: Path, monkeypatch):
+def test_ensure_llama_cpp_raises_with_no_matching_asset_when_source_build_is_disabled(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("LLMBENCH_LLAMACPP_SOURCE_BUILD", "0")
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
     monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])

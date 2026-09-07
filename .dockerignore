@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+.runtime
+.cache
+results
+models
+tools
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+benchmark.yaml
+benchmark.*.yaml
+*.zip
+*.gguf

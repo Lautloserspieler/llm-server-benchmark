@@ -35,6 +35,7 @@ def collect_execution_environment() -> dict[str, Any]:
         "container_image_id": "LLMBENCH_CONTAINER_IMAGE_ID",
         "cuda_devel_image": "LLMBENCH_CUDA_DEVEL_IMAGE",
         "cuda_runtime_image": "LLMBENCH_CUDA_RUNTIME_IMAGE",
+        "cuda_architectures": "LLMBENCH_CUDA_ARCHITECTURES",
         "llama_cpp_commit": "LLMBENCH_LLAMA_CPP_COMMIT",
         "host_name": "LLMBENCH_HOSTNAME",
         "gpu_devices": "NVIDIA_VISIBLE_DEVICES",

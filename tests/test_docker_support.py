@@ -8,6 +8,7 @@ from llmbench.execution import collect_execution_environment
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GHCR_IMAGE = "ghcr.io/lautloserspieler/llm-server-benchmark"
 
 
 def test_execution_environment_defaults_to_native(monkeypatch):
@@ -45,7 +46,7 @@ def test_execution_environment_records_docker_identity(monkeypatch):
     assert data["gpu_devices"] == "0,1"
 
 
-def test_compose_requests_nvidia_gpu_and_persists_data():
+def test_compose_requests_nvidia_gpu_persists_data_and_defaults_to_ghcr():
     compose = yaml.safe_load((ROOT / "compose.yaml").read_text(encoding="utf-8"))
     service = compose["services"]["llmbench"]
     devices = service["deploy"]["resources"]["reservations"]["devices"]
@@ -53,6 +54,8 @@ def test_compose_requests_nvidia_gpu_and_persists_data():
     targets = {entry["target"] for entry in service["volumes"]}
     assert {"/workspace/models", "/workspace/results", "/workspace/benchmark.yaml"} <= targets
     assert service["environment"]["LLMBENCH_EXECUTION_ENV"] == "docker"
+    assert GHCR_IMAGE in service["image"]
+    assert service["image"].endswith(":latest}")
 
 
 def test_dockerfile_is_cuda_and_llama_cpp_pinned():
@@ -80,3 +83,38 @@ def test_container_entrypoint_has_real_gpu_preflight():
     assert "nvidia-smi" in entrypoint
     assert "llama-bench --list-devices" in entrypoint
     assert "container-setup" in entrypoint
+
+
+def test_linux_and_windows_runtime_pull_ghcr_before_local_build():
+    linux = (ROOT / "scripts" / "docker_common.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8")
+    for content in (linux, windows):
+        assert GHCR_IMAGE in content
+        assert "LLMBENCH_DOCKER_BUILD_LOCAL" in content
+    assert 'pull "$LLMBENCH_DOCKER_IMAGE"' in linux
+    assert "_llmbench_compose build llmbench" in linux
+    assert "docker pull $Image" in windows
+    assert "Invoke-Compose build llmbench" in windows
+
+
+def test_docker_image_workflow_builds_prs_and_publishes_main_to_ghcr():
+    workflow = (ROOT / ".github" / "workflows" / "docker-image.yml").read_text(encoding="utf-8")
+    assert "my-image-name" not in workflow
+    assert f"IMAGE_NAME: {GHCR_IMAGE}" in workflow
+    assert "actions/checkout@v7.0.1" in workflow
+    assert "docker/setup-buildx-action@v4.3.0" in workflow
+    assert "docker/login-action@v4.6.0" in workflow
+    assert "docker/metadata-action@v6.2.0" in workflow
+    assert "docker/build-push-action@v7.3.0" in workflow
+    assert "packages: write" in workflow
+    assert "if: github.event_name == 'push'" in workflow
+    assert "if: github.event_name != 'push'" in workflow
+    assert "push: true" in workflow
+    assert "push: false" in workflow
+    assert "cache-from: type=gha" in workflow
+    assert "cache-to: type=gha,mode=max" in workflow
+    assert "provenance: mode=max" in workflow
+    assert "sbom: true" in workflow
+    assert "type=sha,format=long,prefix=sha-" in workflow
+    assert "type=raw,value=latest,enable={{is_default_branch}}" in workflow
+    assert 'tags: ["v*.*.*"]' in workflow

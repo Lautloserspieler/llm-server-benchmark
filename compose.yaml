@@ -2,7 +2,7 @@ name: llm-server-benchmark
 
 services:
   llmbench:
-    image: ${LLMBENCH_DOCKER_IMAGE:-llm-server-benchmark:local}
+    image: ${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -10,6 +10,7 @@ services:
         CUDA_DEVEL_IMAGE: ${LLMBENCH_CUDA_DEVEL_IMAGE:-nvidia/cuda:13.2.1-devel-ubuntu24.04}
         CUDA_RUNTIME_IMAGE: ${LLMBENCH_CUDA_RUNTIME_IMAGE:-nvidia/cuda:13.2.1-runtime-ubuntu24.04}
         LLAMA_CPP_COMMIT: ${LLMBENCH_LLAMA_CPP_COMMIT:-64a155d242cb427766055ea9caea6f34df1ca94b}
+        LLMBENCH_CUDA_ARCHITECTURES: ${LLMBENCH_CUDA_ARCHITECTURES:-89;120}
     hostname: ${LLMBENCH_HOSTNAME:-llmbench-docker}
     working_dir: /workspace
     stdin_open: true
@@ -24,6 +25,7 @@ services:
       LLMBENCH_CUDA_DEVEL_IMAGE: ${LLMBENCH_CUDA_DEVEL_IMAGE:-nvidia/cuda:13.2.1-devel-ubuntu24.04}
       LLMBENCH_CUDA_RUNTIME_IMAGE: ${LLMBENCH_CUDA_RUNTIME_IMAGE:-nvidia/cuda:13.2.1-runtime-ubuntu24.04}
       LLMBENCH_LLAMA_CPP_COMMIT: ${LLMBENCH_LLAMA_CPP_COMMIT:-64a155d242cb427766055ea9caea6f34df1ca94b}
+      LLMBENCH_CUDA_ARCHITECTURES: ${LLMBENCH_CUDA_ARCHITECTURES:-89;120}
       NVIDIA_VISIBLE_DEVICES: ${LLMBENCH_GPU_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       HF_HOME: /workspace/.cache/huggingface

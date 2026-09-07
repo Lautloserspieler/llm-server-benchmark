@@ -3,7 +3,8 @@
 # Diese Datei ist intern; fuer Nutzer bleiben die beiden Top-Level-Skripte die Einstiegspunkte.
 
 LLMBENCH_DOCKER_CMD=()
-LLMBENCH_DOCKER_IMAGE="${LLMBENCH_DOCKER_IMAGE:-llm-server-benchmark:local}"
+LLMBENCH_DOCKER_IMAGE="${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest}"
+LLMBENCH_DOCKER_BUILD_LOCAL="${LLMBENCH_DOCKER_BUILD_LOCAL:-0}"
 LLMBENCH_CUDA_SMOKE_IMAGE="${LLMBENCH_CUDA_SMOKE_IMAGE:-nvidia/cuda:13.2.1-base-ubuntu24.04}"
 
 _llmbench_sudo() {
@@ -173,6 +174,7 @@ llmbench_prepare_docker_paths() {
     export LLMBENCH_CONFIG_FILE="${LLMBENCH_CONFIG_FILE:-$ROOT_DIR/benchmark.yaml}"
     export LLMBENCH_HF_CACHE_DIR="${LLMBENCH_HF_CACHE_DIR:-$ROOT_DIR/.cache/huggingface}"
     export LLMBENCH_EXPECT_GPU="${LLMBENCH_EXPECT_GPU:-1}"
+    export LLMBENCH_DOCKER_IMAGE
 }
 
 llmbench_docker_gpu_smoke() {
@@ -180,29 +182,49 @@ llmbench_docker_gpu_smoke() {
     _llmbench_docker run --rm --gpus all "$LLMBENCH_CUDA_SMOKE_IMAGE" nvidia-smi >/dev/null
 }
 
+llmbench_set_container_image_id() {
+    export LLMBENCH_CONTAINER_IMAGE_ID
+    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}' 2>/dev/null || true)
+    [ -n "$LLMBENCH_CONTAINER_IMAGE_ID" ]
+}
+
 llmbench_docker_build() {
     llmbench_prepare_docker_paths
-    echo "[+] Baue reproduzierbares CUDA-Benchmark-Image..."
+
+    if [ "$LLMBENCH_DOCKER_BUILD_LOCAL" != "1" ]; then
+        echo "[+] Lade fertiges Benchmark-Image: $LLMBENCH_DOCKER_IMAGE"
+        if _llmbench_docker pull "$LLMBENCH_DOCKER_IMAGE"; then
+            llmbench_set_container_image_id || return 1
+            echo "[OK] GHCR-Image geladen; lokaler CUDA-Build wird uebersprungen."
+            return 0
+        fi
+
+        echo "[!] GHCR-Image konnte nicht geladen werden." >&2
+        if llmbench_set_container_image_id; then
+            echo "[+] Verwende bereits lokal vorhandenes Image $LLMBENCH_DOCKER_IMAGE."
+            return 0
+        fi
+        echo "[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck."
+    else
+        echo "[+] LLMBENCH_DOCKER_BUILD_LOCAL=1: erzwinge lokalen CUDA-Build."
+    fi
+
     _llmbench_compose build llmbench
-    export LLMBENCH_CONTAINER_IMAGE_ID
-    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}')
-    [ -n "$LLMBENCH_CONTAINER_IMAGE_ID" ] || return 1
+    llmbench_set_container_image_id || return 1
 }
 
 llmbench_docker_container_check() {
     llmbench_prepare_docker_paths
-    export LLMBENCH_CONTAINER_IMAGE_ID
-    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}' 2>/dev/null || true)
-    [ -n "$LLMBENCH_CONTAINER_IMAGE_ID" ] || return 1
+    llmbench_set_container_image_id || return 1
     _llmbench_compose run --rm llmbench container-check
 }
 
 llmbench_docker_setup_project() {
     llmbench_prepare_docker_paths
-    export LLMBENCH_CONTAINER_IMAGE_ID
-    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}')
+    llmbench_set_container_image_id || return 1
     _llmbench_compose run --rm llmbench container-setup
     printf '%s\n' "$LLMBENCH_CONTAINER_IMAGE_ID" > "$ROOT_DIR/.runtime/docker-ready"
+    printf '%s\n' "$LLMBENCH_DOCKER_IMAGE" > "$ROOT_DIR/.runtime/docker-image"
 }
 
 llmbench_setup_docker() {
@@ -213,6 +235,8 @@ llmbench_setup_docker() {
     llmbench_docker_container_check || return 1
     llmbench_docker_setup_project || return 1
     echo "[OK] Docker/CUDA Benchmark-Runtime ist bereit."
+    echo "     Image: $LLMBENCH_DOCKER_IMAGE"
+    echo "     Image-ID: $LLMBENCH_CONTAINER_IMAGE_ID"
 }
 
 llmbench_docker_ready() {
@@ -223,8 +247,7 @@ llmbench_docker_ready() {
 
 llmbench_docker_refresh_config() {
     llmbench_prepare_docker_paths
-    export LLMBENCH_CONTAINER_IMAGE_ID
-    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}')
+    llmbench_set_container_image_id || return 1
     _llmbench_compose run --rm llmbench python -m llmbench bootstrap \
         --config /workspace/benchmark.yaml \
         --root /workspace \
@@ -264,7 +287,6 @@ llmbench_docker_run() {
         args+=(--stress)
     fi
 
-    export LLMBENCH_CONTAINER_IMAGE_ID
-    LLMBENCH_CONTAINER_IMAGE_ID=$(_llmbench_docker image inspect "$LLMBENCH_DOCKER_IMAGE" --format '{{.Id}}')
+    llmbench_set_container_image_id || return 1
     _llmbench_compose run --rm llmbench "${args[@]}"
 }

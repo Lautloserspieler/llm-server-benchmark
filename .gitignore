@@ -1,6 +1,7 @@
 # Python
 .venv/
 .runtime/
+.cache/
 __pycache__/
 *.pyc
 *.egg-info/

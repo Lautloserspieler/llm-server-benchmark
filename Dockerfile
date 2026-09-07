@@ -60,5 +60,7 @@ LABEL org.opencontainers.image.title="llm-server-benchmark" \
       io.llmbench.cuda-runtime-image="${CUDA_RUNTIME_IMAGE}"
 
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/llmbench-entrypoint"]
+# Das offizielle NVIDIA-Entrypoint-Skript bleibt davor geschaltet, damit dessen
+# Runtime-Hooks nicht durch den llmbench-Entrypoint verloren gehen.
+ENTRYPOINT ["/opt/nvidia/nvidia_entrypoint.sh", "/usr/local/bin/llmbench-entrypoint"]
 CMD ["python", "-m", "llmbench", "--help"]

@@ -45,7 +45,14 @@ def _first_gpu_profile(model: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _multitenant_candidates(cfg: dict[str, Any], hardware: dict[str, Any]) -> list[dict[str, Any]]:
-    """Erzeugt nach Gewichtsgroesse sortierte, einzeln GPU-taugliche Kandidaten."""
+    """Erzeugt nach Gewichtsgroesse sortierte, einzeln GPU-taugliche Kandidaten.
+
+    Nicht vorhandene Dateien bleiben mit unbekannter Groesse im Kandidatensatz.
+    Das erhaelt die bisherige Fehlerbehandlung im eigentlichen Serverstart und
+    verhindert, dass Tests oder externe Backends allein durch den Preflight
+    anders semantisch behandelt werden. Reale vorhandene GGUFs werden dagegen
+    vollstaendig auf VRAM-Tauglichkeit geprueft.
+    """
     candidates: list[dict[str, Any]] = []
     for model in cfg.get("models", []) or []:
         profile = _first_gpu_profile(model)
@@ -53,8 +60,6 @@ def _multitenant_candidates(cfg: dict[str, Any], hardware: dict[str, Any]) -> li
             continue
         path = resolve_path(model["path"], cfg)
         fingerprint = file_fingerprint(path, with_hash=False)
-        if not fingerprint.get("exists"):
-            continue
         issue = profile_vram_issue_for_path(path, profile, hardware)
         if issue:
             continue

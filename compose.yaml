@@ -2,7 +2,7 @@ name: llm-server-benchmark
 
 services:
   llmbench:
-    image: ${LLMBENCH_DOCKER_IMAGE:-llm-server-benchmark:local}
+    image: ${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest}
     build:
       context: .
       dockerfile: Dockerfile

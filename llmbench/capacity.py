@@ -11,6 +11,7 @@ kann.
 
 from __future__ import annotations
 
+import contextlib
 from functools import lru_cache
 from typing import Any
 
@@ -39,10 +40,8 @@ def total_gpu_vram_bytes(hardware: dict[str, Any]) -> int:
                 pass
         raw_mib = gpu.get("memory.total")
         if raw_mib not in (None, ""):
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 total += max(0, int(float(raw_mib) * MIB))
-            except (TypeError, ValueError):
-                pass
     return total
 
 
@@ -86,7 +85,6 @@ def profile_vram_issue(
 
     vram_bytes = total_gpu_vram_bytes(hardware)
     if vram_bytes <= 0:
-        # Unbekannte VRAM-Groesse darf keinen falschen Skip erzeugen.
         return None
 
     fraction = profile.get("vram_fit_fraction", default_budget_fraction)

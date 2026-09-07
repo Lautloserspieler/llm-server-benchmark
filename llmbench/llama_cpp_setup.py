@@ -1,15 +1,12 @@
 """Automatische llama.cpp-Installation fuer Linux und macOS.
 
-Spiegelt fuer Unix-Systeme, was `scripts/START_BENCHMARK_CORE.ps1` unter
-Windows tut: zuerst einen passenden vorgebauten Release von GitHub laden und
-unter `tools/llama.cpp/` ablegen.
+Unter Linux wird auf NVIDIA-Systemen CUDA bevorzugt. Wenn NVIDIA-Treiber und
+CUDA Toolkit vorhanden sind, wird ein CUDA-Build aus dem offiziellen
+llama.cpp-Quellcode vor Vulkan versucht. Vulkan und CPU bleiben automatische
+Fallbacks. Damit kann ein vorhandener Vulkan-Build nicht mehr stillschweigend
+fuer NVIDIA-Benchmarks wiederverwendet werden, obwohl CUDA verfuegbar ist.
 
-Unter Linux gibt es nicht fuer jedes Zielsystem einen passenden Release-Build.
-Wenn kein Release passt oder der Release nicht startet, kann der Installer
-llama.cpp automatisch aus dem offiziellen Quellcode kompilieren. Bei vorhandenem
-CUDA Toolkit wird zuerst ein CUDA-Build versucht, danach faellt der Installer
-auf einen CPU-Build zurueck. Das Verhalten kann ueber Umgebungsvariablen
-gesteuert werden:
+Das Verhalten kann ueber Umgebungsvariablen gesteuert werden:
 
 - LLMBENCH_LLAMACPP_SOURCE_BUILD=0 deaktiviert den Source-Fallback.
 - LLMBENCH_LLAMACPP_BUILD_BACKEND=auto|cuda|vulkan|cpu waehlt den Build-Typ.
@@ -90,6 +87,33 @@ def looks_like_gpu_present() -> bool:
     return False
 
 
+def _nvidia_gpu_present() -> bool:
+    """Prueft, ob der NVIDIA-Treiber mindestens eine GPU sieht."""
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return False
+    try:
+        proc = subprocess.run(
+            [smi, "-L"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        return proc.returncode == 0 and "GPU" in (proc.stdout or "")
+    except Exception:
+        return False
+
+
+def _backend_preference() -> str:
+    value = os.environ.get("LLMBENCH_LLAMACPP_BUILD_BACKEND", "auto").strip().lower()
+    if value not in {"auto", "cuda", "vulkan", "cpu"}:
+        raise RuntimeError(
+            "Ungueltiger Wert fuer LLMBENCH_LLAMACPP_BUILD_BACKEND. Erlaubt: auto, cuda, vulkan, cpu."
+        )
+    return value
+
+
 def pinned_tag(root: Path, explicit: str | None = None) -> str | None:
     """Bevorzugter Build: --tag-Parameter, dann LLMBENCH_LLAMACPP_TAG, dann llama-cpp-version.txt."""
     tag = explicit.strip() if explicit else None
@@ -109,7 +133,13 @@ def pinned_tag(root: Path, explicit: str | None = None) -> str | None:
 
 
 def _github_get(url: str, allow_missing: bool = False) -> Any:
-    req = Request(url, headers={"User-Agent": "llm-server-benchmark-installer", "Accept": "application/vnd.github+json"})
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "llm-server-benchmark-installer",
+            "Accept": "application/vnd.github+json",
+        },
+    )
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
@@ -166,9 +196,22 @@ def find_asset(releases: list[dict[str, Any]], pattern: str) -> tuple[dict[str, 
 
 
 def _backends_to_try(os_key: str, arch: str) -> list[str]:
+    """Release-Backends nach expliziter Praeferenz bzw. Fallback-Reihenfolge."""
+    preference = _backend_preference()
     if os_key == "macos":
-        return ["cpu"]  # macOS-Pakete haben Metal (arm64) bereits eingebaut, kein separates GPU-Paket.
-    backends = []
+        if preference in {"cuda", "vulkan"}:
+            return []
+        return ["cpu"]  # macOS-arm64 enthaelt Metal im normalen Paket.
+    if preference == "cuda":
+        # Fuer Linux gibt es in diesem Installer keinen generischen CUDA-Release;
+        # CUDA wird aus Source gebaut.
+        return []
+    if preference == "vulkan":
+        return ["vulkan"] if arch in ("x64", "arm64") else []
+    if preference == "cpu":
+        return ["cpu"]
+
+    backends: list[str] = []
     if arch in ("x64", "arm64") and looks_like_gpu_present():
         backends.append("vulkan")
     backends.append("cpu")
@@ -217,7 +260,11 @@ def probe(bench_path: Path) -> tuple[bool, str]:
         return False, "llama-bench fehlt"
     try:
         proc = subprocess.run(
-            [str(bench_path), "--list-devices"], capture_output=True, text=True, timeout=30, check=False
+            [str(bench_path), "--list-devices"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
         output = ((proc.stdout or "") + (proc.stderr or "")).strip()
         return proc.returncode == 0, output[:600]
@@ -225,7 +272,52 @@ def probe(bench_path: Path) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _existing_install_ok(llama_dir: Path, state_file: Path, log: LogFn) -> bool:
+def _source_build_enabled() -> bool:
+    value = os.environ.get("LLMBENCH_LLAMACPP_SOURCE_BUILD", "1").strip().lower()
+    return value not in {"0", "false", "no", "off", "nein"}
+
+
+def _which_nvcc() -> str | None:
+    nvcc = shutil.which("nvcc")
+    if nvcc:
+        return nvcc
+    for root in (os.environ.get("CUDA_HOME"), os.environ.get("CUDA_PATH"), "/usr/local/cuda"):
+        if not root:
+            continue
+        candidate = Path(root) / "bin" / "nvcc"
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def _prefer_cuda_source(os_key: str, arch: str) -> bool:
+    preference = _backend_preference()
+    if preference not in {"auto", "cuda"}:
+        return False
+    return (
+        os_key == "linux"
+        and arch in ("x64", "arm64")
+        and _source_build_enabled()
+        and _nvidia_gpu_present()
+        and _which_nvcc() is not None
+    )
+
+
+def _desired_existing_backend(os_key: str, arch: str) -> str | None:
+    preference = _backend_preference()
+    if preference != "auto":
+        return preference
+    if _prefer_cuda_source(os_key, arch):
+        return "cuda"
+    return None
+
+
+def _existing_install_ok(
+    llama_dir: Path,
+    state_file: Path,
+    log: LogFn,
+    desired_backend: str | None = None,
+) -> bool:
     bench = llama_dir / "llama-bench"
     server = llama_dir / "llama-server"
     if not (bench.exists() and server.exists() and state_file.exists()):
@@ -238,6 +330,16 @@ def _existing_install_ok(llama_dir: Path, state_file: Path, log: LogFn) -> bool:
         state = json.loads(state_file.read_text(encoding="utf-8"))
     except Exception:
         return False
+
+    installed_backend = str(state.get("backend") or "").lower()
+    if desired_backend and installed_backend != desired_backend:
+        log(
+            "Vorhandener llama.cpp-Backend passt nicht zur aktuellen Hardware/Praeferenz: "
+            f"installiert={installed_backend or 'unbekannt'}, gewuenscht={desired_backend}. "
+            "Installation wird automatisch aktualisiert."
+        )
+        return False
+
     log(f"llama.cpp ist bereits installiert: {llama_dir} (Build {state.get('tag')} / {state.get('backend')})")
     return True
 
@@ -280,24 +382,6 @@ def _install_asset(
         log(f"llama.cpp {release.get('tag_name')} ({backend}) wurde installiert: {llama_dir}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-def _source_build_enabled() -> bool:
-    value = os.environ.get("LLMBENCH_LLAMACPP_SOURCE_BUILD", "1").strip().lower()
-    return value not in {"0", "false", "no", "off", "nein"}
-
-
-def _which_nvcc() -> str | None:
-    nvcc = shutil.which("nvcc")
-    if nvcc:
-        return nvcc
-    for root in (os.environ.get("CUDA_HOME"), os.environ.get("CUDA_PATH"), "/usr/local/cuda"):
-        if not root:
-            continue
-        candidate = Path(root) / "bin" / "nvcc"
-        if candidate.exists():
-            return str(candidate)
-    return None
 
 
 def _missing_build_tools() -> list[str]:
@@ -364,13 +448,9 @@ def _source_ref_from_releases(root: Path, explicit_tag: str | None, releases: li
 
 
 def _source_backend_order() -> list[str]:
-    backend = os.environ.get("LLMBENCH_LLAMACPP_BUILD_BACKEND", "auto").strip().lower()
+    backend = _backend_preference()
     if backend in {"cpu", "cuda", "vulkan"}:
         return [backend]
-    if backend and backend != "auto":
-        raise RuntimeError(
-            "Ungueltiger Wert fuer LLMBENCH_LLAMACPP_BUILD_BACKEND. Erlaubt: auto, cuda, vulkan, cpu."
-        )
 
     order: list[str] = []
     if _which_nvcc():
@@ -396,7 +476,11 @@ def _clone_or_update_source(root: Path, ref: str, force: bool, log: LogFn) -> Pa
         if ref != "master":
             raise
         log("Branch 'master' konnte nicht geladen werden, versuche 'main'...")
-        _run_checked(["git", "clone", "--depth", "1", "--branch", "main", SOURCE_REPO, str(source_dir)], None, log)
+        _run_checked(
+            ["git", "clone", "--depth", "1", "--branch", "main", SOURCE_REPO, str(source_dir)],
+            None,
+            log,
+        )
 
     if not (source_dir / "CMakeLists.txt").is_file():
         raise RuntimeError(f"llama.cpp-Quellcode ist unvollstaendig: {source_dir}")
@@ -457,6 +541,7 @@ def build_llama_cpp_from_source(
     arch: str,
     force: bool,
     log: LogFn,
+    backends: list[str] | None = None,
 ) -> dict[str, Any]:
     """Kompiliert llama.cpp unter Linux automatisch aus Source und installiert die Binaries."""
     if platform.system() != "Linux":
@@ -465,8 +550,9 @@ def build_llama_cpp_from_source(
     _install_linux_build_dependencies(log)
     source_dir = _clone_or_update_source(root, ref, force, log)
 
+    backend_order = list(backends) if backends is not None else _source_backend_order()
     last_error: Exception | None = None
-    for backend in _source_backend_order():
+    for backend in backend_order:
         build_dir = root / ".runtime" / "llama.cpp-build" / f"{ref}-{backend}"
         if force and build_dir.exists():
             shutil.rmtree(build_dir)
@@ -499,7 +585,7 @@ def build_llama_cpp_from_source(
         except Exception as exc:
             last_error = exc
             log(f"Source-Build mit Backend '{backend}' fehlgeschlagen: {exc}")
-            if os.environ.get("LLMBENCH_LLAMACPP_BUILD_BACKEND", "auto").strip().lower() != "auto":
+            if backends is None and _backend_preference() != "auto":
                 break
 
     raise RuntimeError(f"llama.cpp konnte nicht aus Source gebaut werden. Letzter Fehler: {last_error}")
@@ -512,10 +598,10 @@ def ensure_llama_cpp(
     force: bool = False,
     log: LogFn | None = None,
 ) -> dict[str, Any]:
-    """Sorgt dafuer, dass unter `llama_dir` ein lauffaehiger llama.cpp-Build liegt.
+    """Sorgt fuer einen passenden, startfaehigen llama.cpp-Build.
 
-    Gibt bei Erfolg den Inhalt der geschriebenen `.llama-build.json` zurueck.
-    Wirft RuntimeError, wenn kein Backend fuer diese Plattform startfaehig war.
+    Auf Linux/NVIDIA wird CUDA automatisch vor Vulkan bevorzugt, sobald sowohl
+    der NVIDIA-Treiber als auch nvcc verfuegbar sind.
     """
     log = log or _noop
     root = Path(root)
@@ -523,8 +609,9 @@ def ensure_llama_cpp(
     state_file = llama_dir / ".llama-build.json"
 
     os_key, arch = target_platform()
+    desired_backend = _desired_existing_backend(os_key, arch)
 
-    if not force and _existing_install_ok(llama_dir, state_file, log):
+    if not force and _existing_install_ok(llama_dir, state_file, log, desired_backend):
         return json.loads(state_file.read_text(encoding="utf-8"))
 
     releases: list[dict[str, Any]] = []
@@ -534,6 +621,32 @@ def ensure_llama_cpp(
     except Exception as exc:
         last_error = exc
         log(f"Release-Suche fehlgeschlagen: {exc}")
+
+    ref = _source_ref_from_releases(root, tag, releases)
+    cuda_attempted = False
+    if _prefer_cuda_source(os_key, arch):
+        cuda_attempted = True
+        log(
+            "NVIDIA-GPU und CUDA Toolkit erkannt. "
+            f"Baue llama.cpp zuerst mit CUDA aus Source ({ref})..."
+        )
+        try:
+            return build_llama_cpp_from_source(
+                root,
+                llama_dir,
+                ref,
+                state_file,
+                arch,
+                force,
+                log,
+                backends=["cuda"],
+            )
+        except Exception as exc:
+            last_error = exc
+            log(f"CUDA-Source-Build fehlgeschlagen: {exc}")
+            if _backend_preference() == "cuda":
+                raise RuntimeError(f"Erzwungener CUDA-Build fehlgeschlagen: {exc}") from exc
+            log("Falle automatisch auf Vulkan/CPU zurueck.")
 
     for backend in _backends_to_try(os_key, arch):
         pattern = asset_pattern(os_key, arch, backend)
@@ -549,16 +662,34 @@ def ensure_llama_cpp(
         except Exception as exc:
             last_error = exc
             log(f"Installation mit Backend '{backend}' fehlgeschlagen: {exc}")
-            continue
 
     if os_key == "linux" and _source_build_enabled():
-        ref = _source_ref_from_releases(root, tag, releases)
+        preference = _backend_preference()
+        if preference == "auto" and cuda_attempted:
+            fallback_backends = ["cpu"]
+        elif preference == "vulkan":
+            fallback_backends = ["vulkan"]
+        elif preference == "cpu":
+            fallback_backends = ["cpu"]
+        elif preference == "cuda":
+            fallback_backends = ["cuda"]
+        else:
+            fallback_backends = _source_backend_order()
         log(
             "Kein passender startfaehiger Linux-Release gefunden. "
-            f"Kompiliere llama.cpp automatisch aus Source ({ref})..."
+            f"Kompiliere llama.cpp automatisch aus Source ({ref}, Backends {fallback_backends})..."
         )
         try:
-            return build_llama_cpp_from_source(root, llama_dir, ref, state_file, arch, force, log)
+            return build_llama_cpp_from_source(
+                root,
+                llama_dir,
+                ref,
+                state_file,
+                arch,
+                force,
+                log,
+                backends=fallback_backends,
+            )
         except Exception as exc:
             last_error = exc
             log(f"Source-Build fehlgeschlagen: {exc}")

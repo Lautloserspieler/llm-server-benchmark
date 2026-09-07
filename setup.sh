@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+ROOT_DIR=$(pwd)
 
 echo ""
 echo "===================================================="
@@ -27,13 +28,14 @@ python -m pip install -e "."
 echo ""
 echo "[OK] Programm und Abhaengigkeiten sind bereit."
 echo ""
-echo "Hinweis: llama-bench und llama-server werden bei Bedarf automatisch"
-echo "eingerichtet. Unter Linux wird zuerst ein passender Release probiert;"
-echo "falls keiner passt oder startet, kompiliert das Setup llama.cpp aus"
-echo "dem offiziellen Quellcode. Mit CUDA Toolkit wird zuerst CUDA gebaut,"
-echo "danach faellt es automatisch auf CPU zurueck. Fuer denselben Build"
-echo "auf allen Vergleichsservern kann eine feste Version in"
-echo "llama-cpp-version.txt eingetragen werden."
+echo "[+] Pruefe/installiere passenden llama.cpp-Build..."
+python -m llmbench install-llama-cpp --root "$ROOT_DIR"
+echo ""
+echo "Hinweis: Auf Linux/NVIDIA wird CUDA automatisch bevorzugt, sobald"
+echo "NVIDIA-Treiber und CUDA Toolkit (nvcc) vorhanden sind. Vulkan und CPU"
+echo "bleiben automatische Fallbacks. Fuer denselben Build auf allen"
+echo "Vergleichsservern kann eine feste Version in llama-cpp-version.txt"
+echo "eingetragen werden."
 echo ""
 
 mkdir -p models
@@ -49,8 +51,7 @@ python -m llmbench setup
 
 echo ""
 echo "===================================================="
-echo "   Weiter mit:"
-echo "   ./.venv/bin/llmbench doctor --config benchmark.yaml"
-echo "   ./.venv/bin/llmbench run    --config benchmark.yaml"
+echo "   Einrichtung abgeschlossen."
+echo "   Fuer den Benchmark nur START_BENCHMARK.sh starten."
 echo "===================================================="
 echo ""

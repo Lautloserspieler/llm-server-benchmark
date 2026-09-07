@@ -4,12 +4,14 @@ from pathlib import Path
 from typing import Any
 
 from .base import BenchmarkBackend
+from ..capacity import profile_vram_issue_for_path
 from ..endpoint import (
     start_llama_server,
     stop_llama_server,
-    wait_health
+    wait_health,
 )
 from ..llama_bench import run_llama_bench
+
 
 class LlamaCppBackend(BenchmarkBackend):
     """Implementation of the benchmark backend for llama.cpp."""
@@ -25,8 +27,16 @@ class LlamaCppBackend(BenchmarkBackend):
         kind: str,
         out_dir: Path,
         bench_cfg: dict[str, Any],
-        on_progress=None
+        on_progress=None,
     ) -> dict[str, Any]:
+        capacity_issue = profile_vram_issue_for_path(model_path, profile)
+        if capacity_issue:
+            return {
+                "kind": kind,
+                "status": "skipped_vram",
+                "error": capacity_issue,
+                "capacity_guard": True,
+            }
         return run_llama_bench(
             self.llama_bench_exe,
             model_path,
@@ -43,8 +53,11 @@ class LlamaCppBackend(BenchmarkBackend):
         profile: dict[str, Any],
         endpoint_cfg: dict[str, Any],
         bench_cfg: dict[str, Any],
-        log_path: Path
+        log_path: Path,
     ) -> tuple[Any, str]:
+        capacity_issue = profile_vram_issue_for_path(model_path, profile)
+        if capacity_issue:
+            raise RuntimeError(f"VRAM-Preflight: {capacity_issue}")
         return start_llama_server(
             self.llama_server_exe,
             model_path,

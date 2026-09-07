@@ -73,7 +73,10 @@ def test_asset_pattern_matches_expected_release_names():
 
 
 def test_find_asset_returns_none_when_nothing_matches():
-    assert lcs.find_asset([{"assets": [{"name": "unrelated.zip"}]}], lcs.asset_pattern("linux", "x64", "cpu")) is None
+    assert lcs.find_asset(
+        [{"assets": [{"name": "unrelated.zip"}]}],
+        lcs.asset_pattern("linux", "x64", "cpu"),
+    ) is None
 
 
 def test_source_build_enabled_can_be_disabled(monkeypatch):
@@ -160,7 +163,14 @@ def test_extract_rejects_path_traversal(tmp_path: Path):
 
 
 def _release(tag: str, assets: list[str]) -> dict:
-    return {"tag_name": tag, "draft": False, "assets": [{"name": a, "browser_download_url": f"https://example/{a}"} for a in assets]}
+    return {
+        "tag_name": tag,
+        "draft": False,
+        "assets": [
+            {"name": a, "browser_download_url": f"https://example/{a}"}
+            for a in assets
+        ],
+    }
 
 
 @pytest.mark.skipif(
@@ -170,7 +180,11 @@ def _release(tag: str, assets: list[str]) -> dict:
 def test_ensure_llama_cpp_installs_cpu_build_when_no_gpu(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
-    monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b111", ["llama-b111-bin-ubuntu-x64.tar.gz"])])
+    monkeypatch.setattr(
+        lcs,
+        "release_candidates",
+        lambda _root, _tag: [_release("b111", ["llama-b111-bin-ubuntu-x64.tar.gz"])],
+    )
 
     def fake_download(_url, dest):
         archive = _make_archive(tmp_path, "dl.tar.gz")
@@ -196,7 +210,10 @@ def test_ensure_llama_cpp_falls_back_from_vulkan_to_cpu_when_vulkan_does_not_sta
         lcs,
         "release_candidates",
         lambda _root, _tag: [
-            _release("b222", ["llama-b222-bin-ubuntu-vulkan-x64.tar.gz", "llama-b222-bin-ubuntu-x64.tar.gz"])
+            _release(
+                "b222",
+                ["llama-b222-bin-ubuntu-vulkan-x64.tar.gz", "llama-b222-bin-ubuntu-x64.tar.gz"],
+            )
         ],
     )
 
@@ -229,13 +246,23 @@ def test_ensure_llama_cpp_falls_back_from_vulkan_to_cpu_when_vulkan_does_not_sta
 def test_ensure_llama_cpp_builds_from_source_when_linux_release_asset_is_missing(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
-    monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])
+    monkeypatch.setattr(
+        lcs,
+        "release_candidates",
+        lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])],
+    )
 
-    def fake_source_build(_root, llama_dir, ref, state_file, arch, _force, _log):
+    def fake_source_build(_root, llama_dir, ref, state_file, arch, _force, _log, backends=None):
+        assert backends == ["cpu"]
         llama_dir.mkdir(parents=True, exist_ok=True)
         _fake_bench_script(llama_dir / "llama-bench")
         (llama_dir / "llama-server").write_text("stub", encoding="utf-8")
-        state = {"tag": ref, "backend": "cpu", "source_build": True, "platform": f"linux-{arch}"}
+        state = {
+            "tag": ref,
+            "backend": "cpu",
+            "source_build": True,
+            "platform": f"linux-{arch}",
+        }
         state_file.write_text(json.dumps(state), encoding="utf-8")
         return state
 
@@ -257,7 +284,10 @@ def test_ensure_llama_cpp_skips_reinstall_when_already_working(tmp_path: Path, m
     llama_dir.mkdir(parents=True)
     _fake_bench_script(llama_dir / "llama-bench")
     (llama_dir / "llama-server").write_text("stub", encoding="utf-8")
-    (llama_dir / ".llama-build.json").write_text(json.dumps({"tag": "b999", "backend": "cpu"}), encoding="utf-8")
+    (llama_dir / ".llama-build.json").write_text(
+        json.dumps({"tag": "b999", "backend": "cpu"}),
+        encoding="utf-8",
+    )
 
     def fail_if_called(*_a, **_k):
         raise AssertionError("release_candidates should not be called when reusing an existing install")
@@ -272,7 +302,11 @@ def test_ensure_llama_cpp_raises_with_no_matching_asset_when_source_build_is_dis
     monkeypatch.setenv("LLMBENCH_LLAMACPP_SOURCE_BUILD", "0")
     monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
     monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: False)
-    monkeypatch.setattr(lcs, "release_candidates", lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])])
+    monkeypatch.setattr(
+        lcs,
+        "release_candidates",
+        lambda _root, _tag: [_release("b333", ["llama-b333-bin-win-cpu-x64.zip"])],
+    )
 
     with pytest.raises(RuntimeError, match="fehlgeschlagen"):
         lcs.ensure_llama_cpp(tmp_path, log=lambda _m: None)

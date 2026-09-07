@@ -67,7 +67,17 @@ jobs:
           IMAGE="${IMAGE_NAME}:sha-${GITHUB_SHA}"
           docker image inspect "$IMAGE" >/dev/null
           docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" python -m llmbench --version
-          docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" /opt/llama.cpp/llama-bench --version
+          test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "io.llmbench.cuda-architectures" }}')" = "89;120"
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
+            set -eu
+            test -x /opt/llama.cpp/llama-bench
+            test -x /opt/llama.cpp/llama-server
+            deps="$(ldd /opt/llama.cpp/llama-bench)"
+            printf "%s\n" "$deps"
+            printf "%s\n" "$deps" | grep -q "libcuda.so.1"
+            missing="$(printf "%s\n" "$deps" | grep "not found" | grep -v "libcuda.so.1" || true)"
+            test -z "$missing"
+          '
 
       - name: Build summary
         if: always()
@@ -78,6 +88,7 @@ jobs:
             echo ""
             echo "- Image: \`${IMAGE_NAME}:sha-${GITHUB_SHA}\`"
             echo "- Platform: \`linux/amd64\`"
+            echo "- CUDA architectures: \`sm_89;sm_120\`"
             echo "- Published: no (PR/manual validation only)"
             echo "- Build digest: \`${{ steps.build.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -140,7 +151,17 @@ jobs:
           IMAGE="${IMAGE_NAME}:sha-${GITHUB_SHA}"
           docker pull "$IMAGE"
           docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" python -m llmbench --version
-          docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" /opt/llama.cpp/llama-bench --version
+          test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "io.llmbench.cuda-architectures" }}')" = "89;120"
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
+            set -eu
+            test -x /opt/llama.cpp/llama-bench
+            test -x /opt/llama.cpp/llama-server
+            deps="$(ldd /opt/llama.cpp/llama-bench)"
+            printf "%s\n" "$deps"
+            printf "%s\n" "$deps" | grep -q "libcuda.so.1"
+            missing="$(printf "%s\n" "$deps" | grep "not found" | grep -v "libcuda.so.1" || true)"
+            test -z "$missing"
+          '
 
       - name: Publish summary
         if: always()
@@ -151,6 +172,7 @@ jobs:
             echo ""
             echo "- Registry: \`${IMAGE_NAME}\`"
             echo "- Immutable tag: \`sha-${GITHUB_SHA}\`"
+            echo "- CUDA architectures: \`sm_89;sm_120\`"
             echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
             echo "- Tags:"
             while IFS= read -r tag; do

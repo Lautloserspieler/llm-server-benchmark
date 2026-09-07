@@ -55,8 +55,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=llmbench-cuda
           cache-to: type=gha,mode=max,scope=llmbench-cuda
-          provenance: mode=max
-          sbom: true
+          # Docker's local image store cannot load an attested manifest list.
+          # PR/manual jobs validate the runnable image; attestations are generated on publish.
+          provenance: false
+          sbom: false
 
       - name: Smoke-test image without GPU
         shell: bash

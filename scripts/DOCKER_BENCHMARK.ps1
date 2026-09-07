@@ -8,11 +8,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $Root 'compose.yaml'
-$Image = if ($env:LLMBENCH_DOCKER_IMAGE) { $env:LLMBENCH_DOCKER_IMAGE } else { 'llm-server-benchmark:local' }
+$Image = if ($env:LLMBENCH_DOCKER_IMAGE) { $env:LLMBENCH_DOCKER_IMAGE } else { 'ghcr.io/lautloserspieler/llm-server-benchmark:latest' }
+$BuildLocal = ($env:LLMBENCH_DOCKER_BUILD_LOCAL -eq '1')
 $SmokeImage = if ($env:LLMBENCH_CUDA_SMOKE_IMAGE) { $env:LLMBENCH_CUDA_SMOKE_IMAGE } else { 'nvidia/cuda:13.2.1-base-ubuntu24.04' }
 $ConfigPath = if ([System.IO.Path]::IsPathRooted($Config)) { $Config } else { Join-Path $Root $Config }
 $RuntimeDir = Join-Path $Root '.runtime'
 $ReadyFile = Join-Path $RuntimeDir 'docker-ready'
+$ImageFile = Join-Path $RuntimeDir 'docker-image'
 
 function Invoke-Docker {
     param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
@@ -51,6 +53,7 @@ function Initialize-DockerEnvironment {
     $env:LLMBENCH_CONFIG_FILE = $ConfigPath
     $env:LLMBENCH_HF_CACHE_DIR = Join-Path $Root '.cache\huggingface'
     $env:LLMBENCH_EXPECT_GPU = '1'
+    $env:LLMBENCH_DOCKER_IMAGE = $Image
 }
 
 function Test-DockerGpu {
@@ -68,6 +71,32 @@ function Set-ContainerImageId {
     return $id
 }
 
+function Ensure-BenchmarkImage {
+    if (-not $BuildLocal) {
+        Write-Host "[+] Lade fertiges Benchmark-Image: $Image" -ForegroundColor Cyan
+        & docker pull $Image
+        if ($LASTEXITCODE -eq 0) {
+            $id = Set-ContainerImageId
+            Write-Host '[OK] GHCR-Image geladen; lokaler CUDA-Build wird uebersprungen.' -ForegroundColor Green
+            return $id
+        }
+
+        Write-Host '[!] GHCR-Image konnte nicht geladen werden.' -ForegroundColor Yellow
+        try {
+            $id = Set-ContainerImageId
+            Write-Host "[+] Verwende bereits lokal vorhandenes Image $Image." -ForegroundColor Yellow
+            return $id
+        } catch {
+            Write-Host '[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck.' -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '[+] LLMBENCH_DOCKER_BUILD_LOCAL=1: erzwinge lokalen CUDA-Build.' -ForegroundColor Yellow
+    }
+
+    Invoke-Compose build llmbench
+    return Set-ContainerImageId
+}
+
 function Setup-DockerBenchmark {
     if (-not (Test-DockerDesktopReady)) {
         throw 'Docker Desktop mit Linux/WSL2-Backend ist nicht bereit.'
@@ -75,14 +104,14 @@ function Setup-DockerBenchmark {
     Initialize-DockerEnvironment
     Test-DockerGpu
 
-    Write-Host '[+] Baue reproduzierbares CUDA-Benchmark-Image...' -ForegroundColor Cyan
-    Invoke-Compose build llmbench
-    $id = Set-ContainerImageId
-
+    $id = Ensure-BenchmarkImage
     Invoke-Compose run --rm llmbench container-check
     Invoke-Compose run --rm llmbench container-setup
     Set-Content -Path $ReadyFile -Value $id -Encoding ascii
+    Set-Content -Path $ImageFile -Value $Image -Encoding ascii
     Write-Host '[OK] Docker/CUDA Benchmark-Runtime ist bereit.' -ForegroundColor Green
+    Write-Host "     Image: $Image"
+    Write-Host "     Image-ID: $id"
 }
 
 function Test-DockerBenchmarkReady {

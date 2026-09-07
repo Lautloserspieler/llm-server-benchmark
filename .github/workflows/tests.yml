@@ -30,6 +30,16 @@ jobs:
       - name: Pytest
         run: pytest -q
 
+      - name: Validate Linux and Docker launchers
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          bash -n setup.sh
+          bash -n START_BENCHMARK.sh
+          bash -n scripts/docker_common.sh
+          bash -n docker/entrypoint.sh
+          docker compose -f compose.yaml config -q
+
       - name: Validate PowerShell launchers
         if: runner.os == 'Windows'
         shell: powershell
@@ -38,7 +48,8 @@ jobs:
             'scripts/START_BENCHMARK.ps1',
             'scripts/START_BENCHMARK_CORE.ps1',
             'scripts/ENSURE_PYTHON.ps1',
-            'scripts/ENSURE_LLAMA_CPP.ps1'
+            'scripts/ENSURE_LLAMA_CPP.ps1',
+            'scripts/DOCKER_BENCHMARK.ps1'
           )
           $failed = $false
           foreach ($script in $scripts) {

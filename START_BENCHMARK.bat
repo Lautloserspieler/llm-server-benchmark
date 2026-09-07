@@ -1,15 +1,44 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title LLM Server Benchmark
 
-:: Der aktuelle Windows-Setup-Pfad installiert Python pro Benutzer und nutzt
-:: offizielle llama.cpp-Release-Builds. Fuer einen normalen Benchmark-Start
-:: werden daher keine Administratorrechte mehr benoetigt.
-:: Falls spaeter ein separater Installer Adminrechte braucht, soll nur dieser
-:: konkrete Schritt eine UAC-Abfrage ausloesen - nicht jeder Benchmark-Start.
+set "MODE=%LLMBENCH_EXECUTION_MODE%"
+if "%MODE%"=="" set "MODE=auto"
+
+if /I not "%MODE%"=="auto" if /I not "%MODE%"=="docker" if /I not "%MODE%"=="native" (
+    echo LLMBENCH_EXECUTION_MODE muss auto, docker oder native sein.
+    pause
+    exit /b 1
+)
+
+if /I not "%MODE%"=="native" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Check >nul 2>&1
+    if !errorlevel! equ 0 (
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Run
+        set RC=!ERRORLEVEL!
+        goto :done
+    )
+
+    if /I "%MODE%"=="docker" (
+        echo Docker-Modus ist erzwungen, aber noch nicht bereit. Richte ihn jetzt ein...
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Setup
+        if !errorlevel! neq 0 (
+            set RC=!ERRORLEVEL!
+            goto :done
+        )
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Run
+        set RC=!ERRORLEVEL!
+        goto :done
+    )
+)
+
+:: Nativer Windows-Fallback. Dieser Pfad bleibt fuer Systeme ohne Docker Desktop
+:: bzw. ohne WSL2-GPU-Unterstuetzung voll funktionsfaehig.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\START_BENCHMARK.ps1" %*
 set RC=%ERRORLEVEL%
+
+:done
 echo.
 if not "%RC%"=="0" echo Benchmark/Setup wurde mit Fehlercode %RC% beendet.
 pause

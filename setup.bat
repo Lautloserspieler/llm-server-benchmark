@@ -2,11 +2,33 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+set "MODE=%LLMBENCH_EXECUTION_MODE%"
+if "%MODE%"=="" set "MODE=auto"
+
+if /I not "%MODE%"=="auto" if /I not "%MODE%"=="docker" if /I not "%MODE%"=="native" (
+    echo [!] LLMBENCH_EXECUTION_MODE muss auto, docker oder native sein.
+    pause
+    exit /b 1
+)
+
 echo.
 echo ====================================================
 echo   LLM Server Benchmark - Einrichtung (Windows)
 echo ====================================================
+echo Ausfuehrungsmodus: %MODE%
 echo.
+
+if /I not "%MODE%"=="native" (
+    echo === Docker Desktop + WSL2 + NVIDIA CUDA ===
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Setup
+    if !errorlevel! equ 0 goto :docker_ok
+    if /I "%MODE%"=="docker" (
+        echo [!] Docker-Modus wurde erzwungen und konnte nicht eingerichtet werden.
+        goto :fail
+    )
+    echo [!] Docker Desktop GPU-Runtime ist nicht bereit. Auto-Modus verwendet Native als Fallback.
+    echo.
+)
 
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -37,7 +59,7 @@ if not exist models mkdir models
 echo.
 echo ====================================================
 echo   V2 Standard-Suite pruefen
- echo ====================================================
+echo ====================================================
 python -m llmbench download --suite all --models-dir models --verify-only >nul 2>&1
 if !errorlevel! neq 0 (
     echo [+] Mindestens ein Standard-Modell fehlt oder ist unvollstaendig.
@@ -64,7 +86,17 @@ if !errorlevel! neq 0 goto :fail
 
 echo.
 echo ====================================================
-echo   Einrichtung abgeschlossen.
+echo   Einrichtung abgeschlossen (Native).
+echo   Der Benchmark kann jetzt direkt gestartet werden.
+echo ====================================================
+echo.
+pause
+exit /b 0
+
+:docker_ok
+echo.
+echo ====================================================
+echo   Einrichtung abgeschlossen (Docker + CUDA).
 echo   Der Benchmark kann jetzt direkt gestartet werden.
 echo ====================================================
 echo.

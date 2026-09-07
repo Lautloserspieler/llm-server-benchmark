@@ -10,6 +10,7 @@ from typing import Any
 
 import psutil
 
+from .execution import collect_execution_environment
 from .utils import command_exists, run_capture, utc_now_iso
 
 
@@ -195,6 +196,7 @@ def collect_hardware(output_dir: str | Path | None = None) -> dict[str, Any]:
         "hostname": platform.node(),
         "os": platform.platform(),
         "python": platform.python_version(),
+        "execution": collect_execution_environment(),
         "power_scheme": _power_scheme(),
         "cpu": {
             "name": _cpu_name(),

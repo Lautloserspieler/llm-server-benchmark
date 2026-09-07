@@ -4,8 +4,54 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT_DIR=$(pwd)
 CONFIG="benchmark.yaml"
+EXECUTION_MODE="${LLMBENCH_EXECUTION_MODE:-auto}"
+
+case "$EXECUTION_MODE" in
+    auto|docker|native) ;;
+    *)
+        echo "Fehler: LLMBENCH_EXECUTION_MODE muss auto, docker oder native sein." >&2
+        exit 1
+        ;;
+esac
 
 echo "=== Systempruefung ==="
+echo "Ausfuehrungsmodus: $EXECUTION_MODE"
+
+if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/scripts/docker_common.sh"
+
+    if llmbench_docker_ready; then
+        echo "=== Docker + CUDA Runtime erkannt ==="
+        llmbench_docker_run
+        exit $?
+    fi
+
+    if [ "$EXECUTION_MODE" = "docker" ]; then
+        echo "Docker-Modus ist erzwungen, aber noch nicht bereit. Fuehre die Docker-Einrichtung aus..."
+        llmbench_setup_docker
+        llmbench_docker_run
+        exit $?
+    fi
+
+    # Im Auto-Modus richten wir Docker beim Start nur dann nach, wenn Docker
+    # bereits vorhanden ist. Eine systemweite Erstinstallation bleibt setup.sh vorbehalten.
+    if command -v docker >/dev/null 2>&1 && command -v nvidia-smi >/dev/null 2>&1; then
+        echo "Docker/NVIDIA erkannt, aber Runtime noch nicht fertig. Versuche automatische Reparatur..."
+        if llmbench_setup_docker; then
+            llmbench_docker_run
+            exit $?
+        fi
+        echo "Docker-Reparatur fehlgeschlagen; Auto-Modus faellt auf Native zurueck."
+    fi
+fi
+
+if [ "$EXECUTION_MODE" = "docker" ]; then
+    echo "Fehler: Docker-Modus ist auf diesem System nicht bereit." >&2
+    exit 1
+fi
+
+# ------------------------------- Nativer Fallback -------------------------------
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Fehler: Python 3.10 oder neuer wird benoetigt."
     exit 1
@@ -28,7 +74,6 @@ if ! python -m llmbench install-llama-cpp --root "$ROOT_DIR"; then
     echo "Unter Ubuntu/Debian muessen git, build-essential, cmake und pkg-config verfuegbar sein."
     echo "Fuer CUDA muss das NVIDIA CUDA Toolkit inklusive nvcc installiert sein."
     echo "Lege alternativ llama-bench und llama-server manuell unter tools/llama.cpp/ ab."
-    echo "Verwende auf allen Servern denselben Build."
     exit 1
 fi
 
@@ -48,7 +93,7 @@ python -m llmbench bootstrap --config "$CONFIG" --root "$ROOT_DIR" \
 echo "=== Vorabpruefung ==="
 python -m llmbench doctor --config "$CONFIG"
 
-echo "=== Benchmark ==="
+echo "=== Benchmark (Native) ==="
 echo "Wie lange soll der Test laufen?"
 echo "  1: kurz (short)    - schnelle Ueberpruefung"
 echo "  2: mittel (medium) - Standardwerte"

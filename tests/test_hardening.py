@@ -1,8 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from llmbench import llama_cpp_setup as lcs
 from llmbench import soak, tuner
 from llmbench.backends import llama_cpp as backend_mod
@@ -10,7 +8,6 @@ from llmbench.capacity import profile_vram_issue, total_gpu_vram_bytes
 from llmbench.stress import multitenant
 
 GIB = 1024 ** 3
-MIB = 1024 ** 2
 
 
 def _hardware(vram_mib: int = 32768) -> dict:

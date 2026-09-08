@@ -129,6 +129,11 @@ def start_llama_server(
         "-c", str(endpoint_cfg["context_size"]),
         "-np", str(endpoint_cfg["parallel_slots"]),
         "-ngl", server_ngl,
+    ]
+    # CPU-only: Modell muss vollstaendig in den RAM geladen werden.
+    if str(gpu_layers) == "0":
+        cmd.append("--no-mmap")
+    cmd += [
         "-b", str(bench_cfg["batch_size"]),
         "-ub", str(bench_cfg["ubatch_size"]),
         "-fa", normalize_flash_attention(bench_cfg.get("flash_attention", "auto")),

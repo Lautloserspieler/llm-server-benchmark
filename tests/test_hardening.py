@@ -1,6 +1,5 @@
 from pathlib import Path
-
-import pytest
+from types import SimpleNamespace
 
 from llmbench import llama_cpp_setup as lcs
 from llmbench import soak, tuner
@@ -9,7 +8,6 @@ from llmbench.capacity import profile_vram_issue, total_gpu_vram_bytes
 from llmbench.stress import multitenant
 
 GIB = 1024 ** 3
-MIB = 1024 ** 2
 
 
 def _hardware(vram_mib: int = 32768) -> dict:
@@ -55,13 +53,16 @@ def test_capacity_guard_allows_small_partial_and_explicit_override():
     ) is None
 
 
-def test_backend_skips_oversized_benchmark_before_llama_bench(monkeypatch, tmp_path: Path):
+def test_backend_converts_oversized_benchmark_to_auto_offload(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(backend_mod, "profile_vram_issue_for_path", lambda *_a, **_k: "too large")
+    monkeypatch.setattr(backend_mod, "_nvidia_vram_used_mib", lambda: None)
+    calls = {}
 
-    def fail_if_called(*_a, **_k):
-        raise AssertionError("llama-bench must not start")
+    def fake_run(_exe, _model_path, _bench_cfg, profile, _kind, _out_dir, on_progress=None):  # noqa: ARG001
+        calls["profile"] = profile
+        return {"status": "ok"}
 
-    monkeypatch.setattr(backend_mod, "run_llama_bench", fail_if_called)
+    monkeypatch.setattr(backend_mod, "run_llama_bench", fake_run)
     backend = backend_mod.LlamaCppBackend("bench", "server")
     result = backend.run_benchmark(
         "model.gguf",
@@ -70,26 +71,61 @@ def test_backend_skips_oversized_benchmark_before_llama_bench(monkeypatch, tmp_p
         tmp_path,
         {},
     )
-    assert result["status"] == "skipped_vram"
-    assert result["capacity_guard"] is True
+
+    assert result["status"] == "ok"
+    assert calls["profile"]["gpu_layers"] == "auto"
+    assert result["runtime_adjustments"][0]["type"] == "auto_partial_offload"
 
 
-def test_backend_refuses_oversized_server_before_start(monkeypatch, tmp_path: Path):
+def test_backend_converts_oversized_server_to_auto_offload(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(backend_mod, "profile_vram_issue_for_path", lambda *_a, **_k: "too large")
+    monkeypatch.setattr(backend_mod, "_nvidia_vram_used_mib", lambda: None)
+    calls = {}
+    proc = SimpleNamespace()
 
-    def fail_if_called(*_a, **_k):
-        raise AssertionError("llama-server must not start")
+    def fake_start(_exe, _model_path, profile, _endpoint_cfg, _bench_cfg, _log_path):
+        calls["profile"] = profile
+        return proc, "cmd"
 
-    monkeypatch.setattr(backend_mod, "start_llama_server", fail_if_called)
+    monkeypatch.setattr(backend_mod, "start_llama_server", fake_start)
     backend = backend_mod.LlamaCppBackend("bench", "server")
-    with pytest.raises(RuntimeError, match="VRAM-Preflight"):
-        backend.start_server(
-            "model.gguf",
-            {"gpu_layers": -1},
-            {"base_url": "http://127.0.0.1:8080"},
-            {},
-            tmp_path / "server.log",
-        )
+    returned_proc, command = backend.start_server(
+        "model.gguf",
+        {"gpu_layers": -1},
+        {"base_url": "http://127.0.0.1:8080"},
+        {},
+        tmp_path / "server.log",
+    )
+
+    assert returned_proc is proc
+    assert command == "cmd"
+    assert calls["profile"]["gpu_layers"] == "auto"
+    assert proc._llmbench_runtime_adjustments[0]["type"] == "auto_partial_offload"
+
+
+def test_cpu_only_auto_threads_uses_all_allowed_logical_cpus(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(backend_mod, "profile_vram_issue_for_path", lambda *_a, **_k: None)
+    monkeypatch.setattr(backend_mod, "_available_cpu_threads", lambda: 24)
+    calls = {}
+
+    def fake_run(_exe, _model_path, _bench_cfg, profile, _kind, _out_dir, on_progress=None):  # noqa: ARG001
+        calls["profile"] = profile
+        return {"status": "ok"}
+
+    monkeypatch.setattr(backend_mod, "run_llama_bench", fake_run)
+    backend = backend_mod.LlamaCppBackend("bench", "server")
+    result = backend.run_benchmark(
+        "model.gguf",
+        {"gpu_layers": 0, "threads": "auto"},
+        "generation",
+        tmp_path,
+        {},
+    )
+
+    assert calls["profile"]["threads"] == 24
+    adjustment = result["runtime_adjustments"][0]
+    assert adjustment["type"] == "cpu_threads"
+    assert adjustment["effective"] == 24
 
 
 def test_soak_status_fails_when_any_load_path_has_zero_successes():

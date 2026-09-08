@@ -333,20 +333,29 @@ def _run_all_stress(config_path: str, out_dir: Path) -> dict[str, int]:
     from llmbench.stress.oom import run_oom_stress
     from llmbench.stress.quant import run_quant_stress
     from llmbench.stress.ttft import run_ttft_stress
-    from llmbench.utils import ensure_dir, write_json
+    from llmbench.utils import ensure_dir, print_err, write_json
 
     stress_root = ensure_dir(out_dir / "stress")
     cfg = load_config(config_path)
     statuses: dict[str, int] = {}
-    statuses["ttft"] = run_ttft_stress(config_path, stress_root / "ttft")
-    statuses["oom"] = asyncio.run(run_oom_stress(config_path, stress_root / "oom"))
+
+    def _run(name: str, fn: Any) -> int:
+        try:
+            return fn()
+        except Exception as exc:
+            print_err(f"Stress-Test '{name}' fehlgeschlagen: {exc}")
+            return 1
+
+    statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(config_path, stress_root / "ttft"))
+    statuses["oom"] = _run("oom", lambda: asyncio.run(run_oom_stress(config_path, stress_root / "oom")))
     if len(cfg.get("models", [])) >= 2:
-        statuses["multitenant"] = asyncio.run(
-            run_multitenant(config_path, stress_root / "multitenant")
+        statuses["multitenant"] = _run(
+            "multitenant",
+            lambda: asyncio.run(run_multitenant(config_path, stress_root / "multitenant")),
         )
     else:
         statuses["multitenant"] = 2
-    statuses["quant"] = asyncio.run(run_quant_stress(config_path, stress_root / "quant"))
+    statuses["quant"] = _run("quant", lambda: asyncio.run(run_quant_stress(config_path, stress_root / "quant")))
     write_json(stress_root / "index.json", statuses)
     return statuses
 

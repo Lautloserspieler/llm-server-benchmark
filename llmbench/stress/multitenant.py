@@ -5,7 +5,7 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 from llmbench.backends.llama_cpp import LlamaCppBackend
 from llmbench.capacity import (
@@ -16,23 +16,9 @@ from llmbench.capacity import (
 )
 from llmbench.config import load_config, resolve_path
 from llmbench.endpoint import _run_endpoint_load_async, wait_health_async
-from llmbench.utils import ensure_dir, file_fingerprint, print_err, print_msg, write_json
+from llmbench.utils import auth_headers, ensure_dir, file_fingerprint, modify_url_port, print_err, print_msg, write_json
 
 _MULTI_TENANT_VRAM_FRACTION = 0.80
-
-
-def modify_url_port(base_url: str, new_port: int) -> str:
-    parsed = urlparse(base_url)
-    host = parsed.hostname or "127.0.0.1"
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    netloc = f"{host}:{new_port}"
-    return urlunparse((parsed.scheme or "http", netloc, parsed.path, "", "", ""))
-
-
-def _auth_headers(cfg: dict) -> dict[str, str]:
-    key = cfg.get("api_key")
-    return {"Authorization": f"Bearer {key}"} if key else {}
 
 
 def _average_system_tps(result: dict) -> float:
@@ -171,8 +157,8 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
         print_msg("Warte auf Health Checks...")
         timeout = float(base_endpoint.get("startup_timeout_seconds", 300))
         await asyncio.gather(
-            wait_health_async(ep_cfg1["base_url"], timeout, _auth_headers(ep_cfg1)),
-            wait_health_async(ep_cfg2["base_url"], timeout, _auth_headers(ep_cfg2)),
+            wait_health_async(ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1)),
+            wait_health_async(ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2)),
         )
         print_msg("Beide Server bereit.")
 

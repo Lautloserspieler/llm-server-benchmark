@@ -8,10 +8,7 @@ from typing import Any
 
 from . import __version__
 from .config import config_fingerprint, public_config, resolve_path
-from .endpoint import (
-    run_endpoint_load,
-    run_sanity_check,
-)
+from .endpoint import run_endpoint_load, run_sanity_check
 from .hardware import collect_hardware
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
@@ -21,16 +18,7 @@ from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
 from .tuner import tune_gpu_layers
 from .backends.llama_cpp import LlamaCppBackend
-from .utils import (
-    console,
-    ensure_dir,
-    file_fingerprint,
-    hostname,
-    safe_name,
-    utc_now_compact,
-    utc_now_iso,
-    write_json,
-)
+from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
 SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
@@ -62,8 +50,6 @@ def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware
             continue
         profiles = filter_profiles_by_hardware(model.get("profiles") or [], hardware_target)
         total += len(profiles) * len(BENCH_KINDS)
-        # Der Soak-Test braucht CPU und GPU gleichzeitig - bei einer einseitigen
-        # Auswahl widerspraeche er ihr, deshalb entfaellt er dann.
         if hardware_target == "both":
             cpu_profile, gpu_profile = _soak_profiles_for(model, cfg)
             if cpu_profile and gpu_profile:
@@ -142,7 +128,6 @@ def run_suite(
     write_json(run_dir / "hardware.json", hardware)
     tools = _tool_info(cfg)
 
-    # Backend Initialisierung
     backend = LlamaCppBackend(cfg["tools"]["llama_bench"], cfg["tools"]["llama_server"])
 
     summary: dict[str, Any] = {
@@ -152,8 +137,6 @@ def run_suite(
         "server_name": server_name,
         "started_at": utc_now_iso(),
         "config_path": cfg.get("_config_path"),
-        # Die tatsaechlich verwendete Konfiguration wandert mit ins Ergebnis.
-        # Nur so laesst sich spaeter pruefen, ob zwei Laeufe vergleichbar sind.
         "config": public_config(cfg),
         "config_fingerprint": config_fingerprint(cfg["benchmark"]),
         "tools": tools,
@@ -171,7 +154,6 @@ def run_suite(
         meta = _model_meta(model, cfg)
         model_dir = ensure_dir(run_dir / safe_name(model["name"]))
 
-        # Auto-Tuning: Suche optimalen Layer-Count, falls aktiviert.
         if cfg["benchmark"].get("auto_tune"):
             reporter.note(f"Auto-Tuning fuer {model['name']} ...")
             endpoint_cfg_tune = dict(cfg.get("endpoint", {}))
@@ -184,7 +166,6 @@ def run_suite(
                 model_dir,
             )
             reporter.note(f"Optimal layers gefunden: {best_layers}")
-            # Das Ergebnis in das erste Profil ueberschreiben oder neues Profil anlegen.
             if model.get("profiles"):
                 model["profiles"][0]["gpu_layers"] = best_layers
                 model["profiles"][0]["name"] = f"Auto-Tuned ({best_layers})"
@@ -209,12 +190,12 @@ def run_suite(
             )
             summary["warnings"].append(msg)
             reporter.note(msg)
-
-        for profile in profiles:
-            profile_dir = ensure_dir(model_dir / safe_name(profile["name"]))
+            summary["models"].append(model_result)
+            write_json(run_dir / "summary.partial.json", summary)
+            continue
 
         quality_gate_cfg = model.get("quality_gate") or {}
-        if quality_gate_cfg.get("enabled", False) and not skip_endpoint and profiles:
+        if quality_gate_cfg.get("enabled", False) and not skip_endpoint:
             reporter.note(f"Fuehre Quality Gate / Sanity Checks fuer {model['name']} aus ...")
             endpoint_cfg = dict(cfg.get("endpoint", {}))
             endpoint_cfg.update(model.get("endpoint", {}) or {})
@@ -404,7 +385,7 @@ def run_suite(
     generate_run_html(summary, run_dir / "report.html")
     try:
         generate_run_pdf(summary, run_dir / "report.pdf")
-    except Exception as exc:  # PDF ist Beiwerk, der Lauf bleibt gueltig
+    except Exception as exc:
         summary["warnings"].append(f"PDF-Bericht konnte nicht erzeugt werden: {exc}")
         write_json(run_dir / "summary.json", summary)
         reporter.note(f"PDF-Bericht uebersprungen: {exc}")
@@ -492,8 +473,6 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
                     }
                     rows = flatten_bench_rows(result)
                     if not rows:
-                        # Fehlgeschlagene Tests bleiben als Zeile sichtbar,
-                        # statt aus der Auswertung zu verschwinden.
                         w.writerow({**base, "test": result.get("error")})
                         continue
                     for row in rows:

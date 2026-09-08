@@ -41,14 +41,27 @@ class TelemetryProvider(abc.ABC):
 
 
 class NvidiaProvider(TelemetryProvider):
-    """NVML-based telemetry for NVIDIA GPUs."""
+    """NVML-based telemetry for NVIDIA GPUs with singleton initialization."""
+
+    _instance: "NvidiaProvider | None" = None
+    _initialized_once: bool = False
+
+    def __new__(cls) -> "NvidiaProvider":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self) -> None:
+        if NvidiaProvider._initialized_once:
+            return
         super().__init__()
         self._nvml: Any = None
         self._handles: list[Any] = []
+        NvidiaProvider._initialized_once = True
 
     def initialize(self) -> bool:
+        if self.initialized:
+            return True
         try:
             import pynvml
             pynvml.nvmlInit()
@@ -108,6 +121,8 @@ class NvidiaProvider(TelemetryProvider):
         self._nvml = None
         self._handles = []
         self.initialized = False
+        NvidiaProvider._instance = None
+        NvidiaProvider._initialized_once = False
 
 
 class DefaultProvider(TelemetryProvider):
@@ -129,10 +144,8 @@ def get_telemetry_provider() -> TelemetryProvider:
     Factory to select the best available telemetry provider.
     Currently prioritizes NVIDIA.
     """
-    # Try NVIDIA first
     nv = NvidiaProvider()
     if nv.initialize():
         return nv
 
-    # Fallback
     return DefaultProvider()

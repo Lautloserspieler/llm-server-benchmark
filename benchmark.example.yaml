@@ -38,10 +38,19 @@ endpoint:
   warmup_requests: 2
   max_tokens: 256
   temperature: 0.0
+  # top_p: 0.95
+  # top_k: 40
+  # repeat_penalty: 1.1
   seed: 42
   ignore_eos: true
   timeout_seconds: 600
   startup_timeout_seconds: 300
+  
+  # Optionale Server Parameter fuer llama.cpp
+  # fit: on
+  # fit_target: 256
+  # jinja: true
+  # reasoning: "off"
   prompt: >-
     Erklaere in einem technisch praezisen Absatz, warum reproduzierbare Benchmarks
     fuer lokale LLM-Server wichtig sind.
@@ -90,5 +99,7 @@ models:
   #   profiles:
   #     - name: "Full-GPU"
   #       gpu_layers: -1
+  #       # no_mmap: true
+  #       # mlock: true
   #     - name: "CPU-Only"
   #       gpu_layers: 0

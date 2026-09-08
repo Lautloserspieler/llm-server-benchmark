@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import math
+import random
 import re
 import statistics
 import subprocess
@@ -16,7 +17,8 @@ import httpx
 
 from .config import normalize_flash_attention
 from .monitor import ResourceMonitor, strip_samples
-from .utils import kill_process_tree, resolve_executable, utc_now_iso, write_json
+from .utils import auth_headers, kill_process_tree, resolve_executable, utc_now_iso, write_json
+
 
 def percentile(values: list[float], p: float) -> float | None:
     if not values:
@@ -31,9 +33,6 @@ def percentile(values: list[float], p: float) -> float | None:
         return xs[int(k)]
     return xs[f] * (c - k) + xs[c] * (k - f)
 
-def _auth_headers(cfg: dict[str, Any]) -> dict[str, str]:
-    key = cfg.get("api_key")
-    return {"Authorization": f"Bearer {key}"} if key else {}
 
 async def run_sanity_check(
     base_url: str,
@@ -48,7 +47,7 @@ async def run_sanity_check(
     passed = 0
     errors = []
 
-    async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
+    async with httpx.AsyncClient(headers=auth_headers(cfg)) as client:
         for i, test in enumerate(tests):
             prompt = test.get("prompt", "")
             expected_regex = test.get("expected_regex")
@@ -73,9 +72,10 @@ async def run_sanity_check(
                     if re.search(expected_regex, content):
                         passed += 1
                     else:
-                        errors.append(f"Test {i+1} fehlgeschlagen. Erwartet Regex '{expected_regex}', erhalten: {content!r}")
+                        errors.append(
+                            f"Test {i+1} fehlgeschlagen. Erwartet Regex '{expected_regex}', erhalten: {content!r}"
+                        )
                 else:
-                    # Wenn kein regex, dann reicht es, dass es nicht abstuerzt
                     passed += 1
             except Exception as exc:
                 errors.append(f"Test {i+1} Fehler: {exc}")
@@ -85,14 +85,18 @@ async def run_sanity_check(
     return True, f"Sanity check bestanden ({passed}/{len(tests)} Tests)."
 
 
-async def wait_health_async(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
+async def wait_health_async(
+    base_url: str, timeout_s: float, headers: dict[str, str] | None = None
+) -> float:
     started = time.time()
     deadline = started + timeout_s
     last_error = ""
     async with httpx.AsyncClient() as client:
         while time.time() < deadline:
             try:
-                r = await client.get(base_url.rstrip("/") + "/health", timeout=5, headers=headers or {})
+                r = await client.get(
+                    base_url.rstrip("/") + "/health", timeout=5, headers=headers or {}
+                )
                 if r.status_code == 200:
                     return time.time() - started
                 last_error = f"HTTP {r.status_code}: {r.text[:200]}"
@@ -101,9 +105,18 @@ async def wait_health_async(base_url: str, timeout_s: float, headers: dict[str, 
             await asyncio.sleep(1)
     raise TimeoutError(f"llama-server wurde nicht bereit: {last_error}")
 
-def wait_health(base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
-    """Synchronous wrapper for backward compatibility."""
-    return asyncio.run(wait_health_async(base_url, timeout_s, headers))
+
+def wait_health(
+    base_url: str, timeout_s: float, headers: dict[str, str] | None = None
+) -> float:
+    """Synchronous wrapper using nested event loop compatibility."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(wait_health_async(base_url, timeout_s, headers))
+
+    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers))
+
 
 def start_llama_server(
     exe: str,
@@ -131,8 +144,27 @@ def start_llama_server(
         "-ngl", server_ngl,
     ]
     # CPU-only: Modell muss vollstaendig in den RAM geladen werden.
-    if str(gpu_layers) == "0":
+    if profile.get("no_mmap") or str(gpu_layers) == "0":
         cmd.append("--no-mmap")
+    if profile.get("mlock"):
+        cmd.append("--mlock")
+
+    if endpoint_cfg.get("fit"):
+        cmd.append("--fit")
+        if str(endpoint_cfg["fit"]).lower() == "on":
+            cmd.append("on")
+    if endpoint_cfg.get("fit_target"):
+        cmd.extend(["--fit-target", str(endpoint_cfg["fit_target"])])
+    if endpoint_cfg.get("jinja"):
+        cmd.append("--jinja")
+
+    reasoning = endpoint_cfg.get("reasoning")
+    if reasoning is not None:
+        if isinstance(reasoning, bool):
+            if reasoning:
+                cmd.append("--reasoning")
+        else:
+            cmd.extend(["--reasoning", str(reasoning)])
     cmd += [
         "-b", str(bench_cfg["batch_size"]),
         "-ub", str(bench_cfg["ubatch_size"]),
@@ -168,10 +200,12 @@ def start_llama_server(
         printable[printable.index("--api-key") + 1] = "***"
     return proc, " ".join(printable)
 
+
 def stop_llama_server(proc: subprocess.Popen[Any]) -> None:
     kill_process_tree(proc)
     with contextlib.suppress(Exception):
         proc._llmbench_log_file.close()  # type: ignore[attr-defined]
+
 
 async def _one_completion_async(
     client: httpx.AsyncClient,
@@ -190,16 +224,23 @@ async def _one_completion_async(
         "cache_prompt": False,
     }
 
+    if "top_p" in cfg:
+        payload["top_p"] = float(cfg["top_p"])
+    if "top_k" in cfg:
+        payload["top_k"] = int(cfg["top_k"])
+    if "repeat_penalty" in cfg:
+        payload["repeat_penalty"] = float(cfg["repeat_penalty"])
+
     endpoint_path = "/completion"
     if chat_format:
         endpoint_path = "/v1/chat/completions"
         payload["messages"] = prompt_or_messages
-        # n_predict is not standard in OpenAI API, max_tokens is
         payload["max_tokens"] = max_tokens
         payload.pop("n_predict", None)
     else:
         payload["prompt"] = f"{prompt_or_messages}\nBenchmark request id: {request_id}"
         payload["return_tokens"] = True
+
     if cfg.get("ignore_eos", True):
         payload["ignore_eos"] = True
     if cfg.get("seed") is not None:
@@ -212,8 +253,11 @@ async def _one_completion_async(
     content_chars = 0
     final_data: dict[str, Any] = {}
     error: str | None = None
+
     try:
-        async with client.stream("POST", base_url.rstrip("/") + endpoint_path, json=payload, timeout=timeout) as resp:
+        async with client.stream(
+            "POST", base_url.rstrip("/") + endpoint_path, json=payload, timeout=timeout
+        ) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line:
@@ -225,17 +269,14 @@ async def _one_completion_async(
                     continue
                 try:
                     data = json.loads(text)
-                except Exception:
+                except json.JSONDecodeError:
                     continue
 
-                # In chat_format, we need to extract from choices[0].delta
                 if chat_format:
                     choices = data.get("choices") or []
                     if choices:
                         delta = choices[0].get("delta") or {}
                         content = delta.get("content") or ""
-                        # Note: OpenAI stream usually doesn't return tokens count in stream
-                        # Some servers send usage in the last chunk
                         tokens = [1] if content else []
                 else:
                     tokens = data.get("tokens") or []
@@ -248,15 +289,21 @@ async def _one_completion_async(
                 final_data = data
     except Exception as exc:
         error = str(exc)
+
     finished = time.perf_counter()
 
     timings = final_data.get("timings") or {}
-    usage = final_data.get("usage") or {} # for openai format
+    usage = final_data.get("usage") or {}
 
-    exact_total = timings.get("predicted_n") or timings.get("tokens_predicted") or usage.get("completion_tokens")
+    exact_total = (
+        timings.get("predicted_n")
+        or timings.get("tokens_predicted")
+        or usage.get("completion_tokens")
+    )
     if exact_total is not None:
         with contextlib.suppress(Exception):
             token_count = int(exact_total)
+
     duration = finished - started
     return {
         "request_id": request_id,
@@ -271,18 +318,25 @@ async def _one_completion_async(
         "server_timings": timings,
     }
 
-async def _run_level_async(base_url: str, cfg: dict[str, Any], concurrency: int, count: int, datasets: list[Any] | None = None) -> list[dict[str, Any]]:
-    import random
+
+async def _run_level_async(
+    base_url: str,
+    cfg: dict[str, Any],
+    concurrency: int,
+    count: int,
+    datasets: list[Any] | None = None,
+) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(concurrency)
-    async with httpx.AsyncClient(headers=_auth_headers(cfg)) as client:
-        async def wrapped_task(i):
-            # Select random item from dataset if available, otherwise use default prompt
+    async with httpx.AsyncClient(headers=auth_headers(cfg)) as client:
+
+        async def wrapped_task(i: int) -> dict[str, Any]:
             item = random.choice(datasets) if datasets else str(cfg["prompt"])
             async with semaphore:
                 return await _one_completion_async(client, base_url, item, cfg, i)
 
         tasks = [wrapped_task(i) for i in range(count)]
         return await asyncio.gather(*tasks)
+
 
 async def _run_endpoint_load_async(
     base_url: str,
@@ -306,7 +360,9 @@ async def _run_endpoint_load_async(
                     if line:
                         datasets.append(json.loads(line))
         except Exception as e:
-            raise ValueError(f"Fehler beim Laden des Datensatzes {cfg['dataset_path']}: {e}") from e
+            raise ValueError(
+                f"Fehler beim Laden des Datensatzes {cfg['dataset_path']}: {e}"
+            ) from e
 
     if warmup_n > 0:
         w_started = time.perf_counter()
@@ -385,6 +441,7 @@ async def _run_endpoint_load_async(
     light["details_stored_in"] = "endpoint_load.json"
     return light
 
+
 def run_endpoint_load(
     base_url: str,
     cfg: dict[str, Any],
@@ -393,4 +450,11 @@ def run_endpoint_load(
     target_pid: int | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper to run the async load test."""
-    return asyncio.run(_run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid))
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid))
+
+    return loop.run_until_complete(
+        _run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid)
+    )

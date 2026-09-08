@@ -42,6 +42,7 @@ class ResourceMonitor:
     _own_pids: set[int] = field(default_factory=set)
     _seen_gpu_pids: set[int] = field(default_factory=set)
     _baseline: dict[str, Any] | None = None
+    _max_samples: int = 100000  # Hard limit to prevent unbounded memory growth
 
     # ------------------------------------------------------------------ start
 
@@ -52,7 +53,6 @@ class ResourceMonitor:
         self._stop.clear()
         psutil.cpu_percent(interval=None)
         self._provider = get_telemetry_provider()
-        # Ruhewert vor der Last: macht sichtbar, ob die Maschine sauber war.
         self._baseline = self._sample()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -127,7 +127,11 @@ class ResourceMonitor:
     def _run(self) -> None:
         while not self._stop.is_set():
             self._refresh_own_pids()
-            self._samples.append(self._sample())
+            sample = self._sample()
+            self._samples.append(sample)
+            # Prevent unbounded memory growth during very long runs
+            if len(self._samples) > self._max_samples:
+                self._samples = self._samples[-self._max_samples:]
             self._stop.wait(self.interval)
 
     # ------------------------------------------------------------------- stop

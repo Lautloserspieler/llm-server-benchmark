@@ -9,12 +9,7 @@ import httpx
 from llmbench.backends.llama_cpp import LlamaCppBackend
 from llmbench.config import load_config, resolve_path
 from llmbench.endpoint import wait_health_async
-from llmbench.utils import ensure_dir, print_err, print_msg, write_json
-
-
-def _auth_headers(cfg: dict) -> dict[str, str]:
-    key = cfg.get("api_key")
-    return {"Authorization": f"Bearer {key}"} if key else {}
+from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, write_json
 
 
 def _prompt_for_target(target_tokens: int) -> str:
@@ -44,7 +39,7 @@ async def _token_count(client: httpx.AsyncClient, base_url: str, prompt: str) ->
 async def _probe_context(base_url: str, prompt_target: int, endpoint_cfg: dict) -> dict:
     prompt = _prompt_for_target(prompt_target)
     timeout = float(endpoint_cfg.get("timeout_seconds", 600))
-    headers = _auth_headers(endpoint_cfg)
+    headers = auth_headers(endpoint_cfg)
     payload = {
         "prompt": prompt,
         "n_predict": 32,
@@ -150,7 +145,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
             cold_start = await wait_health_async(
                 base_url,
                 float(endpoint_cfg.get("startup_timeout_seconds", 300)),
-                _auth_headers(endpoint_cfg),
+                auth_headers(endpoint_cfg),
             )
         except Exception as exc:
             result = {

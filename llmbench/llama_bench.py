@@ -11,16 +11,7 @@ from typing import IO, Any
 
 from .config import normalize_flash_attention
 from .monitor import ResourceMonitor, strip_samples
-from .utils import (
-    csv_value,
-    file_fingerprint,
-    kill_process_tree,
-    read_json,
-    resolve_executable,
-    run_capture,
-    utc_now_iso,
-    write_json,
-)
+from .utils import csv_value, file_fingerprint, kill_process_tree, read_json, resolve_executable, run_capture, utc_now_iso, write_json
 
 
 def _extract_json(stdout: str) -> list[dict[str, Any]]:
@@ -53,9 +44,6 @@ def probe_build(exe: str, with_hash: bool = True) -> dict[str, Any]:
         return {"error": str(exc)}
 
     info["binary"] = file_fingerprint(resolved, with_hash=with_hash)
-    # llama-bench kennt kein --version. Die Buildnummer steht ohnehin in
-    # jeder Ergebniszeile (build_commit/build_number); hier interessiert,
-    # welche Backends und Geraete der Build auf diesem Rechner sieht.
     try:
         cp = run_capture([resolved, "--list-devices"], timeout=30)
         text = ((cp.stdout or "") + (cp.stderr or "")).strip()
@@ -64,7 +52,6 @@ def probe_build(exe: str, with_hash: bool = True) -> dict[str, Any]:
     except Exception as exc:
         info["devices_output"] = f"nicht ermittelbar: {exc}"
 
-    # Vom Setup-Skript hinterlegte Build-Metadaten, falls vorhanden.
     marker = Path(resolved).parent / ".llama-build.json"
     if marker.exists():
         try:
@@ -129,14 +116,11 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
-    # Modell muss vollstaendig in den RAM geladen werden, sonst
-    # wird es oft von der SSD gestreamt (mmap) und die Messung ist nutzlos.
-    # Dies wurde für alle Tests (CPU und GPU) deaktiviert, um SSD-Streaming zu verhindern.
-    args.append("--no-mmap")
+    if profile.get("no_mmap") or str(profile.get("gpu_layers", -1)) == "0":
+        args.append("--no-mmap")
+    if profile.get("mlock"):
+        args.append("--mlock")
     if with_progress:
-        # Meldet, bei welcher Wiederholung llama-bench gerade ist. Ohne das
-        # bleibt die Anzeige waehrend langer Tests stumm. Aeltere Builds
-        # kennen die Option nicht; run_llama_bench faengt das ab.
         args.append("--progress")
     threads = profile.get("threads", "auto")
     if threads not in (None, "auto", -1):
@@ -184,14 +168,10 @@ def _execute(
         if on_progress:
             on_progress(line.strip(), monitor.latest())
 
-    # Beide Kanaele nebenlaeufig leeren: sonst blockiert llama-bench, sobald
-    # der Puffer eines Kanals vollaeuft, und die Anzeige stuende still.
-    readers = [
-        threading.Thread(target=_drain, args=(proc.stdout, out_lines, None), daemon=True),
-        threading.Thread(target=_drain, args=(proc.stderr, err_lines, _report), daemon=True),
-    ]
-    for reader in readers:
-        reader.start()
+    out_thread = threading.Thread(target=_drain, args=(proc.stdout, out_lines, None), daemon=True)
+    err_thread = threading.Thread(target=_drain, args=(proc.stderr, err_lines, _report), daemon=True)
+    out_thread.start()
+    err_thread.start()
 
     try:
         proc.wait(timeout=timeout_s)
@@ -200,8 +180,9 @@ def _execute(
         kill_process_tree(proc)
         with contextlib.suppress(Exception):
             proc.wait(timeout=30)
-    for reader in readers:
-        reader.join(timeout=10)
+
+    out_thread.join(timeout=10)
+    err_thread.join(timeout=10)
 
     return "\n".join(out_lines), "\n".join(err_lines), proc.returncode, timed_out
 
@@ -242,9 +223,6 @@ def run_llama_bench(
 
     stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
 
-    # Aeltere llama.cpp-Builds kennen --progress nicht und lehnen den Aufruf
-    # sofort ab. In dem Fall einmal ohne wiederholen, statt den Test zu
-    # verlieren.
     if returncode != 0 and not timed_out and _rejected_progress(stdout, stderr):
         args = _test_args(
             _base_args(exe, model_path, bench_cfg, profile, with_progress=False),
@@ -270,8 +248,6 @@ def run_llama_bench(
     }
     write_json(output_dir / f"raw_{test_kind}.json", raw)
 
-    # Ab hier nur noch die Aggregate weiterreichen: die Rohsamples liegen
-    # vollstaendig in raw_*.json und wuerden summary.json sonst sprengen.
     light = strip_samples(telemetry)
 
     if timed_out:

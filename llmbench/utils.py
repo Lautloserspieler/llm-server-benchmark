@@ -187,6 +187,24 @@ def is_windows() -> bool:
     return sys.platform.startswith("win")
 
 
+def auth_headers(cfg: dict[str, Any]) -> dict[str, str]:
+    """Zentralisierte Erstellung von Authorization-Headern."""
+    key = cfg.get("api_key")
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+def modify_url_port(base_url: str, new_port: int) -> str:
+    """Ersetzt den Port einer URL, IPv6-kompatibel."""
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = f"{host}:{new_port}"
+    return urlunparse((parsed.scheme or "http", netloc, parsed.path, "", "", ""))
+
+
 def kill_process_tree(proc: subprocess.Popen[Any]) -> None:
     """Terminate a process and all known descendants, then wait for exit.
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 from typing import Any
 
 from .capacity import total_gpu_vram_bytes
 from .endpoint import run_endpoint_load, start_llama_server, stop_llama_server, wait_health
 from .hardware import collect_hardware
-from .utils import ensure_dir
+from .utils import ensure_dir, print_err
 
 
 def _max_vram_used_bytes(endpoint_result: dict[str, Any]) -> float | None:
@@ -68,10 +69,10 @@ def _measure_performance(
         if levels:
             tps = levels[0].get("system_tps")
             return tps, _max_vram_used_bytes(ep)
-    except Exception:
-        pass
+    except Exception as exc:
+        print_err(f"Tuning bei {layers} Layers fehlgeschlagen: {exc}")
     finally:
-        if proc:
+        if proc is not None:
             stop_llama_server(proc)
 
     return None, None

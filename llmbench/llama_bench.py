@@ -129,10 +129,10 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
-    # CPU-only: Modell muss vollstaendig in den RAM geladen werden, sonst
-    # wird es von der SSD gestreamt (mmap) und die Messung ist nutzlos.
-    if str(profile.get("gpu_layers", -1)) == "0":
-        args.append("--no-mmap")
+    # Modell muss vollstaendig in den RAM geladen werden, sonst
+    # wird es oft von der SSD gestreamt (mmap) und die Messung ist nutzlos.
+    # Dies wurde für alle Tests (CPU und GPU) deaktiviert, um SSD-Streaming zu verhindern.
+    args.append("--no-mmap")
     if with_progress:
         # Meldet, bei welcher Wiederholung llama-bench gerade ist. Ohne das
         # bleibt die Anzeige waehrend langer Tests stumm. Aeltere Builds

@@ -188,20 +188,38 @@ def is_windows() -> bool:
 
 
 def kill_process_tree(proc: subprocess.Popen[Any]) -> None:
+    """Terminate a process and all known descendants, then wait for exit.
+
+    Waiting after SIGKILL matters for GPU workloads: until the process has been
+    fully reaped, CUDA allocations can still appear in nvidia-smi and the next
+    model may start with an artificially low free-VRAM reading.
+    """
     try:
         import psutil
 
-        parent = psutil.Process(proc.pid)
+        try:
+            parent = psutil.Process(proc.pid)
+        except psutil.NoSuchProcess:
+            with contextlib.suppress(Exception):
+                proc.wait(timeout=1)
+            return
+
         children = parent.children(recursive=True)
-        for child in children:
+        for child in reversed(children):
             with contextlib.suppress(Exception):
                 child.terminate()
         with contextlib.suppress(Exception):
             parent.terminate()
+
         _, alive = psutil.wait_procs(children + [parent], timeout=5)
         for item in alive:
             with contextlib.suppress(Exception):
                 item.kill()
+        if alive:
+            psutil.wait_procs(alive, timeout=5)
+
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=2)
     except Exception:
         try:
             proc.terminate()
@@ -209,3 +227,5 @@ def kill_process_tree(proc: subprocess.Popen[Any]) -> None:
         except Exception:
             with contextlib.suppress(Exception):
                 proc.kill()
+            with contextlib.suppress(Exception):
+                proc.wait(timeout=5)

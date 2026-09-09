@@ -1,7 +1,16 @@
 import sys
 import types
 
+import pytest
+
 from llmbench.telemetry import DefaultProvider, GpuSample, NvidiaProvider, get_telemetry_provider
+
+
+@pytest.fixture(autouse=True)
+def reset_nvidia_provider():
+    NvidiaProvider().shutdown()
+    yield
+    NvidiaProvider().shutdown()
 
 
 class _FakeMemInfo:

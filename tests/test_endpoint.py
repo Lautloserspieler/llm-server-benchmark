@@ -5,12 +5,12 @@ import httpx
 import pytest
 
 from llmbench.endpoint import (
-    _auth_headers,
     percentile,
     run_endpoint_load,
     start_llama_server,
     stop_llama_server,
 )
+from llmbench.utils import auth_headers
 
 
 # --------------------------------------------------------------------------- percentile
@@ -35,11 +35,11 @@ def test_percentile_interpolates_between_neighbours():
 # --------------------------------------------------------------------------- auth headers
 
 def test_auth_headers_empty_without_api_key():
-    assert _auth_headers({}) == {}
+    assert auth_headers({}) == {}
 
 
 def test_auth_headers_bearer_token_with_api_key():
-    assert _auth_headers({"api_key": "secret"}) == {"Authorization": "Bearer secret"}
+    assert auth_headers({"api_key": "secret"}) == {"Authorization": "Bearer secret"}
 
 
 # --------------------------------------------------------------------------- start/stop server

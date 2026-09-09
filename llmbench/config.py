@@ -279,10 +279,7 @@ def default_config() -> dict[str, Any]:
 
 def load_config(path: str | Path) -> dict[str, Any]:
     p = Path(path)
-    if p.exists():
-        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    else:
-        raw = {}
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {} if p.exists() else {}
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
 
     from llmbench.i18n import set_language

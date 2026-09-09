@@ -10,7 +10,7 @@ def set_language(lang: str):
     if lang != "de":
         lang_file = Path(__file__).parent / "locales" / f"{lang}.json"
         if lang_file.exists():
-            with open(lang_file, "r", encoding="utf-8") as f:
+            with open(lang_file, encoding="utf-8") as f:
                 _translations = json.load(f)
         else:
             _translations = {}

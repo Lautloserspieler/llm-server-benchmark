@@ -30,12 +30,59 @@ function Invoke-Compose {
 
 function Test-DockerDesktopReady {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
-    & docker info *> $null
-    if ($LASTEXITCODE -ne 0) { return $false }
-    & docker compose version *> $null
-    if ($LASTEXITCODE -ne 0) { return $false }
-    $osType = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
-    return ($osType -eq 'linux')
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker info *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        & docker compose version *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $osType = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
+        return ($osType -eq 'linux')
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
+function Ensure-WslUbuntu {
+    Write-Host '[+] Pruefe WSL und Ubuntu...' -ForegroundColor Cyan
+    $wslExe = Get-Command wsl -ErrorAction SilentlyContinue
+    if (-not $wslExe) {
+        Write-Host '[!] WSL (Windows Subsystem for Linux) fehlt. Installiere WSL und Ubuntu...' -ForegroundColor Yellow
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & wsl --install -d Ubuntu
+        } finally {
+            $ErrorActionPreference = $oldEap
+        }
+        Write-Host '[!] Die Installation wurde angestossen. Ggf. ist ein Systemneustart erforderlich!' -ForegroundColor Red
+        return
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $distros = ""
+    try {
+        $distros = (& wsl -l -q 2>$null) -join " "
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+
+    $distrosClean = $distros -replace '\x00', ''
+    if ($distrosClean -notmatch 'Ubuntu') {
+        Write-Host '[!] Ubuntu ist nicht in WSL installiert. Installiere...' -ForegroundColor Yellow
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & wsl --install -d Ubuntu
+        } finally {
+            $ErrorActionPreference = $oldEap
+        }
+        Write-Host '[OK] Ubuntu-Installation abgeschlossen.' -ForegroundColor Green
+    } else {
+        Write-Host '[OK] WSL und Ubuntu sind vorhanden.' -ForegroundColor Green
+    }
 }
 
 function Initialize-DockerEnvironment {
@@ -58,14 +105,26 @@ function Initialize-DockerEnvironment {
 
 function Test-DockerGpu {
     Write-Host '[+] Pruefe NVIDIA-GPU in Docker Desktop / WSL2...' -ForegroundColor Cyan
-    & docker run --rm --gpus all $SmokeImage nvidia-smi *> $null
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker run --rm --gpus all $SmokeImage nvidia-smi *> $null
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
     if ($LASTEXITCODE -ne 0) {
         throw 'Docker Desktop kann die NVIDIA-GPU nicht an Linux-Container durchreichen. WSL2-Backend, WSL-Update und NVIDIA-Treiber pruefen.'
     }
 }
 
 function Set-ContainerImageId {
-    $id = (& docker image inspect $Image --format '{{.Id}}' 2>$null | Out-String).Trim()
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $id = (& docker image inspect $Image --format '{{.Id}}' 2>$null | Out-String).Trim()
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
     if (-not $id) { throw "Docker-Image $Image wurde nicht gefunden." }
     $env:LLMBENCH_CONTAINER_IMAGE_ID = $id
     return $id
@@ -74,7 +133,13 @@ function Set-ContainerImageId {
 function Ensure-BenchmarkImage {
     if (-not $BuildLocal) {
         Write-Host "[+] Lade fertiges Benchmark-Image: $Image" -ForegroundColor Cyan
-        & docker pull $Image
+        $oldEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & docker pull $Image
+        } finally {
+            $ErrorActionPreference = $oldEap
+        }
         if ($LASTEXITCODE -eq 0) {
             $id = Set-ContainerImageId
             Write-Host '[OK] GHCR-Image geladen; lokaler CUDA-Build wird uebersprungen.' -ForegroundColor Green
@@ -98,6 +163,8 @@ function Ensure-BenchmarkImage {
 }
 
 function Setup-DockerBenchmark {
+    Ensure-WslUbuntu
+    
     if (-not (Test-DockerDesktopReady)) {
         throw 'Docker Desktop mit Linux/WSL2-Backend ist nicht bereit.'
     }

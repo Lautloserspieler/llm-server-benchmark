@@ -130,6 +130,24 @@ function Set-ContainerImageId {
     return $id
 }
 
+function Test-BenchmarkImageCompatible {
+    param([string]$CandidateImage = $Image)
+
+    # Der Setup-Flow benoetigt die selektive Modellauswahl. Dieser Probe verhindert,
+    # dass ein neuer lokaler Entrypoint mit einem noch alten GHCR-Python-Paket gemischt wird.
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker run --rm -e LLMBENCH_EXPECT_GPU=0 $CandidateImage `
+            python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('llmbench.model_select') else 42)" *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
 function Ensure-BenchmarkImage {
     if (-not $BuildLocal) {
         Write-Host "[+] Lade fertiges Benchmark-Image: $Image" -ForegroundColor Cyan
@@ -142,24 +160,35 @@ function Ensure-BenchmarkImage {
         }
         if ($LASTEXITCODE -eq 0) {
             $id = Set-ContainerImageId
-            Write-Host '[OK] GHCR-Image geladen; lokaler CUDA-Build wird uebersprungen.' -ForegroundColor Green
-            return $id
-        }
-
-        Write-Host '[!] GHCR-Image konnte nicht geladen werden.' -ForegroundColor Yellow
-        try {
-            $id = Set-ContainerImageId
-            Write-Host "[+] Verwende bereits lokal vorhandenes Image $Image." -ForegroundColor Yellow
-            return $id
-        } catch {
-            Write-Host '[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck.' -ForegroundColor Yellow
+            if (Test-BenchmarkImageCompatible $Image) {
+                Write-Host '[OK] GHCR-Image geladen und mit diesem Setup kompatibel; lokaler CUDA-Build wird uebersprungen.' -ForegroundColor Green
+                return $id
+            }
+            Write-Host '[!] Das geladene GHCR-Image ist aelter als der lokale Setup-Code.' -ForegroundColor Yellow
+            Write-Host '    Verhindere gemischte Versionen und baue das aktuelle Image lokal.' -ForegroundColor Yellow
+        } else {
+            Write-Host '[!] GHCR-Image konnte nicht geladen werden.' -ForegroundColor Yellow
+            try {
+                $id = Set-ContainerImageId
+                if (Test-BenchmarkImageCompatible $Image) {
+                    Write-Host "[+] Verwende bereits lokal vorhandenes kompatibles Image $Image." -ForegroundColor Yellow
+                    return $id
+                }
+                Write-Host '[!] Lokal vorhandenes Image ist ebenfalls zu alt; lokaler Build wird verwendet.' -ForegroundColor Yellow
+            } catch {
+                Write-Host '[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck.' -ForegroundColor Yellow
+            }
         }
     } else {
         Write-Host '[+] LLMBENCH_DOCKER_BUILD_LOCAL=1: erzwinge lokalen CUDA-Build.' -ForegroundColor Yellow
     }
 
     Invoke-Compose build llmbench
-    return Set-ContainerImageId
+    $id = Set-ContainerImageId
+    if (-not (Test-BenchmarkImageCompatible $Image)) {
+        throw 'Das frisch gebaute Docker-Image enthaelt die erwartete Modellauswahl nicht.'
+    }
+    return $id
 }
 
 function Setup-DockerBenchmark {
@@ -187,6 +216,7 @@ function Test-DockerBenchmarkReady {
     try {
         Initialize-DockerEnvironment
         Set-ContainerImageId | Out-Null
+        if (-not (Test-BenchmarkImageCompatible $Image)) { return $false }
         & docker compose -f $ComposeFile run --rm llmbench container-check *> $null
         return ($LASTEXITCODE -eq 0)
     } catch {

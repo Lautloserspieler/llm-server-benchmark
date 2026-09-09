@@ -2,6 +2,7 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+
 set "MODE=%LLMBENCH_EXECUTION_MODE%"
 if "%MODE%"=="" set "MODE=auto"
 

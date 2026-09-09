@@ -3,6 +3,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title LLM Server Benchmark
 
+
 set "MODE=%LLMBENCH_EXECUTION_MODE%"
 if "%MODE%"=="" set "MODE=auto"
 

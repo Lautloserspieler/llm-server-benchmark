@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$Config = "benchmark.yaml",
     [string]$LlamaCppTag = "",
@@ -383,7 +383,11 @@ function Install-LlamaCpp {
             if ($null -ne $probe.ExitCode) {
                 try { $hex = ('0x{0:X8}' -f ([uint32]$probe.ExitCode)) } catch { }
             }
-            throw "llama-bench.exe ist nach der Installation nicht startbar. Backend: $backend, Exitcode: $($probe.ExitCode) $hex`nAusgabe:`n$($probe.Output)"
+            if ($probe.ExitCode -eq -1073741515 -or $probe.ExitCode -eq 3221225781) {
+                throw "llama-bench.exe ist nach der Installation nicht startbar (STATUS_DLL_NOT_FOUND).`nDem System fehlen wahrscheinlich die Microsoft Visual C++ Redistributables oder zwingende CUDA-Bibliotheken.`nBitte installiere die aktuellen C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`nAusgabe:`n$($probe.Output)"
+            } else {
+                throw "llama-bench.exe ist nach der Installation nicht startbar. Backend: $backend, Exitcode: $($probe.ExitCode) $hex`nAusgabe:`n$($probe.Output)"
+            }
         }
 
         if ($probe.DeviceLine) {

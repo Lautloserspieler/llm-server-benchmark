@@ -147,10 +147,19 @@ class ResourceMonitor:
     def _foreign_processes(self) -> list[dict[str, Any]]:
         foreign = sorted(self._seen_gpu_pids - self._own_pids)
         out = []
+        ignored_names = {
+            "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe", 
+            "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe", 
+            "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe", 
+            "windowsterminal.exe", "docker desktop.exe", "widgetboard.exe",
+            "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe"
+        }
         for pid in foreign:
             name = None
             with contextlib.suppress(Exception):
                 name = psutil.Process(pid).name()
+            if name and name.lower() in ignored_names:
+                continue
             out.append({"pid": pid, "name": name})
         return out
 

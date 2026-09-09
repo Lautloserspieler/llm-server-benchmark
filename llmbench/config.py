@@ -32,6 +32,7 @@ class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"
     server_name: str | None = None
     output_dir: str = "results"
+    language: str = "de"
     hash_models: bool = True
     hash_tools: bool = True
 
@@ -278,8 +279,14 @@ def default_config() -> dict[str, Any]:
 
 def load_config(path: str | Path) -> dict[str, Any]:
     p = Path(path)
-    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    if p.exists():
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    else:
+        raw = {}
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
+
+    from llmbench.i18n import set_language
+    set_language(cfg_dict.get("project", {}).get("language", "de"))
 
     # Keine Validierung hier: ein ungueltiges RootConfig(**cfg_dict) wuerde mit
     # einer rohen ValidationError abbrechen. validate_config() liefert

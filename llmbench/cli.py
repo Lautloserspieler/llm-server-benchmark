@@ -121,15 +121,23 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     from llmbench.utils import console, print_err, print_msg, print_panel
     from rich.prompt import Prompt
 
+    lang_val = Prompt.ask(
+        "[cyan]Which language do you want to use? / Welche Sprache möchtest du nutzen? (de/en)[/cyan]",
+        choices=["de", "en"],
+        default="de"
+    )
+    from llmbench.i18n import set_language, _
+    set_language(lang_val)
+
     print_panel(
-        "Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle.",
-        title="LLM Server Benchmark - Einrichtung",
+        _("Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle."),
+        title=_("LLM Server Benchmark - Einrichtung"),
     )
 
     root = Path(".").resolve()
     config_path = "benchmark.yaml"
-    print_msg("Suche llama.cpp und Modelle im Projektordner...", style="blue")
-    result = bootstrap_config(config_path, root, None, None, allow_system_search)
+    print_msg(_("Suche llama.cpp und Modelle im Projektordner..."), style="blue")
+    result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
     llama_dir = result["llama_dir"]
     ext = ".exe" if platform.system() == "Windows" else ""
 
@@ -139,7 +147,7 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
             if not _auto_install_llama_cpp_windows(root):
                 print_err("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
                 return 1
-            result = bootstrap_config(config_path, root, None, None, allow_system_search)
+            result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
             llama_dir = result["llama_dir"]
             if not result["llama_binaries_found"]:
                 print_err(
@@ -149,7 +157,7 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
                 return 1
             print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
         elif _auto_install_llama_cpp_unix(root):
-            result = bootstrap_config(config_path, root, None, None, allow_system_search)
+            result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
             llama_dir = result["llama_dir"]
             if not result["llama_binaries_found"]:
                 print_err(

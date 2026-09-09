@@ -14,6 +14,7 @@ from typing import Any
 
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
+from .i18n import _
 
 INK = "#16212b"
 MUTED = "#5d6b78"
@@ -164,9 +165,9 @@ def _page_furniture(canvas, doc, server_name: str) -> None:
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(HexColor(MUTED))
     canvas.drawString(doc.leftMargin, doc.pagesize[1] - doc.topMargin + 17,
-                      f"LLM Server Benchmark – {server_name}")
+                      f"{_('LLM Server Benchmark')} – {server_name}")
     canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, doc.bottomMargin - 14,
-                           f"Seite {doc.page}")
+                           f"{_('Seite')} {doc.page}")
     canvas.restoreState()
 
 
@@ -174,11 +175,11 @@ def _hardware_rows(hardware: dict[str, Any]) -> list[list[str]]:
     cpu = hardware.get("cpu") or {}
     memory = hardware.get("memory") or {}
     rows = [
-        ["Betriebssystem", str(hardware.get("os") or "—")],
-        ["CPU", f"{cpu.get('name') or '—'} ({cpu.get('physical_cores') or '?'} Kerne / "
+        [_("Betriebssystem"), str(hardware.get("os") or "—")],
+        [_("CPU"), f"{cpu.get('name') or '—'} ({cpu.get('physical_cores') or '?'} {_('Kerne')} / "
                 f"{cpu.get('logical_cores') or '?'} Threads)"],
-        ["Arbeitsspeicher", human_bytes(memory.get("total_bytes"))],
-        ["Energieplan", str(hardware.get("power_scheme") or "unbekannt")],
+        [_("Arbeitsspeicher"), human_bytes(memory.get("total_bytes"))],
+        [_("Energieplan"), str(hardware.get("power_scheme") or _("unbekannt"))],
     ]
     for gpu in hardware.get("gpus") or []:
         vram = gpu.get("memory.total")
@@ -201,14 +202,14 @@ def _provenance_rows(summary: dict[str, Any]) -> list[list[str]]:
     bench_cfg = (summary.get("config") or {}).get("benchmark") or {}
     sha = binary.get("sha256") or "nicht berechnet"
     return [
-        ["Konfigurations-Fingerabdruck", str(summary.get("config_fingerprint") or "—")],
-        ["llmbench-Version", str(summary.get("llmbench_version") or "—")],
-        ["llama.cpp-Build", ", ".join(tools.get("llama_cpp_build_ids") or []) or "unbekannt"],
-        ["llama-bench SHA256", sha[:48]],
-        ["Wiederholungen", str(bench_cfg.get("repetitions") or "—")],
-        ["Batch / UBatch", f"{bench_cfg.get('batch_size')} / {bench_cfg.get('ubatch_size')}"],
-        ["Flash Attention", str(bench_cfg.get("flash_attention") or "—")],
-        ["KV-Cache K / V", f"{bench_cfg.get('cache_type_k')} / {bench_cfg.get('cache_type_v')}"],
+        [_("Konfigurations-Fingerabdruck"), str(summary.get("config_fingerprint") or "—")],
+        [_("llmbench-Version"), str(summary.get("llmbench_version") or "—")],
+        [_("llama.cpp-Build"), ", ".join(tools.get("llama_cpp_build_ids") or []) or _("unbekannt")],
+        [_("llama-bench SHA256"), sha[:48]],
+        [_("Wiederholungen"), str(bench_cfg.get("repetitions") or "—")],
+        [_("Batch / UBatch"), f"{bench_cfg.get('batch_size')} / {bench_cfg.get('ubatch_size')}"],
+        [_("Flash Attention"), str(bench_cfg.get("flash_attention") or "—")],
+        [_("KV-Cache K/V"), f"{bench_cfg.get('cache_type_k')} / {bench_cfg.get('cache_type_v')}"],
     ]
 
 
@@ -219,14 +220,14 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
     if not soak_runs:
         return []
 
-    block: list[Any] = [Paragraph("Dauerlast-Test (CPU + GPU gleichzeitig)", styles["h3"])]
-    rows = [["Dauer", "Pfad", "Tokens/s", "Frueh", "Spaet", "Erfolgreich", "Throttling"]]
+    block: list[Any] = [Paragraph(_("Dauerlast-Test (CPU + GPU gleichzeitig)"), styles["h3"])]
+    rows = [[_("Dauer"), _("Pfad"), _("Tokens/s"), _("Frueh"), _("Spaet"), _("Erfolgreich"), _("Throttling")]]
     max_temps: list[str] = []
 
     for run in soak_runs:
         label = str(run.get("label") or "—")
         if run.get("status") != "ok":
-            status_label = "Zeitüberschreitung" if run.get("status") == "timeout" else "Fehler"
+            status_label = _("Zeitueberschreitung") if run.get("status") == "timeout" else _("Fehler")
             rows.append([label, status_label, "—", "—", "—", "—", "—"])
             if run.get("error"):
                 block.append(Paragraph(f"{label}: {run['error']}", styles["warn"]))
@@ -238,7 +239,7 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
                 _fmt(path_data.get("early_window_avg_tps")),
                 _fmt(path_data.get("late_window_avg_tps")),
                 f"{path_data.get('successful', 0)}/{path_data.get('requests', 0)}",
-                "Ja" if path_data.get("throttling_suspected") else "Nein",
+                _("Ja") if path_data.get("throttling_suspected") else _("Nein"),
             ])
         for gpu in (run.get("telemetry") or {}).get("gpus") or []:
             if gpu.get("max_temperature_c"):
@@ -253,7 +254,7 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
         ]))
     if max_temps:
         block.append(Paragraph(
-            "Maximaltemperatur während der Dauerlast: " + ", ".join(max_temps), styles["muted"]
+            _("Maximaltemperatur waehrend der Dauerlast: ") + ", ".join(max_temps), styles["muted"]
         ))
     return block
 
@@ -308,7 +309,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
     warnings = summary.get("warnings") or []
     if warnings:
-        story.append(Paragraph(f"Hinweise zu diesem Lauf ({len(warnings)})", styles["h2"]))
+        story.append(Paragraph(f"{_('Hinweise zu diesem Lauf')} ({len(warnings)})", styles["h2"]))
         for warning in warnings[:20]:
             story.append(Paragraph(f"&bull; {warning}", styles["warn"]))
         if len(warnings) > 20:
@@ -333,16 +334,16 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
         for profile in model.get("profiles", []):
             settings = profile.get("settings") or {}
             block: list[Any] = [Paragraph(
-                f"Profil {profile.get('name')} &middot; GPU-Layer {settings.get('gpu_layers')} "
+                f"{_('Profil')} {profile.get('name')} &middot; GPU-Layer {settings.get('gpu_layers')} "
                 f"&middot; Threads {settings.get('threads', 'auto')}", styles["h3"])]
 
-            rows = [["Bereich", "Test", "Tokens/s", "Stdabw.", "Prompt", "Gen.", "Tiefe"]]
+            rows = [[_("Bereich"), _("Test"), _("Tokens/s"), _("Stdabw."), _("Prompt"), _("Gen."), _("Tiefe")]]
             charts: dict[str, list[tuple[str, float]]] = {}
             for kind, result in (profile.get("benchmarks") or {}).items():
                 bench_rows = flatten_bench_rows(result)
                 if not bench_rows:
-                    label = ("Zeitüberschreitung" if result.get("status") == "timeout"
-                             else "Fehler")
+                    label = (_("Zeitueberschreitung") if result.get("status") == "timeout"
+                             else _("Fehler"))
                     rows.append([kind, label, "—", "—", "—", "—", "—"])
                     continue
                 for row in bench_rows:
@@ -368,8 +369,8 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                     _bar_chart(entries, width),
                 ]))
 
-            telemetry_rows = [["Bereich", "GPU", "CPU Ø", "RAM max.",
-                               "GPU Ø", "VRAM max.", "Leistung Ø", "Temp. max."]]
+            telemetry_rows = [[_("Bereich"), _("GPU"), _("CPU Ø"), _("RAM Max"),
+                               _("GPU Ø"), _("VRAM Max"), _("GPU Power Ø"), _("Temp Max")]]
             for kind, result in (profile.get("benchmarks") or {}).items():
                 telemetry = result.get("telemetry") or {}
                 for gpu in telemetry.get("gpus") or [{}]:
@@ -384,7 +385,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                     ])
             if len(telemetry_rows) > 1:
                 block.append(Spacer(1, 6))
-                block.append(Paragraph("Hardware-Telemetrie", styles["mutedKeep"]))
+                block.append(Paragraph(_("Hardware-Telemetrie"), styles["mutedKeep"]))
                 block.append(_table(telemetry_rows, [
                     width * 0.13, width * 0.07, width * 0.14, width * 0.13,
                     width * 0.14, width * 0.13, width * 0.13, width * 0.13,
@@ -393,9 +394,9 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
         endpoint = model.get("endpoint")
         if endpoint and endpoint.get("status") == "ok":
-            story.append(Paragraph("Endpoint- und Mehrbenutzer-Test", styles["h3"]))
-            ep_rows = [["Parallel", "Erfolgreich", "System-TPS", "TPS/Request",
-                        "TTFT P50 ms", "TTFT P95 ms"]]
+            story.append(Paragraph(_("Endpoint-/Multi-User-Test"), styles["h3"]))
+            ep_rows = [[_("Concurrency"), _("Erfolgreich"), _("System TPS"), _("TPS/Request"),
+                        _("TTFT P50 ms"), _("TTFT P95 ms")]]
             for level in endpoint.get("levels", []):
                 p50 = level.get("ttft_p50_seconds")
                 p95 = level.get("ttft_p95_seconds")
@@ -418,8 +419,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
     story.append(Spacer(1, 12))
     story.append(Paragraph(
-        "Erzeugt mit llm-server-benchmark. Rohdaten und Telemetrie je Einzeltest "
-        "liegen im selben Ordner unter raw_*.json.", styles["muted"]))
+        _("Erzeugt mit llm-server-benchmark."), styles["muted"]))
 
     doc.build(story)
     return path

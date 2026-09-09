@@ -250,6 +250,7 @@ def bootstrap_config(
     llama_dir: str | Path | None = None,
     models_dir: str | Path | None = None,
     allow_system_search: bool = False,
+    language: str = "de",
 ) -> dict[str, Any]:
     """Legt benchmark.yaml an oder ergaenzt sie und erkennt lokale GGUF-Modelle.
 
@@ -297,6 +298,7 @@ def bootstrap_config(
     cfg["project"].setdefault("name", "Firmenweiter LLM Server Benchmark")
     cfg["project"].setdefault("server_name", None)
     cfg["project"].setdefault("output_dir", "results")
+    cfg["project"]["language"] = language
     cfg["project"].setdefault("hash_models", True)
     cfg["project"].setdefault("hash_tools", True)
 

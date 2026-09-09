@@ -6,6 +6,7 @@ from typing import Any
 
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
+from .i18n import _
 
 CSS = r"""
 :root { color-scheme: light dark; --fg:#15202b; --muted:#5d6b78; --line:#d8dee4; --soft:#f5f7f9;
@@ -58,18 +59,18 @@ def fms(seconds: Any) -> str:
 def status_cell(status: str | None) -> str:
     cls = {"ok": "status-ok", "timeout": "status-timeout"}.get(str(status), "status-failed")
     label = {"ok": "OK", "timeout": "Zeitueberschreitung", "failed": "Fehler"}.get(str(status), str(status))
-    return f"<span class='{cls}'>{esc(label)}</span>"
+    return f"<span class='{cls}'>{esc(_(label))}</span>"
 
 
 def _gpu_text(hw: dict[str, Any]) -> str:
     gpus = hw.get("gpus") or []
     if not gpus:
-        return "Keine GPU erkannt"
+        return _("Keine GPU erkannt")
     parts = []
     for g in gpus:
         vram = g.get("memory.total")
-        vram_text = f"{fnum(vram, 0)} MiB VRAM" if vram else "VRAM unbekannt"
-        note = "" if g.get("telemetry") == "nvml" else " · keine Telemetrie"
+        vram_text = f"{fnum(vram, 0)} MiB VRAM" if vram else _("VRAM unbekannt")
+        note = "" if g.get("telemetry") == "nvml" else _(" · keine Telemetrie")
         parts.append(f"{esc(g.get('vendor') or '')} {esc(g.get('name'))} ({vram_text}{note})")
     return "<br>".join(parts)
 
@@ -80,7 +81,7 @@ def _warnings_block(summary: dict[str, Any]) -> str:
         return ""
     items = "".join(f"<li>{esc(w)}</li>" for w in warnings)
     return (
-        "<div class='warn'><strong>Hinweise zu diesem Lauf</strong>"
+        f"<div class='warn'><strong>{_('Hinweise zu diesem Lauf')}</strong>"
         f"<ul>{items}</ul></div>"
     )
 
@@ -107,9 +108,9 @@ def _bench_table(profile: dict[str, Any]) -> str:
                 "</tr>"
             )
     return (
-        "<div class='table-wrap'><table><thead><tr><th>Bereich</th><th>Status</th><th>Test</th>"
-        "<th class='num'>Tokens/s</th><th class='num'>Stdabw.</th><th class='num'>Prompt</th>"
-        "<th class='num'>Gen.</th><th class='num'>Depth</th></tr></thead><tbody>"
+        f"<div class='table-wrap'><table><thead><tr><th>{_('Bereich')}</th><th>{_('Status')}</th><th>{_('Test')}</th>"
+        f"<th class='num'>{_('Tokens/s')}</th><th class='num'>{_('Stdabw.')}</th><th class='num'>{_('Prompt')}</th>"
+        f"<th class='num'>{_('Gen.')}</th><th class='num'>{_('Depth')}</th></tr></thead><tbody>"
         + "".join(rows_html)
         + "</tbody></table></div>"
     )
@@ -135,10 +136,10 @@ def _telemetry_table(profile: dict[str, Any]) -> str:
                 "</tr>"
             )
     return (
-        "<div class='table-wrap'><table><thead><tr><th>Bereich</th><th class='num'>GPU</th>"
-        "<th class='num'>CPU Ø</th><th class='num'>CPU Max</th><th class='num'>RAM Max</th>"
-        "<th class='num'>GPU Ø</th><th class='num'>VRAM Max</th><th class='num'>GPU Power Ø</th>"
-        "<th class='num'>Temp Max</th></tr></thead><tbody>"
+        f"<div class='table-wrap'><table><thead><tr><th>{_('Bereich')}</th><th class='num'>{_('GPU')}</th>"
+        f"<th class='num'>{_('CPU Ø')}</th><th class='num'>{_('CPU Max')}</th><th class='num'>{_('RAM Max')}</th>"
+        f"<th class='num'>{_('GPU Ø')}</th><th class='num'>{_('VRAM Max')}</th><th class='num'>{_('GPU Power Ø')}</th>"
+        f"<th class='num'>{_('Temp Max')}</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
     )
@@ -148,13 +149,13 @@ def _endpoint_table(ep: dict[str, Any]) -> str:
     if not ep:
         return ""
     if ep.get("status") != "ok":
-        return f"<p class='status-failed'>Endpoint-Test fehlgeschlagen: {esc(ep.get('error'))}</p>"
+        return f"<p class='status-failed'>{_('Endpoint-Test fehlgeschlagen')}: {esc(ep.get('error'))}</p>"
     settings = ep.get("settings") or {}
     head = (
-        f"<p class='muted small'>Profil: <code>{esc(ep.get('profile'))}</code> · "
+        f"<p class='muted small'>{_('Profil')}: <code>{esc(ep.get('profile'))}</code> · "
         f"max_tokens {esc(settings.get('max_tokens'))} · seed {esc(settings.get('seed'))} · "
         f"ignore_eos {esc(settings.get('ignore_eos'))} · "
-        f"Warmup {esc((ep.get('warmup') or {}).get('requests'))} Requests (verworfen)</p>"
+        f"Warmup {esc((ep.get('warmup') or {}).get('requests'))} {_('Requests (verworfen)')}</p>"
     )
     rows = []
     for x in ep.get("levels", []):
@@ -170,10 +171,10 @@ def _endpoint_table(ep: dict[str, Any]) -> str:
             "</tr>"
         )
     return head + (
-        "<div class='table-wrap'><table><thead><tr><th class='num'>Concurrency</th>"
-        "<th class='num'>Erfolgreich</th><th class='num'>System TPS</th>"
-        "<th class='num'>TPS/Request</th><th class='num'>TTFT P50 ms</th>"
-        "<th class='num'>TTFT P95 ms</th></tr></thead><tbody>"
+        f"<div class='table-wrap'><table><thead><tr><th class='num'>{_('Concurrency')}</th>"
+        f"<th class='num'>{_('Erfolgreich')}</th><th class='num'>{_('System TPS')}</th>"
+        f"<th class='num'>{_('TPS/Request')}</th><th class='num'>{_('TTFT P50 ms')}</th>"
+        f"<th class='num'>{_('TTFT P95 ms')}</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
     )
@@ -192,7 +193,7 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
             continue
         for path_label, path_data in (("CPU", run.get("cpu") or {}), ("GPU", run.get("gpu") or {})):
             throttle = (
-                "<span class='status-timeout'>Ja</span>" if path_data.get("throttling_suspected") else "Nein"
+                f"<span class='status-timeout'>{_('Ja')}</span>" if path_data.get("throttling_suspected") else _("Nein")
             )
             rows.append(
                 "<tr>"
@@ -210,11 +211,11 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
         for gpu in (run.get("telemetry") or {}).get("gpus") or []:
             if gpu.get("max_temperature_c"):
                 temp_parts.append(f"{esc(run.get('label'))}: GPU {esc(gpu.get('index', 0))} {fnum(gpu.get('max_temperature_c'), 0)} °C")
-    temp_note = f"<p class='muted small'>Maximaltemperatur waehrend der Dauerlast: {', '.join(temp_parts)}</p>" if temp_parts else ""
+    temp_note = f"<p class='muted small'>{_('Maximaltemperatur waehrend der Dauerlast: ')} {', '.join(temp_parts)}</p>" if temp_parts else ""
     return (
-        "<div class='table-wrap'><table><thead><tr><th>Dauer</th><th>Pfad</th>"
-        "<th class='num'>Ø Tokens/s</th><th class='num'>Frueh</th><th class='num'>Spaet</th>"
-        "<th class='num'>Erfolgreich</th><th>Throttling</th></tr></thead><tbody>"
+        f"<div class='table-wrap'><table><thead><tr><th>{_('Dauer')}</th><th>{_('Pfad')}</th>"
+        f"<th class='num'>{_('Ø Tokens/s')}</th><th class='num'>{_('Frueh')}</th><th class='num'>{_('Spaet')}</th>"
+        f"<th class='num'>{_('Erfolgreich')}</th><th>{_('Throttling')}</th></tr></thead><tbody>"
         + "".join(rows) + "</tbody></table></div>" + temp_note
     )
 
@@ -225,22 +226,22 @@ def _provenance_block(summary: dict[str, Any]) -> str:
     build_ids = tools.get("llama_cpp_build_ids") or []
     cfg = (summary.get("config") or {}).get("benchmark") or {}
     rows = [
-        ("Konfigurations-Fingerabdruck", summary.get("config_fingerprint")),
-        ("llmbench-Version", summary.get("llmbench_version")),
-        ("llama.cpp-Build", ", ".join(build_ids) or "unbekannt"),
-        ("llama-bench SHA256", (bench.get("sha256") or "nicht berechnet")),
-        ("Wiederholungen", cfg.get("repetitions")),
-        ("Batch / UBatch", f"{cfg.get('batch_size')} / {cfg.get('ubatch_size')}"),
-        ("Flash Attention", cfg.get("flash_attention")),
-        ("KV-Cache K/V", f"{cfg.get('cache_type_k')} / {cfg.get('cache_type_v')}"),
+        (_("Konfigurations-Fingerabdruck"), summary.get("config_fingerprint")),
+        (_("llmbench-Version"), summary.get("llmbench_version")),
+        (_("llama.cpp-Build"), ", ".join(build_ids) or _("unbekannt")),
+        (_("llama-bench SHA256"), (bench.get("sha256") or _("nicht berechnet"))),
+        (_("Wiederholungen"), cfg.get("repetitions")),
+        (_("Batch / UBatch"), f"{cfg.get('batch_size')} / {cfg.get('ubatch_size')}"),
+        (_("Flash Attention"), cfg.get("flash_attention")),
+        (_("KV-Cache K/V"), f"{cfg.get('cache_type_k')} / {cfg.get('cache_type_v')}"),
     ]
     cells = "".join(
         f"<tr><th>{esc(k)}</th><td><code>{esc(v)}</code></td></tr>" for k, v in rows
     )
     return (
-        "<h2>Nachweis der Testbedingungen</h2>"
-        "<p class='muted'>Diese Angaben muessen auf allen verglichenen Servern uebereinstimmen. "
-        "<code>llmbench compare</code> prueft das automatisch.</p>"
+        f"<h2>{_('Nachweis der Testbedingungen')}</h2>"
+        f"<p class='muted'>{_('Diese Angaben muessen auf allen verglichenen Servern uebereinstimmen. ')}"
+        "<code>llmbench compare</code> {_('prueft das automatisch.')}</p>"
         f"<div class='table-wrap'><table><tbody>{cells}</tbody></table></div>"
     )
 
@@ -248,32 +249,32 @@ def _provenance_block(summary: dict[str, Any]) -> str:
 def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
     hw = summary.get("hardware", {})
     cards = [
-        ("Server", summary.get("server_name")),
-        ("CPU", hw.get("cpu", {}).get("name")),
-        ("RAM", human_bytes(hw.get("memory", {}).get("total_bytes"))),
-        ("GPU", _gpu_text(hw)),
+        (_("Server"), summary.get("server_name")),
+        (_("CPU"), hw.get("cpu", {}).get("name")),
+        (_("RAM"), human_bytes(hw.get("memory", {}).get("total_bytes"))),
+        (_("GPU"), _gpu_text(hw)),
     ]
     body = [
         "<!doctype html><html lang='de'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width,initial-scale=1'>",
         f"<title>{esc(summary.get('server_name'))} – LLM Benchmark</title><style>{CSS}</style>",
         "</head><body><main>",
-        f"<h1>LLM Server Benchmark – {esc(summary.get('server_name'))}</h1>",
-        f"<p class='muted'>Projekt: {esc(summary.get('project'))} · Start: {esc(summary.get('started_at'))} "
-        f"· Energieplan: {esc(hw.get('power_scheme') or 'unbekannt')}</p>",
+        f"<h1>{_('LLM Server Benchmark')} – {esc(summary.get('server_name'))}</h1>",
+        f"<p class='muted'>{_('Projekt')}: {esc(summary.get('project'))} · {_('Start')}: {esc(summary.get('started_at'))} "
+        f"· {_('Energieplan')}: {esc(hw.get('power_scheme') or _('unbekannt'))}</p>",
         "<div class='cards'>",
     ]
     for k, v in cards:
         body.append(
             f"<div class='card'><div class='k'>{esc(k)}</div>"
-            f"<div class='v'>{v if k == 'GPU' else esc(v)}</div></div>"
+            f"<div class='v'>{v if k == _('GPU') else esc(v)}</div></div>"
         )
     body.append("</div>")
     body.append(_warnings_block(summary))
     body.append(
-        "<div class='notice'>Tokens/s aus <code>llama-bench</code> messen die Inferenzkernleistung "
-        "ohne Tokenisierung und Sampling. Endpoint-Tests messen zusaetzlich reale "
-        "Server-Interaktivitaet und TTFT.</div>"
+        f"<div class='notice'>{_('Tokens/s aus <code>llama-bench</code> messen die Inferenzkernleistung ')}"
+        f"{_('ohne Tokenisierung und Sampling. Endpoint-Tests messen zusaetzlich reale ')}"
+        f"{_('Server-Interaktivitaet und TTFT.')}</div>"
     )
     body.append(_provenance_block(summary))
 
@@ -285,34 +286,34 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             continue
         body.append("<div class='cards'>")
         body.append(
-            f"<div class='card'><div class='k'>GGUF-Groesse</div>"
+            f"<div class='card'><div class='k'>{_('GGUF-Groesse')}</div>"
             f"<div class='v'>{human_bytes(meta.get('size_bytes'))}</div></div>"
         )
-        sha = meta.get("sha256") or "nicht berechnet"
+        sha = meta.get("sha256") or _("nicht berechnet")
         body.append(
             f"<div class='card'><div class='k'>SHA256</div>"
             f"<div class='v small'><code>{esc(sha[:32])}{'…' if len(sha) > 32 else ''}</code></div></div>"
         )
         body.append(
-            f"<div class='card'><div class='k'>Quality Gate</div>"
-            f"<div class='v'>{esc(meta.get('quality_gate') or 'nicht bewertet')}</div></div></div>"
+            f"<div class='card'><div class='k'>{_('Quality Gate')}</div>"
+            f"<div class='v'>{esc(meta.get('quality_gate') or _('nicht bewertet'))}</div></div></div>"
         )
         for profile in m.get("profiles", []):
-            body.append(f"<h3>Profil: {esc(profile.get('name'))}</h3>")
+            body.append(f"<h3>{_('Profil')}: {esc(profile.get('name'))}</h3>")
             s = profile.get("settings", {})
             body.append(
                 f"<p class='muted'>GPU-Layer: <code>{esc(s.get('gpu_layers'))}</code> · "
                 f"Threads: <code>{esc(s.get('threads', 'auto'))}</code></p>"
             )
             body.append(_bench_table(profile))
-            body.append("<h3>Hardware-Telemetrie</h3>")
+            body.append(f"<h3>{_('Hardware-Telemetrie')}</h3>")
             body.append(_telemetry_table(profile))
         if m.get("endpoint"):
-            body.append("<h3>Endpoint-/Multi-User-Test</h3>")
+            body.append(f"<h3>{_('Endpoint-/Multi-User-Test')}</h3>")
             body.append(_endpoint_table(m["endpoint"]))
         if m.get("soak"):
-            body.append("<h3>Dauerlast-Test (CPU + GPU gleichzeitig)</h3>")
+            body.append(f"<h3>{_('Dauerlast-Test (CPU + GPU gleichzeitig)')}</h3>")
             body.append(_soak_table(m["soak"]))
 
-    body.append("<p class='muted small'>Erzeugt mit llm-server-benchmark.</p></main></body></html>")
+    body.append(f"<p class='muted small'>{_('Erzeugt mit llm-server-benchmark.')}</p></main></body></html>")
     Path(path).write_text("".join(body), encoding="utf-8")

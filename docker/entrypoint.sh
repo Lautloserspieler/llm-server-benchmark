@@ -35,10 +35,8 @@ container_setup() {
     nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader || true
 
     echo "=== Modelle ==="
-    if ! python -m llmbench download --suite all --models-dir /workspace/models --verify-only >/dev/null 2>&1; then
-        echo "Standard-Suite ist unvollstaendig. Fehlende Modelle/Shards werden geladen..."
-        python -m llmbench download --suite all --models-dir /workspace/models
-    fi
+    python -m llmbench.model_select --models-dir /workspace/models --select
+    export LLMBENCH_USE_SAVED_SELECTION=1
     python -m llmbench download --suite all --models-dir /workspace/models --verify-only
 
     echo "=== Konfiguration ==="

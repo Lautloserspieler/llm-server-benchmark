@@ -19,7 +19,7 @@ check_gpu() {
         echo "[!] NVIDIA Runtime ist vorhanden, aber die GPU ist im Container nicht nutzbar." >&2
         return 1
     fi
-    if ! /opt/llama.cpp/llama-bench --list-devices 2>&1 | grep -qiE 'CUDA|NVIDIA'; then
+    if ! /opt/llama.cpp/llama-bench --list-devices 2>&1 | grep -iE 'CUDA|NVIDIA' >/dev/null; then
         echo "[!] llama.cpp sieht im Container kein CUDA/NVIDIA-Device." >&2
         /opt/llama.cpp/llama-bench --list-devices || true
         return 1

@@ -43,10 +43,10 @@ class TelemetryProvider(abc.ABC):
 class NvidiaProvider(TelemetryProvider):
     """NVML-based telemetry for NVIDIA GPUs with singleton initialization."""
 
-    _instance: "NvidiaProvider | None" = None
+    _instance: NvidiaProvider | None = None
     _initialized_once: bool = False
 
-    def __new__(cls) -> "NvidiaProvider":
+    def __new__(cls) -> NvidiaProvider:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance

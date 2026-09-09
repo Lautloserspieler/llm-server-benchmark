@@ -7,7 +7,7 @@
 
 LLM benchmark numbers are often hard to reproduce because the GPU, driver, backend, llama.cpp build, model files, quantization, benchmark settings and power state differ between machines. **LLM Server Benchmark** records those conditions together with the performance result so that two systems can be compared under verifiable conditions.
 
-> NVIDIA GTC Berlin 2026: see the [contest/demo brief](docs/GTC_BERLIN_2026.md).
+See the [release and demo checklist](docs/RELEASE_CHECKLIST.md) for final validation and presentation guidance.
 
 ## Why this project
 

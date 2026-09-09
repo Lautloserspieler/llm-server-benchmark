@@ -21,6 +21,7 @@ benchmark.yaml.bak
 tools/
 models/*.gguf
 models/**/*.gguf
+models/.llmbench-model-selection.json
 
 # Vom Werkzeug verschobene, zum Loeschen vorgesehene Dateien
 _to_delete/

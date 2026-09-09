@@ -102,6 +102,7 @@ def _base_args(
     bench_cfg: dict[str, Any],
     profile: dict[str, Any],
     with_progress: bool = True,
+    with_no_mmap: bool = True,
 ) -> list[str]:
     args = [
         exe,
@@ -116,7 +117,7 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
-    if profile.get("no_mmap") or str(profile.get("gpu_layers", -1)) == "0":
+    if with_no_mmap and (profile.get("no_mmap") or str(profile.get("gpu_layers", -1)) == "0"):
         args.append("--no-mmap")
     if profile.get("mlock"):
         args.append("--mlock")
@@ -141,6 +142,11 @@ def _base_args(
 def _rejected_progress(stdout: str, stderr: str) -> bool:
     text = (stdout or "") + (stderr or "")
     return "--progress" in text and ("invalid parameter" in text or "unknown argument" in text)
+
+
+def _rejected_no_mmap(stdout: str, stderr: str) -> bool:
+    text = (stdout or "") + (stderr or "")
+    return "--no-mmap" in text and ("invalid parameter" in text or "unknown argument" in text)
 
 
 def _execute(
@@ -230,6 +236,15 @@ def run_llama_bench(
         )
         if on_progress:
             on_progress("Build kennt --progress nicht, Wiederholung ohne Fortschrittsanzeige", None)
+        stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
+
+    if returncode != 0 and not timed_out and _rejected_no_mmap(stdout, stderr):
+        args = _test_args(
+            _base_args(exe, model_path, bench_cfg, profile, with_progress=False, with_no_mmap=False),
+            bench_cfg, test_kind,
+        )
+        if on_progress:
+            on_progress("Build kennt --no-mmap nicht, Wiederholung ohne --no-mmap", None)
         stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
 
     duration = time.perf_counter() - started

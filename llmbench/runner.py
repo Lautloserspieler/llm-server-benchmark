@@ -260,6 +260,8 @@ def run_suite(
                     flatten_bench_rows(result),
                     result.get("error"),
                 )
+                if result.get("status") == "failed" and result.get("error_detail"):
+                    reporter.note(f"llama-bench stderr:\n{result['error_detail']}")
                 build_ids.update(build_ids_from_rows(result))
                 for warn in (result.get("telemetry") or {}).get("warnings", []):
                     summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")

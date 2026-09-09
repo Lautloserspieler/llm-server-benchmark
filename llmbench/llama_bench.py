@@ -264,10 +264,12 @@ def run_llama_bench(
             "telemetry": light,
         }
     if returncode != 0:
+        err_detail = (stderr or "").strip()[-2000:]
         return {
             "kind": test_kind,
             "status": "failed",
             "error": f"llama-bench endete mit Code {returncode}",
+            "error_detail": err_detail,
             "duration_seconds": duration,
             "stderr_tail": (stderr or "")[-4000:],
             "telemetry": light,

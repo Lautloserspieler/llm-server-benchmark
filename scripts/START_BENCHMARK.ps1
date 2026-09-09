@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$Config = "benchmark.yaml",
     [string]$LlamaCppTag = "",
@@ -143,7 +143,30 @@ function Invoke-BenchmarkRun {
     $hwChoice = Read-Host "Auswahl [1-3, Standard=3]"
 
     $hardware = "both"
-    if ($hwChoice -eq "1") { $hardware = "cpu" }
+    if ($hwChoice -eq "1") {
+        $hardware = "cpu"
+        # Pruefen ob ein GPU-Backend installiert ist – CUDA-Builds schlagen bei reinen CPU-Tests fehl
+        $backendFile = Join-Path $PSScriptRoot "..\llama_cpp_state.json"
+        $isCudaBuild = $false
+        if (Test-Path $backendFile) {
+            try {
+                $state = Get-Content $backendFile -Raw | ConvertFrom-Json
+                if ($state.backend -match "cuda|hip|vulkan") { $isCudaBuild = $true }
+            } catch {}
+        }
+        if ($isCudaBuild) {
+            Write-Host ""
+            Write-Host "HINWEIS: Das installierte llama.cpp ist ein GPU-Build ($($state.backend))." -ForegroundColor Yellow
+            Write-Host "         Reine CPU-Tests schlagen bei diesem Build haeufig mit Fehlercode 1 fehl." -ForegroundColor Yellow
+            Write-Host "         Empfehlung: Waehle stattdessen Option 3 (CPU+GPU) oder Option 2 (Nur GPU)." -ForegroundColor Yellow
+            Write-Host ""
+            $confirm = Read-Host "Trotzdem nur CPU testen? [j/N]"
+            if ($confirm -notmatch "^[jJyY]") {
+                Write-Host "Aenderung auf 'both' (CPU + GPU)."
+                $hardware = "both"
+            }
+        }
+    }
     elseif ($hwChoice -eq "2") { $hardware = "gpu" }
     Write-Host "Verwende Hardware-Auswahl: $hardware"
 

@@ -43,10 +43,6 @@ services:
       - type: bind
         source: ${LLMBENCH_HF_CACHE_DIR:-./.cache/huggingface}
         target: /workspace/.cache/huggingface
-      - type: bind
-        source: ./docker/entrypoint.sh
-        target: /usr/local/bin/llmbench-entrypoint
-        read_only: true
     deploy:
       resources:
         reservations:

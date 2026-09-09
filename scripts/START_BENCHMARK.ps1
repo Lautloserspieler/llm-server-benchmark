@@ -24,6 +24,30 @@ $ConfigPath = if ([System.IO.Path]::IsPathRooted($Config)) { $Config } else { Jo
 if (-not (Test-Path $EnsurePython)) { throw "Python-Bootstrap fehlt: $EnsurePython" }
 if (-not (Test-Path $CoreScript)) { throw "Benchmark-Core fehlt: $CoreScript" }
 
+# --- Automatisches Update via git pull (falls git vorhanden und .git-Verzeichnis existiert) ---
+$GitDir = Join-Path $Root ".git"
+if ((Test-Path $GitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Pruefe auf Updates..." -ForegroundColor Cyan
+    try {
+        $fetchResult = & git -C $Root fetch --quiet 2>&1
+        $status = & git -C $Root status -uno --short 2>&1
+        if ($status -match "behind") {
+            Write-Host "Neues Update verfuegbar - aktualisiere..." -ForegroundColor Yellow
+            & git -C $Root pull --ff-only --quiet 2>&1 | Out-Null
+            Write-Host "Update abgeschlossen." -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "Git-Update uebersprungen: $($_.Exception.Message)" -ForegroundColor DarkGray
+    }
+} elseif (-not (Test-Path $GitDir)) {
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "HINWEIS: Das Projekt wurde als ZIP heruntergeladen, nicht per git clone." -ForegroundColor Yellow
+    Write-Host "         Automatische Updates sind dadurch nicht moeglich." -ForegroundColor Yellow
+    Write-Host "         Bitte klone das Repository stattdessen mit:" -ForegroundColor Yellow
+    Write-Host "         git clone https://github.com/Lautloserspieler/llm-server-benchmark.git" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 & $EnsurePython
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

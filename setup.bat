@@ -59,25 +59,14 @@ if not exist models mkdir models
 
 echo.
 echo ====================================================
-echo   V2 Standard-Suite pruefen
+echo   Modelle fuer den Benchmark auswaehlen
 echo ====================================================
-python -m llmbench download --suite all --models-dir models --verify-only >nul 2>&1
-if !errorlevel! neq 0 (
-    echo [+] Mindestens ein Standard-Modell fehlt oder ist unvollstaendig.
-    echo [+] Fehlende Dateien werden automatisch von HuggingFace geladen.
-    echo [+] Bereits vorhandene Modelle und Cache-Dateien bleiben erhalten.
-    echo.
-    python -m llmbench download --suite all --models-dir models
-    if !errorlevel! neq 0 goto :fail
-) else (
-    echo [+] Alle Standard-Modelle sind vollstaendig vorhanden.
-)
+python -m llmbench.model_select --models-dir models --select
+if !errorlevel! neq 0 goto :fail
 
-python -m llmbench download --suite all --models-dir models --verify-only
-if !errorlevel! neq 0 (
-    echo [!] Die Standard-Suite ist nach dem Download weiterhin unvollstaendig.
-    goto :fail
-)
+rem Der anschliessende Setup-Wizard darf nur die gespeicherte Auswahl pruefen
+rem und niemals stillschweigend die komplette Standard-Suite nachladen.
+set "LLMBENCH_USE_SAVED_SELECTION=1"
 
 echo.
 echo Starte jetzt die automatische Konfiguration...

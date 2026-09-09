@@ -6,6 +6,10 @@ ROOT_DIR=$(pwd)
 CONFIG="benchmark.yaml"
 EXECUTION_MODE="${LLMBENCH_EXECUTION_MODE:-auto}"
 
+if [ -f "models/.llmbench-model-selection.json" ]; then
+    export LLMBENCH_USE_SAVED_SELECTION=1
+fi
+
 case "$EXECUTION_MODE" in
     auto|docker|native) ;;
     *)
@@ -80,8 +84,8 @@ fi
 echo "=== V2 Standard-Suite ==="
 mkdir -p models
 if ! python -m llmbench download --suite all --models-dir models --verify-only >/dev/null 2>&1; then
-    echo "Mindestens ein Standard-Modell fehlt oder ist unvollstaendig."
-    echo "Fehlende Dateien werden automatisch von HuggingFace geladen."
+    echo "Mindestens ein ausgewaehltes Standard-Modell fehlt oder ist unvollstaendig."
+    echo "Nur die im Setup gespeicherte Auswahl wird von HuggingFace nachgeladen."
     python -m llmbench download --suite all --models-dir models
 fi
 python -m llmbench download --suite all --models-dir models --verify-only

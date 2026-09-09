@@ -81,11 +81,13 @@ echo "bleiben automatische Fallbacks."
 echo ""
 
 mkdir -p models
-if ! python -m llmbench download --suite all --models-dir models --verify-only >/dev/null 2>&1; then
-    echo "[+] V2-Standard-Suite ist unvollstaendig. Lade fehlende Modelle/Shards..."
-    python -m llmbench download --suite all --models-dir models
-fi
-python -m llmbench download --suite all --models-dir models --verify-only
+echo "===================================================="
+echo "  Modelle fuer den Benchmark auswaehlen"
+echo "===================================================="
+python -m llmbench.model_select --models-dir models --select
+
+# Der anschliessende Setup-Wizard prueft nur die gespeicherte Auswahl.
+export LLMBENCH_USE_SAVED_SELECTION=1
 
 echo ""
 echo "Starte jetzt die Konfiguration..."

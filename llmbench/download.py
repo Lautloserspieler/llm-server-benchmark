@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import shutil
 import threading
@@ -70,6 +71,8 @@ MODELS: dict[str, dict[str, ModelConfig]] = {
         },
     },
 }
+
+SELECTION_FILENAME = ".llmbench-model-selection.json"
 
 
 class _AdaptivePercentColumn(ProgressColumn):
@@ -267,6 +270,71 @@ def get_suite_models(suite: str) -> dict[str, ModelConfig]:
     return target_models
 
 
+def get_models_by_name(model_names: Iterable[str]) -> dict[str, ModelConfig]:
+    """Loest eine explizite Modellauswahl gegen den Standardkatalog auf."""
+    catalog = get_suite_models("all")
+    requested = list(dict.fromkeys(str(name).strip() for name in model_names if str(name).strip()))
+    unknown = [name for name in requested if name not in catalog]
+    if unknown:
+        raise ValueError(
+            "Unbekannte Standard-Modelle: " + ", ".join(unknown) + ". Erlaubt: " + ", ".join(catalog)
+        )
+    return {name: catalog[name] for name in requested}
+
+
+def selection_path(models_dir: str | Path) -> Path:
+    return Path(models_dir) / SELECTION_FILENAME
+
+
+def load_model_selection(models_dir: str | Path) -> list[str] | None:
+    """Laedt die beim Setup gespeicherte Modellauswahl, falls vorhanden."""
+    path = selection_path(models_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        names = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(names, list):
+            return None
+        return list(get_models_by_name(str(name) for name in names))
+    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def save_model_selection(models_dir: str | Path, model_names: Iterable[str]) -> Path:
+    """Speichert die Setup-Auswahl im Models-Ordner, der auch in Docker gemountet wird."""
+    root = Path(models_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    names = list(get_models_by_name(model_names))
+    path = selection_path(root)
+    path.write_text(
+        json.dumps({"version": 1, "models": names}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _target_models(
+    models_dir: str | Path,
+    suite: str,
+    model_names: Iterable[str] | None = None,
+) -> dict[str, ModelConfig]:
+    if model_names is not None:
+        return get_models_by_name(model_names)
+    use_saved = os.environ.get("LLMBENCH_USE_SAVED_SELECTION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "ja",
+    }
+    if suite == "all" and use_saved:
+        saved = load_model_selection(models_dir)
+        if saved is not None:
+            return get_models_by_name(saved)
+    return get_suite_models(suite)
+
+
 def _matches_patterns(filename: str, patterns: list[str]) -> bool:
     lowered = filename.lower()
     return any(fnmatch.fnmatch(lowered, pattern.lower()) for pattern in patterns)
@@ -293,9 +361,14 @@ def find_downloaded_model(models_dir: str | Path, config: ModelConfig) -> Path |
     return sorted(candidates, key=lambda item: str(item).lower())[0]
 
 
-def verify_suite(models_dir: str | Path, suite: str = "all") -> tuple[bool, list[str]]:
+def verify_suite(
+    models_dir: str | Path,
+    suite: str = "all",
+    model_names: Iterable[str] | None = None,
+) -> tuple[bool, list[str]]:
+    target_models = _target_models(models_dir, suite, model_names)
     missing = [
-        name for name, config in get_suite_models(suite).items()
+        name for name, config in target_models.items()
         if find_downloaded_model(models_dir, config) is None
     ]
     return not missing, missing
@@ -319,8 +392,12 @@ def _warn_free_space(out_dir: Path, missing: list[tuple[str, ModelConfig]]) -> N
         )
 
 
-def download_models(models_dir: str | Path, suite: str = "small") -> None:
-    """Laedt fehlende Modelle und meldet Erfolg nur bei vollstaendiger Suite."""
+def download_models(
+    models_dir: str | Path,
+    suite: str = "small",
+    model_names: Iterable[str] | None = None,
+) -> None:
+    """Laedt fehlende Standard-Modelle und prueft nur die angeforderte Auswahl."""
     if snapshot_download is None:
         raise RuntimeError(
             "Das Paket 'huggingface_hub' ist nicht installiert. "
@@ -335,7 +412,7 @@ def download_models(models_dir: str | Path, suite: str = "small") -> None:
     out_dir = Path(models_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     token = os.environ.get("HF_TOKEN")
-    target_models = get_suite_models(suite)
+    target_models = _target_models(out_dir, suite, model_names)
 
     missing_before = [
         (name, config) for name, config in target_models.items()
@@ -343,12 +420,13 @@ def download_models(models_dir: str | Path, suite: str = "small") -> None:
     ]
     _warn_free_space(out_dir, missing_before)
 
+    label = "Auswahl" if model_names is not None or os.environ.get("LLMBENCH_USE_SAVED_SELECTION") else f"Suite '{suite}'"
     print_panel(
         f"Zielverzeichnis: {out_dir}\n"
-        f"Modelle in Suite: {len(target_models)}\n"
+        f"Modelle angefordert: {len(target_models)}\n"
         f"Bereits vollstaendig: {len(target_models) - len(missing_before)}\n"
         "HF-Cache: Aktiv (bereits geladene Dateien werden wiederverwendet)",
-        title=f"Starte Modell-Download: Suite '{suite}'",
+        title=f"Starte Modell-Download: {label}",
     )
 
     failures: list[str] = []
@@ -385,11 +463,11 @@ def download_models(models_dir: str | Path, suite: str = "small") -> None:
     finally:
         RichTqdm.close_all()
 
-    complete, missing = verify_suite(out_dir, suite)
+    complete, missing = verify_suite(out_dir, suite, model_names=model_names)
     if failures or not complete:
         details = failures[:]
         if missing:
             details.append("Fehlende/unvollstaendige Modelle: " + ", ".join(missing))
         raise RuntimeError("Modell-Download unvollstaendig. " + " | ".join(details))
 
-    print_msg("\nAlle Modelle der angeforderten Suite sind vollstaendig vorhanden.", style="bold blue")
+    print_msg("\nAlle angeforderten Modelle sind vollstaendig vorhanden.", style="bold blue")

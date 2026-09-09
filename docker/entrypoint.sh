@@ -33,7 +33,6 @@ container_setup() {
     echo "=== Docker Runtime ==="
     python --version
     nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader || true
-    /opt/llama.cpp/llama-bench --version
 
     echo "=== Modelle ==="
     if ! python -m llmbench download --suite all --models-dir /workspace/models --verify-only >/dev/null 2>&1; then

@@ -227,7 +227,7 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
     for run in soak_runs:
         label = str(run.get("label") or "—")
         if run.get("status") != "ok":
-            status_label = _("Zeitueberschreitung") if run.get("status") == "timeout" else _("Fehler")
+            status_label = _("Zeitüberschreitung") if run.get("status") == "timeout" else _("Fehler")
             rows.append([label, status_label, "—", "—", "—", "—", "—"])
             if run.get("error"):
                 block.append(Paragraph(f"{label}: {run['error']}", styles["warn"]))
@@ -342,7 +342,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
             for kind, result in (profile.get("benchmarks") or {}).items():
                 bench_rows = flatten_bench_rows(result)
                 if not bench_rows:
-                    label = (_("Zeitueberschreitung") if result.get("status") == "timeout"
+                    label = (_("Zeitüberschreitung") if result.get("status") == "timeout"
                              else _("Fehler"))
                     rows.append([kind, label, "—", "—", "—", "—", "—"])
                     continue

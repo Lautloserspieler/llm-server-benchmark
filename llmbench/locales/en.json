@@ -1,6 +1,6 @@
 {
   "OK": "OK",
-  "Zeitueberschreitung": "Timeout",
+  "Zeitüberschreitung": "Timeout",
   "Fehler": "Error",
   "Keine GPU erkannt": "No GPU detected",
   "VRAM unbekannt": "VRAM unknown",

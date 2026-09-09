@@ -7,6 +7,10 @@ title LLM Server Benchmark
 set "MODE=%LLMBENCH_EXECUTION_MODE%"
 if "%MODE%"=="" set "MODE=auto"
 
+rem Wenn im Setup eine Modellauswahl gespeichert wurde, pruefen/nachladen wir
+rem spaeter nur diese Modelle statt wieder die komplette Standard-Suite.
+if exist "models\.llmbench-model-selection.json" set "LLMBENCH_USE_SAVED_SELECTION=1"
+
 if /I not "%MODE%"=="auto" if /I not "%MODE%"=="docker" if /I not "%MODE%"=="native" (
     echo LLMBENCH_EXECUTION_MODE muss auto, docker oder native sein.
     pause

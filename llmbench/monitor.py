@@ -148,9 +148,9 @@ class ResourceMonitor:
         foreign = sorted(self._seen_gpu_pids - self._own_pids)
         out = []
         ignored_names = {
-            "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe", 
-            "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe", 
-            "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe", 
+            "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe",
+            "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe",
+            "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe",
             "windowsterminal.exe", "docker desktop.exe", "widgetboard.exe",
             "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe"
         }

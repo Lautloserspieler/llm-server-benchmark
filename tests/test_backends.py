@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from llmbench.backends.llama_cpp import LlamaCppBackend
 
 
@@ -21,6 +23,35 @@ def test_run_benchmark_delegates_to_run_llama_bench(monkeypatch, tmp_path: Path)
     assert calls["args"][4] == "generation"
 
 
+def test_run_benchmark_skips_oversized_full_gpu_before_llama_bench(monkeypatch, tmp_path: Path):
+    called = False
+
+    def _fake_run_llama_bench(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        "llmbench.backends.llama_cpp.profile_vram_issue_for_path",
+        lambda _model_path, _profile: "model exceeds safe VRAM budget",
+    )
+    monkeypatch.setattr("llmbench.backends.llama_cpp.run_llama_bench", _fake_run_llama_bench)
+
+    backend = LlamaCppBackend("llama-bench", "llama-server")
+    result = backend.run_benchmark(
+        "huge.gguf",
+        {"name": "Full-GPU", "gpu_layers": -1},
+        "generation",
+        tmp_path,
+        {"repetitions": 1},
+    )
+
+    assert called is False
+    assert result["status"] == "skipped_capacity"
+    assert "VRAM" in result["error"]
+    assert result["runtime_adjustments"][0]["effective"] is None
+
+
 def test_start_server_delegates_to_start_llama_server(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         "llmbench.backends.llama_cpp.start_llama_server",
@@ -30,6 +61,32 @@ def test_start_server_delegates_to_start_llama_server(monkeypatch, tmp_path: Pat
     proc, cmd = backend.start_server("model.gguf", {}, {}, {}, tmp_path / "log.txt")
     assert proc == "PROC"
     assert cmd == "cmd string"
+
+
+def test_start_server_rejects_oversized_full_gpu_before_launch(monkeypatch, tmp_path: Path):
+    called = False
+
+    def _fake_start(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return "PROC", "cmd string"
+
+    monkeypatch.setattr(
+        "llmbench.backends.llama_cpp.profile_vram_issue_for_path",
+        lambda _model_path, _profile: "model exceeds safe VRAM budget",
+    )
+    monkeypatch.setattr("llmbench.backends.llama_cpp.start_llama_server", _fake_start)
+
+    backend = LlamaCppBackend("llama-bench", "llama-server")
+    with pytest.raises(RuntimeError, match="VRAM"):
+        backend.start_server(
+            "huge.gguf",
+            {"name": "Full-GPU", "gpu_layers": -1},
+            {},
+            {},
+            tmp_path / "log.txt",
+        )
+    assert called is False
 
 
 def test_stop_server_delegates_to_stop_llama_server(monkeypatch):

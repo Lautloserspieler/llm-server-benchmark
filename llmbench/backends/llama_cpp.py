@@ -56,11 +56,14 @@ def _is_gpu_profile(profile: dict[str, Any]) -> bool:
     return str(value).strip().lower() not in {"0", "none"}
 
 
-def _runtime_profile(model_path: str, profile: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _runtime_profile(profile: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Create the profile that is passed to llama.cpp.
 
-    The user-facing configuration stays unchanged so result comparisons still
-    show what was requested. Runtime adjustments are recorded in the result.
+    Only settings that can be resolved without changing benchmark semantics are
+    adjusted here. In particular, an oversized Full-GPU profile is *not*
+    converted to ``gpu_layers='auto'``: llama-bench expects a numeric ``-ngl``
+    value and recent builds reject the string ``auto``. Capacity handling is
+    therefore performed explicitly by the backend before launching llama.cpp.
     """
     runtime = dict(profile)
     adjustments: list[dict[str, Any]] = []
@@ -76,20 +79,16 @@ def _runtime_profile(model_path: str, profile: dict[str, Any]) -> tuple[dict[str
             "reason": "CPU-only benchmark uses all logical CPUs allowed by the OS affinity mask.",
         })
 
-    capacity_issue = profile_vram_issue_for_path(model_path, profile)
-    if capacity_issue:
-        # Recent llama.cpp builds support -ngl auto and memory fitting.  This
-        # keeps as many layers as possible in VRAM and runs the remainder on
-        # CPU/RAM instead of skipping a model that cannot fit fully on the GPU.
-        runtime["gpu_layers"] = "auto"
-        adjustments.append({
-            "type": "auto_partial_offload",
-            "requested": profile.get("gpu_layers", -1),
-            "effective": "auto",
-            "reason": capacity_issue,
-        })
-
     return runtime, adjustments
+
+
+def _capacity_adjustment(profile: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "type": "capacity_preflight",
+        "requested": profile.get("gpu_layers", -1),
+        "effective": None,
+        "reason": reason,
+    }
 
 
 def _nvidia_vram_used_mib() -> float | None:
@@ -162,7 +161,16 @@ class LlamaCppBackend(BenchmarkBackend):
         bench_cfg: dict[str, Any],
         on_progress=None,
     ) -> dict[str, Any]:
-        runtime_profile, adjustments = _runtime_profile(model_path, profile)
+        capacity_issue = profile_vram_issue_for_path(model_path, profile)
+        if capacity_issue:
+            return {
+                "kind": kind,
+                "status": "skipped_capacity",
+                "error": capacity_issue,
+                "runtime_adjustments": [_capacity_adjustment(profile, capacity_issue)],
+            }
+
+        runtime_profile, adjustments = _runtime_profile(profile)
         baseline_mib = _nvidia_vram_used_mib() if _is_gpu_profile(runtime_profile) else None
         try:
             result = run_llama_bench(
@@ -190,7 +198,11 @@ class LlamaCppBackend(BenchmarkBackend):
         bench_cfg: dict[str, Any],
         log_path: Path,
     ) -> tuple[Any, str]:
-        runtime_profile, adjustments = _runtime_profile(model_path, profile)
+        capacity_issue = profile_vram_issue_for_path(model_path, profile)
+        if capacity_issue:
+            raise RuntimeError(capacity_issue)
+
+        runtime_profile, adjustments = _runtime_profile(profile)
         baseline_mib = _nvidia_vram_used_mib() if _is_gpu_profile(runtime_profile) else None
         proc, command = start_llama_server(
             self.llama_server_exe,

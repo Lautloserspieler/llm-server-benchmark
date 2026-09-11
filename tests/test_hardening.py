@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from llmbench import llama_cpp_setup as lcs
 from llmbench import soak, tuner
 from llmbench.backends import llama_cpp as backend_mod
@@ -53,13 +55,14 @@ def test_capacity_guard_allows_small_partial_and_explicit_override():
     ) is None
 
 
-def test_backend_converts_oversized_benchmark_to_auto_offload(monkeypatch, tmp_path: Path):
+def test_backend_skips_oversized_benchmark_before_launch(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(backend_mod, "profile_vram_issue_for_path", lambda *_a, **_k: "too large")
     monkeypatch.setattr(backend_mod, "_nvidia_vram_used_mib", lambda: None)
-    calls = {}
+    called = False
 
-    def fake_run(_exe, _model_path, _bench_cfg, profile, _kind, _out_dir, on_progress=None):  # noqa: ARG001
-        calls["profile"] = profile
+    def fake_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
         return {"status": "ok"}
 
     monkeypatch.setattr(backend_mod, "run_llama_bench", fake_run)
@@ -72,35 +75,36 @@ def test_backend_converts_oversized_benchmark_to_auto_offload(monkeypatch, tmp_p
         {},
     )
 
-    assert result["status"] == "ok"
-    assert calls["profile"]["gpu_layers"] == "auto"
-    assert result["runtime_adjustments"][0]["type"] == "auto_partial_offload"
+    assert called is False
+    assert result["status"] == "skipped_capacity"
+    assert result["error"] == "too large"
+    assert result["runtime_adjustments"][0]["type"] == "capacity_preflight"
+    assert result["runtime_adjustments"][0]["effective"] is None
 
 
-def test_backend_converts_oversized_server_to_auto_offload(monkeypatch, tmp_path: Path):
+def test_backend_rejects_oversized_server_before_launch(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(backend_mod, "profile_vram_issue_for_path", lambda *_a, **_k: "too large")
     monkeypatch.setattr(backend_mod, "_nvidia_vram_used_mib", lambda: None)
-    calls = {}
-    proc = SimpleNamespace()
+    called = False
 
-    def fake_start(_exe, _model_path, profile, _endpoint_cfg, _bench_cfg, _log_path):
-        calls["profile"] = profile
-        return proc, "cmd"
+    def fake_start(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return SimpleNamespace(), "cmd"
 
     monkeypatch.setattr(backend_mod, "start_llama_server", fake_start)
     backend = backend_mod.LlamaCppBackend("bench", "server")
-    returned_proc, command = backend.start_server(
-        "model.gguf",
-        {"gpu_layers": -1},
-        {"base_url": "http://127.0.0.1:8080"},
-        {},
-        tmp_path / "server.log",
-    )
 
-    assert returned_proc is proc
-    assert command == "cmd"
-    assert calls["profile"]["gpu_layers"] == "auto"
-    assert proc._llmbench_runtime_adjustments[0]["type"] == "auto_partial_offload"
+    with pytest.raises(RuntimeError, match="too large"):
+        backend.start_server(
+            "model.gguf",
+            {"gpu_layers": -1},
+            {"base_url": "http://127.0.0.1:8080"},
+            {},
+            tmp_path / "server.log",
+        )
+
+    assert called is False
 
 
 def test_cpu_only_auto_threads_uses_all_allowed_logical_cpus(monkeypatch, tmp_path: Path):

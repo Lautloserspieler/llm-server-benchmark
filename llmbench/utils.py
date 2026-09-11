@@ -55,7 +55,9 @@ def write_json(path: str | Path, data: Any) -> None:
 
 
 def read_json(path: str | Path) -> Any:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    # utf-8-sig transparently accepts both normal UTF-8 and UTF-8 files with a
+    # BOM. PowerShell/Windows tooling may emit the latter for .llama-build.json.
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
 def sha256_file(path: str | Path, chunk_size: int = 8 * 1024 * 1024) -> str:

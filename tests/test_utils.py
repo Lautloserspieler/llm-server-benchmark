@@ -43,6 +43,12 @@ def test_write_json_then_read_json_roundtrip(tmp_path: Path):
     assert read_json(path) == {"a": 1, "b": [1, 2, 3]}
 
 
+def test_read_json_accepts_utf8_bom(tmp_path: Path):
+    path = tmp_path / ".llama-build.json"
+    path.write_bytes(b"\xef\xbb\xbf{\"backend\": \"cuda\"}")
+    assert read_json(path) == {"backend": "cuda"}
+
+
 def test_sha256_file_matches_known_hash(tmp_path: Path):
     import hashlib
 

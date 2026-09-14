@@ -109,9 +109,10 @@ Every run records provenance that can be checked before two servers are compared
 
 ```text
 1. Clone or download the repository
-2. Run START_BENCHMARK.bat
-3. Let setup verify/install dependencies and models
-4. Select benchmark duration and hardware mode
+2. Run setup.bat 
+3. Run START_BENCHMARK.bat
+4. Let setup verify/install dependencies and models
+5. Select benchmark duration and hardware mode
 ```
 
 If Python 3.10+ is already installed, `setup.bat` can also be used directly.

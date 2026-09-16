@@ -128,6 +128,30 @@ def test_start_and_stop_collect_samples_via_the_telemetry_provider(monkeypatch):
     assert provider.shutdown_called is True
 
 
+def test_summary_reports_telemetry_source_from_provider_attribute(monkeypatch):
+    provider = FakeProvider([[_gpu(util=77.0)]])
+    provider.TELEMETRY_SOURCE = "rocm_smi"
+    monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: provider)
+
+    monitor = ResourceMonitor(interval=0.02)
+    monitor.start()
+
+    start_time = time.time()
+    while len(monitor._samples) == 0 and time.time() - start_time < 2.0:
+        time.sleep(0.01)
+
+    summary = monitor.stop()
+    assert summary["telemetry_source"] == "rocm_smi"
+
+
+def test_summary_falls_back_to_cpu_only_when_provider_has_no_telemetry_source_attribute():
+    monitor = ResourceMonitor()
+    monitor._provider = object()  # test double without a TELEMETRY_SOURCE attribute
+    monitor._samples = [{"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": []}]
+    summary = monitor.summary()
+    assert summary["telemetry_source"] == "cpu_only"
+
+
 def test_latest_returns_baseline_before_any_sample_is_collected(monkeypatch):
     provider = FakeProvider([[_gpu(util=10.0)]])
     monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: provider)

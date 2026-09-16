@@ -142,8 +142,8 @@ def _rocm_smi_info() -> list[dict[str, Any]]:
                 "name": name,
                 "driver_version": info.get("Driver version"),
                 "vbios_version": info.get("VBIOS version", "unbekannt"),
-                # Ehrlich benennen: der Monitor kann derzeit nur NVML lesen.
-                "telemetry": "none",
+                # AmdProvider (telemetry.py) liest hierfuer live rocm-smi aus.
+                "telemetry": "rocm_smi",
             })
         return gpus
     except Exception:

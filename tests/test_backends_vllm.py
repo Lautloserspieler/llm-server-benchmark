@@ -71,7 +71,11 @@ def test_begin_profile_starts_container_with_serve_args(docker, tmp_path: Path):
     # Das Elternverzeichnis wird eingehaengt, der Modellname bleibt erhalten -
     # das stimmt sowohl fuer eine Modelldatei als auch fuer ein Modellverzeichnis.
     assert args[:2] == ["--model", f"{MODEL_MOUNT}/Mistral-7B"]
-    assert run["volumes"]["/models"] == f"{MODEL_MOUNT}:ro"
+    # Der Host-Quellpfad wird ueber Path(...).resolve() aufgeloest, das liefert
+    # unter Windows einen Laufwerkspfad (z. B. "D:\\models") statt "/models" -
+    # deshalb hier denselben Aufloesungsschritt verwenden statt ihn zu raten.
+    expected_source = str(Path("/models/Mistral-7B").parent.resolve())
+    assert run["volumes"][expected_source] == f"{MODEL_MOUNT}:ro"
     assert args[args.index("--host") + 1] == "0.0.0.0"
     assert args[args.index("--port") + 1] == str(CONTAINER_PORT)
     assert args[args.index("--max-model-len") + 1] == "32768"

@@ -50,7 +50,7 @@ def test_nvidia_smi_info_skips_malformed_lines(monkeypatch):
     assert len(gpus) == 1
 
 
-def test_rocm_smi_info_parses_json_output_and_marks_no_telemetry(monkeypatch):
+def test_rocm_smi_info_parses_json_output_and_reports_rocm_smi_telemetry(monkeypatch):
     payload = json.dumps({
         "card0": {
             "Card series": "Radeon RX 7900",
@@ -66,7 +66,7 @@ def test_rocm_smi_info_parses_json_output_and_marks_no_telemetry(monkeypatch):
     gpu = gpus[0]
     assert gpu["vendor"] == "AMD"
     assert gpu["name"] == "Radeon RX 7900"
-    assert gpu["telemetry"] == "none"
+    assert gpu["telemetry"] == "rocm_smi"
 
 
 def test_rocm_smi_info_returns_empty_list_when_command_fails(monkeypatch):

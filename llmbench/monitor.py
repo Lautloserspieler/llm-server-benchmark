@@ -214,7 +214,7 @@ class ResourceMonitor:
 
         return {
             "sample_count": len(self._samples),
-            "telemetry_source": "nvml" if self._provider and "NvidiaProvider" in str(type(self._provider)) else "cpu_only",
+            "telemetry_source": getattr(self._provider, "TELEMETRY_SOURCE", "cpu_only"),
             "avg_cpu_percent": statistics.fmean(cpu),
             "max_cpu_percent": max(cpu),
             "avg_ram_used_bytes": statistics.fmean(ram),

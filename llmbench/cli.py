@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from . import __version__
+from .backend_setup import SUPPORTED_BACKENDS
 from .bootstrap import bootstrap_config
 from .compare import compare_summaries
 from .config import apply_duration_preset, load_config, save_example, validate_config
@@ -306,6 +307,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Auch neu installieren, wenn bereits ein lauffaehiger Build vorhanden ist"
     )
 
+    install_backend = sub.add_parser(
+        "install-backend",
+        help="Container-Backend (vLLM) automatisch installieren: Docker-Image laden",
+    )
+    install_backend.add_argument("--backend", choices=list(SUPPORTED_BACKENDS), required=True)
+    install_backend.add_argument("--image", default=None, help="Abweichendes Docker-Image statt des Standards")
+    install_backend.add_argument("--root", default=".", help="Projektwurzel fuer die Zustandsdatei")
+
+    uninstall_backend = sub.add_parser(
+        "uninstall-backend",
+        help="Container-Backend restlos entfernen: Container, Image, Zustandsdatei",
+    )
+    uninstall_backend.add_argument("--backend", choices=list(SUPPORTED_BACKENDS), required=True)
+    uninstall_backend.add_argument(
+        "--purge-models",
+        action="store_true",
+        help="Zusaetzlich das Volume mit heruntergeladenen Modell-Gewichten entfernen",
+    )
+    uninstall_backend.add_argument("--yes", action="store_true", help="Ohne Rueckfrage entfernen")
+    uninstall_backend.add_argument("--root", default=".", help="Projektwurzel fuer die Zustandsdatei")
+
     comp = sub.add_parser("compare", help="Mehrere Serverlaeufe vergleichen")
     comp.add_argument("inputs", nargs="+", help="Run-Ordner oder summary.json-Dateien")
     comp.add_argument("--out", default="comparison")
@@ -367,6 +389,43 @@ def _run_all_stress(config_path: str, out_dir: Path) -> dict[str, int]:
     statuses["quant"] = _run("quant", lambda: asyncio.run(run_quant_stress(config_path, stress_root / "quant")))
     write_json(stress_root / "index.json", statuses)
     return statuses
+
+
+def _uninstall_backend(args: argparse.Namespace) -> int:
+    """Zeigt vor dem Loeschen, was entfernt wird, und fragt nach.
+
+    Mehrere Gigabyte ohne Rueckfrage zu loeschen waere gegen die sonstige Praxis
+    dieses Projekts. Ohne TTY (CI, Pipe) gibt es niemanden, der antworten
+    koennte - dann wird nicht blockiert, sondern durchgefuehrt.
+    """
+    from llmbench.backend_setup import describe_backend_removal, remove_backend
+
+    root = Path(args.root).resolve()
+    plan = describe_backend_removal(args.backend, root, purge_models=args.purge_models)
+
+    print(f"Folgendes wird fuer das Backend '{args.backend}' entfernt:")
+    print(f" - Container: {plan['container']}")
+    print(f" - Docker-Image: {plan['image']}")
+    if plan["volume"]:
+        print(f" - Docker-Volume (Modell-Gewichte): {plan['volume']}")
+    else:
+        print(f" - Volume '{plan['volume_kept']}' bleibt erhalten (--purge-models entfernt es ebenfalls)")
+    print(f" - Zustandsdatei: {plan['state_file']}")
+    if not plan["installed"]:
+        print("Hinweis: Es ist keine Installation vermerkt. Es wird trotzdem aufgeraeumt.")
+
+    if not args.yes and sys.stdin.isatty():
+        answer = input("Wirklich entfernen? [j/N] ").strip().lower()
+        if answer not in {"j", "ja", "y", "yes"}:
+            print("Abgebrochen. Es wurde nichts entfernt.")
+            return 1
+
+    try:
+        remove_backend(args.backend, root, purge_models=args.purge_models, log=print)
+    except Exception as exc:
+        print(f"Deinstallation des Backends '{args.backend}' fehlgeschlagen: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -437,6 +496,22 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"llama.cpp {state.get('tag')} ({state.get('backend')}) bereit.")
         return 0
+
+    if args.cmd == "install-backend":
+        from llmbench.backend_setup import ensure_backend
+
+        try:
+            state = ensure_backend(args.backend, Path(args.root).resolve(), args.image, log=print)
+        except Exception as exc:
+            print(f"Installation des Backends '{args.backend}' fehlgeschlagen: {exc}", file=sys.stderr)
+            return 1
+        print(f"Backend '{args.backend}' ist bereit: {state.get('image')}")
+        if state.get("digest"):
+            print(f"Image-Digest: {state['digest']}")
+        return 0
+
+    if args.cmd == "uninstall-backend":
+        return _uninstall_backend(args)
 
     if args.cmd in {"doctor", "run"}:
         cfg = load_config(args.config)

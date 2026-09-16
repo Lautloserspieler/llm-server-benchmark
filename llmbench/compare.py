@@ -90,6 +90,17 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "topic": "Benchmark-Konfiguration (Details)",
                 "message": f"Abweichende Werte: {diff_details}",
             })
+    # Eigene Pruefung neben dem Konfigurations-Fingerabdruck: der deckt nur die
+    # Methodik-Parameter ab und waere bei llama.cpp gegen vLLM identisch. Zwei
+    # Inferenz-Server messen aber nicht dasselbe - unterschiedliche Batching-,
+    # Sampling- und Prefill-Strategien machen die Tokens/s-Werte unvergleichbar.
+    _mismatch(
+        "Backend",
+        _collect(summaries, lambda s: s.get("backend")),
+        "error",
+        "Die Laeufe wurden mit unterschiedlichen Inferenz-Backends gemessen. "
+        "Tokens/s aus verschiedenen Backends sind nicht direkt vergleichbar",
+    )
     _mismatch(
         "llama.cpp-Build",
         _collect(summaries, lambda s: (s.get("tools") or {}).get("llama_cpp_build_ids")),

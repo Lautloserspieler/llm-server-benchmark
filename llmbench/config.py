@@ -28,6 +28,11 @@ FINGERPRINT_KEYS = (
 
 VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 
+# Unterstuetzte Mess-Backends. Ein Tippfehler soll sofort bei validate_config()
+# auffallen und nicht erst mitten im Lauf.
+VALID_BACKENDS = ("llama_cpp", "vllm")
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
+
 class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"
     server_name: str | None = None
@@ -39,6 +44,19 @@ class ProjectConfig(BaseModel):
 class ToolsConfig(BaseModel):
     llama_bench: str = "llama-bench"
     llama_server: str = "llama-server"
+    # Default so gewaehlt, dass bestehende Konfigurationen ohne diesen
+    # Schluessel unveraendert weiterlaufen.
+    backend: str = "llama_cpp"
+    vllm_image: str = DEFAULT_VLLM_IMAGE
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, v):
+        if v not in VALID_BACKENDS:
+            raise ValueError(
+                f"Ungueltiges Backend: {v!r}. Erlaubt: " + ", ".join(VALID_BACKENDS)
+            )
+        return v
 
 class BenchmarkConfig(BaseModel):
     repetitions: int = Field(5, ge=1)
@@ -145,6 +163,12 @@ class SoakConfig(BaseModel):
 class ProfileConfig(BaseModel):
     name: str
     gpu_layers: int
+    # Durchreichefelder fuer Container-Backends. llama.cpp-Profile lassen sie
+    # einfach weg; sie sind dort None und werden nie ausgewertet.
+    tensor_parallel_size: int | None = None
+    quantization: str | None = None
+    gpu_memory_utilization: float | None = None
+    dtype: str | None = None
 
 class ModelConfig(BaseModel):
     name: str
@@ -199,7 +223,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "hash_models": True,
         "hash_tools": True,
     },
-    "tools": {"llama_bench": "llama-bench", "llama_server": "llama-server"},
+    "tools": {
+        "llama_bench": "llama-bench",
+        "llama_server": "llama-server",
+        "backend": "llama_cpp",
+        "vllm_image": DEFAULT_VLLM_IMAGE,
+    },
     "benchmark": {
         "repetitions": 5,
         "delay_seconds": 1,

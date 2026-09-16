@@ -17,7 +17,7 @@ from .report import generate_run_html
 from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
 from .tuner import tune_gpu_layers
-from .backends.llama_cpp import LlamaCppBackend
+from .backends import backend_name, get_backend
 from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
@@ -86,6 +86,24 @@ def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
     zwischen zwei Servern nicht belegbar."""
     with_hash = bool(cfg["project"].get("hash_tools", True))
     info: dict[str, Any] = {"llmbench_version": __version__}
+    name = backend_name(cfg)
+
+    if name == "vllm":
+        # Bei einem Container-Backend gibt es keine Programmdatei, die sich
+        # hashen liesse. Image-Tag und -Digest uebernehmen exakt dieselbe Rolle:
+        # sie belegen, welche Serverversion gemessen hat.
+        from .backend_setup import DEFAULT_VLLM_IMAGE
+        from .docker_backend import image_digest
+
+        image = cfg["tools"].get("vllm_image") or DEFAULT_VLLM_IMAGE
+        digest = None
+        try:
+            digest = image_digest(image)
+        except Exception:
+            digest = None
+        info["vllm"] = {"image": image, "digest": digest}
+        return info
+
     info["llama_bench"] = probe_build(cfg["tools"]["llama_bench"], with_hash=with_hash)
     server_exe = cfg["tools"].get("llama_server")
     if server_exe:
@@ -128,13 +146,16 @@ def run_suite(
     write_json(run_dir / "hardware.json", hardware)
     tools = _tool_info(cfg)
 
-    backend = LlamaCppBackend(cfg["tools"]["llama_bench"], cfg["tools"]["llama_server"])
+    backend = get_backend(cfg)
 
     summary: dict[str, Any] = {
         "schema_version": 2,
         "llmbench_version": __version__,
         "project": cfg["project"].get("name"),
         "server_name": server_name,
+        # Tokens/s aus llama.cpp und vLLM sind nicht direkt vergleichbar;
+        # compare.py lehnt einen solchen Vergleich anhand dieses Feldes ab.
+        "backend": backend_name(cfg),
         "started_at": utc_now_iso(),
         "config_path": cfg.get("_config_path"),
         "config": public_config(cfg),
@@ -237,36 +258,63 @@ def run_suite(
                 "settings": profile,
                 "benchmarks": {},
             }
-            for kind in BENCH_KINDS:
-                reporter.test_started(model["name"], profile["name"], kind)
-                try:
-                    result = backend.run_benchmark(
-                        meta["path"],
-                        profile,
-                        kind,
-                        profile_dir,
-                        cfg["benchmark"],
-                        on_progress=reporter.progress,
-                    )
-                except Exception as exc:
-                    result = {
-                        "kind": kind,
-                        "status": "failed",
-                        "error": str(exc),
-                        "traceback": traceback.format_exc(),
-                    }
-                reporter.test_finished(
-                    result.get("status", "failed"),
-                    flatten_bench_rows(result),
-                    result.get("error"),
+            # HTTP-Backends starten ihren Server hier einmal pro Profil statt
+            # dreimal, einmal je Testart. Fuer llama.cpp ist der Hook ein no-op.
+            begin_error: str | None = None
+            try:
+                backend.begin_profile(meta["path"], profile, cfg["benchmark"], profile_dir)
+            except Exception as exc:
+                begin_error = str(exc)
+                summary["warnings"].append(
+                    f"{model['name']}/{profile['name']}: Backend konnte nicht gestartet werden: {exc}"
                 )
-                if result.get("status") == "failed" and result.get("error_detail"):
-                    reporter.note(f"llama-bench stderr:\n{result['error_detail']}")
-                build_ids.update(build_ids_from_rows(result))
-                for warn in (result.get("telemetry") or {}).get("warnings", []):
-                    summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
-                    reporter.note(warn)
-                profile_result["benchmarks"][kind] = result
+                reporter.note(f"Backend-Start fehlgeschlagen: {exc}")
+
+            try:
+                for kind in BENCH_KINDS:
+                    reporter.test_started(model["name"], profile["name"], kind)
+                    if begin_error:
+                        result = {
+                            "kind": kind,
+                            "status": "failed",
+                            "error": f"Backend konnte nicht gestartet werden: {begin_error}",
+                        }
+                    else:
+                        try:
+                            result = backend.run_benchmark(
+                                meta["path"],
+                                profile,
+                                kind,
+                                profile_dir,
+                                cfg["benchmark"],
+                                on_progress=reporter.progress,
+                            )
+                        except Exception as exc:
+                            result = {
+                                "kind": kind,
+                                "status": "failed",
+                                "error": str(exc),
+                                "traceback": traceback.format_exc(),
+                            }
+                    reporter.test_finished(
+                        result.get("status", "failed"),
+                        flatten_bench_rows(result),
+                        result.get("error"),
+                    )
+                    if result.get("status") == "failed" and result.get("error_detail"):
+                        reporter.note(f"Backend-Fehlerausgabe:\n{result['error_detail']}")
+                    build_ids.update(build_ids_from_rows(result))
+                    for warn in (result.get("telemetry") or {}).get("warnings", []):
+                        summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
+                        reporter.note(warn)
+                    profile_result["benchmarks"][kind] = result
+            finally:
+                try:
+                    backend.end_profile()
+                except Exception as exc:
+                    summary["warnings"].append(
+                        f"{model['name']}/{profile['name']}: Backend konnte nicht sauber beendet werden: {exc}"
+                    )
             model_result["profiles"].append(profile_result)
 
         soak_cfg = dict(cfg.get("soak", {}))

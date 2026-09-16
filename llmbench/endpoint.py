@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import normalize_flash_attention
+from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
 from .monitor import ResourceMonitor, strip_samples
 from .utils import auth_headers, kill_process_tree, resolve_executable, utc_now_iso, write_json
 
@@ -207,6 +208,19 @@ def stop_llama_server(proc: subprocess.Popen[Any]) -> None:
         proc._llmbench_log_file.close()  # type: ignore[attr-defined]
 
 
+def api_style_for(cfg: dict[str, Any]) -> str:
+    """API-Dialekt fuer diesen Endpoint.
+
+    Historisch kannte llmbench nur llama.cpp und dort die Unterscheidung
+    "Chat-Format ja/nein". Das ist jetzt nur noch einer von mehreren Dialekten;
+    ``api_style`` kann explizit gesetzt werden, sonst gilt die alte Regel.
+    """
+    explicit = cfg.get("api_style")
+    if explicit:
+        return str(explicit)
+    return API_STYLE_LLAMA_CPP_CHAT if cfg.get("chat_format", False) else API_STYLE_LLAMA_CPP
+
+
 async def _one_completion_async(
     client: httpx.AsyncClient,
     base_url: str,
@@ -214,109 +228,10 @@ async def _one_completion_async(
     cfg: dict[str, Any],
     request_id: int,
 ) -> dict[str, Any]:
-    max_tokens = int(cfg["max_tokens"])
-    chat_format = cfg.get("chat_format", False)
-
-    payload: dict[str, Any] = {
-        "n_predict": max_tokens,
-        "temperature": float(cfg.get("temperature", 0.0)),
-        "stream": True,
-        "cache_prompt": False,
-    }
-
-    if "top_p" in cfg:
-        payload["top_p"] = float(cfg["top_p"])
-    if "top_k" in cfg:
-        payload["top_k"] = int(cfg["top_k"])
-    if "repeat_penalty" in cfg:
-        payload["repeat_penalty"] = float(cfg["repeat_penalty"])
-
-    endpoint_path = "/completion"
-    if chat_format:
-        endpoint_path = "/v1/chat/completions"
-        payload["messages"] = prompt_or_messages
-        payload["max_tokens"] = max_tokens
-        payload.pop("n_predict", None)
-    else:
-        payload["prompt"] = f"{prompt_or_messages}\nBenchmark request id: {request_id}"
-        payload["return_tokens"] = True
-
-    if cfg.get("ignore_eos", True):
-        payload["ignore_eos"] = True
-    if cfg.get("seed") is not None:
-        payload["seed"] = int(cfg["seed"])
-
-    timeout = float(cfg.get("timeout_seconds", 600))
-    started = time.perf_counter()
-    ttft: float | None = None
-    token_count = 0
-    content_chars = 0
-    final_data: dict[str, Any] = {}
-    error: str | None = None
-
-    try:
-        async with client.stream(
-            "POST", base_url.rstrip("/") + endpoint_path, json=payload, timeout=timeout
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                text = line.strip()
-                if text.startswith("data:"):
-                    text = text[5:].strip()
-                if text == "[DONE]":
-                    continue
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError:
-                    continue
-
-                if chat_format:
-                    choices = data.get("choices") or []
-                    if choices:
-                        delta = choices[0].get("delta") or {}
-                        content = delta.get("content") or ""
-                        tokens = [1] if content else []
-                else:
-                    tokens = data.get("tokens") or []
-                    content = data.get("content") or ""
-
-                if ttft is None and (tokens or content):
-                    ttft = time.perf_counter() - started
-                token_count += len(tokens)
-                content_chars += len(content)
-                final_data = data
-    except Exception as exc:
-        error = str(exc)
-
-    finished = time.perf_counter()
-
-    timings = final_data.get("timings") or {}
-    usage = final_data.get("usage") or {}
-
-    exact_total = (
-        timings.get("predicted_n")
-        or timings.get("tokens_predicted")
-        or usage.get("completion_tokens")
+    """Duenne Huelle um die gemeinsame Logik in ``http_bench``."""
+    return await one_completion_async(
+        client, base_url, prompt_or_messages, cfg, request_id, api_style=api_style_for(cfg)
     )
-    if exact_total is not None:
-        with contextlib.suppress(Exception):
-            token_count = int(exact_total)
-
-    duration = finished - started
-    return {
-        "request_id": request_id,
-        "ok": error is None,
-        "error": error,
-        "duration_seconds": duration,
-        "ttft_seconds": ttft,
-        "output_tokens": token_count,
-        "requested_tokens": max_tokens,
-        "output_chars": content_chars,
-        "request_tps": (token_count / duration) if duration > 0 and token_count else 0.0,
-        "server_timings": timings,
-    }
 
 
 async def _run_level_async(

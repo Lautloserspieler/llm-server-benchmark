@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.6.0
+
+### vLLM als zweites Backend (ueber Docker)
+
+- Neues Backend `vllm`: `tools.backend: vllm` in `benchmark.yaml` benchmarkt
+  einen vLLM-Server statt llama.cpp. vLLM laeuft dabei ausschliesslich als
+  Docker-Container (offizielles Image `vllm/vllm-openai`) - kein lokales
+  pip/venv-Setup noetig, und Windows (Docker Desktop/WSL2) sowie Linux
+  (natives Docker) verhalten sich dadurch identisch.
+- Prompt-/Generation-/Long-Context-Messungen laufen ueber kalibrierte
+  HTTP-Requests gegen die OpenAI-kompatible `/v1/completions`-Schnittstelle
+  (neues Modul `llmbench/http_bench.py`), inklusive Schutz gegen vLLMs
+  Prefix-Caching (jeder Fuellprompt bekommt eine eindeutige Nonce, damit
+  Wiederholungen nicht versehentlich einen Cache-Hit statt echter
+  Prompt-Verarbeitung messen).
+- Neue Befehle `llmbench install-backend --backend vllm` und
+  `llmbench uninstall-backend --backend vllm [--purge-models]`: automatische
+  Installation (Image-Pull) und restlose Deinstallation (Container, Image,
+  optional das Modell-Volume) - kein Backend darf install-only sein.
+- `llmbench compare --strict` lehnt jetzt Vergleiche zwischen Laeufen mit
+  unterschiedlichem Backend ab (z. B. llama.cpp gegen vLLM), da Tokens/s
+  zwischen Backends nicht direkt vergleichbar sind.
+- `BenchmarkBackend` (Basisklasse fuer alle Backends) hat zwei neue,
+  optionale Hooks `begin_profile`/`end_profile` fuer Backends, die den
+  Server einmal pro Profil statt einmal pro Testart starten wollen -
+  bestehende llama.cpp-Konfigurationen sind davon unberuehrt.
+
+### AMD-GPU-Live-Telemetrie (rocm-smi)
+
+- Neuer `AmdProvider` liefert erstmals laufende GPU-Auslastung, VRAM,
+  Temperatur und Power fuer AMD-GPUs (`rocm-smi --json`), bisher gab es dort
+  nur einmalige Hardware-Erkennung ohne Live-Werte.
+- Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt ein neuer
+  `CompositeProvider` jetzt alle verfuegbaren Quellen parallel, statt wie
+  bisher nur den erstbesten Hersteller zu beruecksichtigen.
+- Fix: `telemetry_source` in den Ergebnisdateien wurde bei Nicht-NVIDIA-
+  Quellen faelschlich als `cpu_only` gemeldet, obwohl echte GPU-Messwerte
+  vorlagen.
+
+### Projekt-Infrastruktur
+
+- Neu: `CONTRIBUTING.md`, `ROADMAP.md`, GitHub-Issue-/PR-Vorlagen unter
+  `.github/` - Grundlage fuer die geplante Erweiterung um weitere Backends
+  (Ollama, TGI) und GPU-Hersteller (Intel), siehe `ROADMAP.md`.
+
 ## 1.4.1
 
 ### Energiesparmodus-Warnung fuer Linux-Desktops (z. B. Ubuntu 24.04 LTS)

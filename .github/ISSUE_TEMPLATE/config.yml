@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Fragen / Questions"
+    url: "https://github.com/Lautloserspieler/llm-server-benchmark/discussions"
+    about: "Für allgemeine Fragen bitte Discussions statt eines Issues verwenden. / For general questions, please use Discussions instead of an issue."

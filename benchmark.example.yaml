@@ -10,6 +10,17 @@ tools:
   llama_bench: "tools/llama.cpp/llama-bench.exe"
   llama_server: "tools/llama.cpp/llama-server.exe"
 
+  # Mess-Backend. Ohne diesen Schluessel gilt "llama_cpp" - bestehende
+  # Konfigurationen bleiben also unveraendert gueltig.
+  # Erlaubt: llama_cpp, vllm
+  # backend: "llama_cpp"
+
+  # vLLM laeuft als Docker-Container, nicht als lokale pip-Installation:
+  #   llmbench install-backend --backend vllm
+  #   llmbench uninstall-backend --backend vllm [--purge-models]
+  # Voraussetzung ist Docker (fuer GPU zusaetzlich das NVIDIA Container Toolkit).
+  # vllm_image: "vllm/vllm-openai:latest"
+
 benchmark:
   repetitions: 5
   delay_seconds: 1
@@ -103,3 +114,22 @@ models:
   #       # mlock: true
   #     - name: "CPU-Only"
   #       gpu_layers: 0
+
+  # Beispiel fuer einen Lauf mit tools.backend: "vllm".
+  # Der Pfad zeigt dann auf ein HuggingFace-Modellverzeichnis (oder eine
+  # Repo-Kennung wie "mistralai/Mistral-7B-v0.1"); vLLM startet als Container,
+  # das Modellverzeichnis wird schreibgeschuetzt eingehaengt.
+  # - name: "Mistral-7B-vLLM"
+  #   path: "models/Mistral-7B-Instruct"
+  #   profiles:
+  #     - name: "vLLM-1GPU"
+  #       # gpu_layers wird von vLLM nicht ausgewertet, ist aber Pflichtfeld;
+  #       # -1 haelt das Profil in der GPU-Auswahl (--hardware gpu).
+  #       gpu_layers: -1
+  #       tensor_parallel_size: 1
+  #       gpu_memory_utilization: 0.90
+  #       dtype: "bfloat16"
+  #       # quantization: "awq"
+  #     - name: "vLLM-2GPU"
+  #       gpu_layers: -1
+  #       tensor_parallel_size: 2

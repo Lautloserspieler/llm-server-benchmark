@@ -184,6 +184,55 @@ def test_comparison_contains_soak_results_in_html_and_pdf(tmp_path: Path):
     assert "Throttling" in text
 
 
+# ------------------------------------------------------------ Backend-Vergleich
+
+def _backend_issues(*backends: str | None) -> list[dict]:
+    summaries = []
+    for i, backend in enumerate(backends):
+        summary = make_summary(f"S{i}")
+        if backend is not None:
+            summary["backend"] = backend
+        summaries.append(summary)
+    return [i for i in check_consistency(summaries) if i["topic"] == "Backend"]
+
+
+def test_same_backend_produces_no_issue():
+    assert _backend_issues("llama_cpp", "llama_cpp") == []
+
+
+def test_different_backends_are_an_error():
+    """Tokens/s aus llama.cpp und vLLM duerfen nicht wortlos nebeneinanderstehen."""
+    issues = _backend_issues("llama_cpp", "vllm")
+    assert len(issues) == 1
+    assert issues[0]["level"] == "error"
+    assert "nicht direkt vergleichbar" in issues[0]["message"]
+    # Die konkreten Backends muessen in der Meldung auftauchen.
+    assert "llama_cpp" in issues[0]["message"]
+    assert "vllm" in issues[0]["message"]
+
+
+def test_backend_mismatch_is_strict_relevant(tmp_path: Path):
+    """--strict muss einen backend-uebergreifenden Vergleich ablehnen."""
+    dirs = []
+    for name, backend in (("A", "llama_cpp"), ("B", "vllm")):
+        d = tmp_path / name
+        d.mkdir()
+        summary = make_summary(name)
+        summary["backend"] = backend
+        (d / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        dirs.append(d)
+
+    _report, issues = compare_summaries(dirs, tmp_path / "out")
+    errors = [i for i in issues if i["level"] == "error"]
+    assert any(i["topic"] == "Backend" for i in errors)
+
+
+def test_legacy_summaries_without_backend_are_not_flagged():
+    """Alte Laeufe kennen das Feld nicht - das darf kein Fehler sein."""
+    assert _backend_issues(None, None) == []
+    assert _backend_issues("llama_cpp", None) == []
+
+
 def test_missing_ttft_is_not_rendered_as_zero(tmp_path: Path):
     endpoint = {
         "status": "ok",

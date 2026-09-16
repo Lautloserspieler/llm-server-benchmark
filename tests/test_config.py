@@ -108,3 +108,83 @@ def test_public_config_redacts_api_key_and_internals():
     assert out["endpoint"]["api_key"] == "***"
     assert "_config_path" not in out
     assert cfg["endpoint"]["api_key"] == "geheim"
+
+
+# --------------------------------------------------------------- tools.backend
+
+def test_tools_backend_defaults_to_llama_cpp():
+    """Bestehende Konfigurationen ohne tools.backend muessen unveraendert laufen."""
+    assert DEFAULT_CONFIG["tools"]["backend"] == "llama_cpp"
+    merged = deep_merge(DEFAULT_CONFIG, {"tools": {"llama_bench": "x", "llama_server": "y"}})
+    assert merged["tools"]["backend"] == "llama_cpp"
+
+
+def test_tools_vllm_image_has_default():
+    assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:latest"
+
+
+def test_validation_accepts_known_backends():
+    for name in ("llama_cpp", "vllm"):
+        cfg = _valid_cfg(tools={"backend": name})
+        assert validate_config(cfg) == [], name
+
+
+def test_validation_rejects_unknown_backend():
+    cfg = _valid_cfg(tools={"backend": "sglang"})
+    errors = validate_config(cfg)
+    assert any("Ungueltiges Backend" in e for e in errors)
+    assert any("tools.backend" in e for e in errors)
+
+
+def test_validation_rejects_backend_typo():
+    cfg = _valid_cfg(tools={"backend": "vLLM"})
+    assert any("Ungueltiges Backend" in e for e in validate_config(cfg))
+
+
+def test_vllm_image_is_overridable():
+    cfg = _valid_cfg(tools={"backend": "vllm", "vllm_image": "vllm/vllm-openai:v0.6.0"})
+    assert validate_config(cfg) == []
+
+
+# ------------------------------------------------------- vLLM-Profilfelder
+
+def test_profile_accepts_vllm_passthrough_fields():
+    cfg = _valid_cfg(
+        tools={"backend": "vllm"},
+        models=[{
+            "name": "M", "path": "x", "profiles": [{
+                "name": "vLLM", "gpu_layers": -1,
+                "tensor_parallel_size": 2, "quantization": "awq",
+                "gpu_memory_utilization": 0.9, "dtype": "bfloat16",
+            }],
+        }],
+    )
+    assert validate_config(cfg) == []
+
+
+def test_profile_vllm_fields_are_optional_for_llama_cpp():
+    """llama.cpp-Profile lassen die neuen Felder einfach weg."""
+    from llmbench.config import ProfileConfig
+
+    profile = ProfileConfig(name="Full-GPU", gpu_layers=-1)
+    assert profile.tensor_parallel_size is None
+    assert profile.quantization is None
+    assert profile.gpu_memory_utilization is None
+    assert profile.dtype is None
+
+
+def test_profile_rejects_non_numeric_tensor_parallel_size():
+    cfg = _valid_cfg(models=[{
+        "name": "M", "path": "x",
+        "profiles": [{"name": "P", "gpu_layers": -1, "tensor_parallel_size": "zwei"}],
+    }])
+    assert validate_config(cfg) != []
+
+
+def test_backend_is_not_part_of_the_config_fingerprint():
+    """FINGERPRINT_KEYS bleibt bewusst auf Methodik-Parameter beschraenkt; das
+    Backend wird separat ueber summary['backend'] verglichen."""
+    from llmbench.config import FINGERPRINT_KEYS
+
+    assert "backend" not in FINGERPRINT_KEYS
+    assert "vllm_image" not in FINGERPRINT_KEYS

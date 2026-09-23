@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Neue llama.cpp-Builds: `--no-mmap` durch `--load-mode` ersetzt
+
+- Fix: Aktuelle llama.cpp-Builds kennen `--no-mmap`/`--mlock` nicht mehr
+  (ersetzt durch `-lm/--load-mode`). CPU-Only-Profile liessen `llama-server`
+  deshalb mit `error: invalid argument: --no-mmap` abbrechen (Dauerlasttest,
+  Endpoint- und Stresstests). llmbench fragt jetzt einmal `--help` ab und nutzt
+  bei neuen Builds `-lm none` bzw. `-lm mlock`, bei alten weiter die alten Flags.
+- `llama-bench` lief bei solchen Builds bisher still mit mmap weiter; jetzt wird
+  korrekt ohne mmap geladen. Muss ein Build doch ohne diese Option laufen,
+  erscheint eine (uebersetzte) Warnung im Terminal und in der Zusammenfassung.
+- Unter Windows wird der Kernel-Prozess `System` (PID 4) nicht mehr als
+  "fremder GPU-Prozess" gemeldet.
+
 ### llama-server-Startfehler werden sofort und mit echtem Grund gemeldet
 
 - Fix: Beendete sich `llama-server` direkt beim Start (Absturz, abgelehnter

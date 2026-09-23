@@ -183,3 +183,14 @@ def test_idle_wait_gives_up_after_the_limit():
     monitor = ResourceMonitor(interval=10.0, idle_wait_seconds=0)
     monitor._provider = provider
     assert monitor._wait_for_idle_gpu()["gpus"][0]["util_gpu_percent"] == 90.0
+
+
+def test_windows_system_process_is_not_reported_as_foreign():
+    # nvidia-smi fuehrt unter Windows den Kernel-Prozess "System" (PID 4) als GPU-Nutzer.
+    monitor = ResourceMonitor()
+    monitor._own_pids = {111}
+    monitor._seen_gpu_pids = {0, 4, 111}
+    monitor._samples = [{"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": []}]
+    summary = monitor.summary()
+    assert summary["foreign_gpu_processes"] == []
+    assert not any("Fremde Prozesse" in w for w in summary["warnings"])

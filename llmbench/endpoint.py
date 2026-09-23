@@ -19,6 +19,7 @@ from .config import normalize_flash_attention
 from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
 from .monitor import ResourceMonitor, strip_samples
 from .i18n import _
+from .llama_flags import load_flags
 from .utils import (
     auth_headers,
     format_exit_code,
@@ -213,10 +214,11 @@ def start_llama_server(
         "-ngl", server_ngl,
     ]
     # CPU-only: Modell muss vollstaendig in den RAM geladen werden.
-    if profile.get("no_mmap") or str(gpu_layers) == "0":
-        cmd.append("--no-mmap")
-    if profile.get("mlock"):
-        cmd.append("--mlock")
+    cmd += load_flags(
+        exe,
+        no_mmap=bool(profile.get("no_mmap")) or str(gpu_layers) == "0",
+        mlock=bool(profile.get("mlock")),
+    )
 
     if endpoint_cfg.get("fit"):
         cmd.append("--fit")

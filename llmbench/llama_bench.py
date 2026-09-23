@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import IO, Any
 
 from .config import normalize_flash_attention
+from .i18n import _
+from .llama_flags import load_flags
 from .monitor import ResourceMonitor, strip_samples
 from .utils import csv_value, file_fingerprint, kill_process_tree, read_json, resolve_executable, run_capture, utc_now_iso, write_json
 
@@ -117,10 +119,11 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
-    if with_no_mmap and (profile.get("no_mmap") or str(profile.get("gpu_layers", -1)) == "0"):
-        args.append("--no-mmap")
-    if profile.get("mlock"):
-        args.append("--mlock")
+    args += load_flags(
+        exe,
+        no_mmap=with_no_mmap and (bool(profile.get("no_mmap")) or str(profile.get("gpu_layers", -1)) == "0"),
+        mlock=bool(profile.get("mlock")),
+    )
     if with_progress:
         args.append("--progress")
     threads = profile.get("threads", "auto")
@@ -139,14 +142,20 @@ def _base_args(
     return args
 
 
-def _rejected_progress(stdout: str, stderr: str) -> bool:
+_REJECTED_WORDS = ("invalid parameter", "invalid argument", "unknown argument")
+
+
+def _rejected_flag(flag: str, stdout: str, stderr: str) -> bool:
     text = (stdout or "") + (stderr or "")
-    return "--progress" in text and ("invalid parameter" in text or "unknown argument" in text)
+    return flag in text and any(word in text for word in _REJECTED_WORDS)
+
+
+def _rejected_progress(stdout: str, stderr: str) -> bool:
+    return _rejected_flag("--progress", stdout, stderr)
 
 
 def _rejected_no_mmap(stdout: str, stderr: str) -> bool:
-    text = (stdout or "") + (stderr or "")
-    return "--no-mmap" in text and ("invalid parameter" in text or "unknown argument" in text)
+    return _rejected_flag("--no-mmap", stdout, stderr)
 
 
 def _execute(
@@ -228,6 +237,7 @@ def run_llama_bench(
     # Zeitmessung - sonst zaehlt die Wartezeit zur Benchmark-Dauer.
     monitor.start()
     started = time.perf_counter()
+    load_warning: str | None = None
 
     stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
 
@@ -245,8 +255,12 @@ def run_llama_bench(
             _base_args(exe, model_path, bench_cfg, profile, with_progress=False, with_no_mmap=False),
             bench_cfg, test_kind,
         )
+        load_warning = _(
+            "Dieser llama.cpp-Build lehnt das Laden ohne mmap ab. Der Test laeuft deshalb mit mmap; "
+            "CPU-Werte sind nicht direkt mit Laeufen ohne mmap vergleichbar."
+        )
         if on_progress:
-            on_progress("Build kennt --no-mmap nicht, Wiederholung ohne --no-mmap", None)
+            on_progress(load_warning, None)
         stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
 
     duration = time.perf_counter() - started
@@ -263,6 +277,8 @@ def run_llama_bench(
         "stderr": stderr,
         "telemetry": telemetry,
     }
+    if load_warning:
+        raw["warnings"] = [load_warning]
     write_json(output_dir / f"raw_{test_kind}.json", raw)
 
     light = strip_samples(telemetry)
@@ -302,13 +318,16 @@ def run_llama_bench(
             "stdout_tail": (stdout or "")[-4000:],
             "telemetry": light,
         }
-    return {
+    result: dict[str, Any] = {
         "kind": test_kind,
         "status": "ok",
         "duration_seconds": duration,
         "rows": rows,
         "telemetry": light,
     }
+    if load_warning:
+        result["warnings"] = [load_warning]
+    return result
 
 
 def flatten_bench_rows(result: dict[str, Any]) -> list[dict[str, Any]]:

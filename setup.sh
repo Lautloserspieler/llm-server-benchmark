@@ -92,4 +92,7 @@ export LLMBENCH_USE_SAVED_SELECTION=1
 ui_section setup.section_config
 python -m llmbench setup
 
+# Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
+python -m llmbench.backend_select --root "$ROOT_DIR" --config benchmark.yaml
+
 ui_done setup.done_native setup.done_hint

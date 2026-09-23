@@ -155,6 +155,67 @@ function Install-DockerDesktop {
     }
 }
 
+# Das CUDA-13-Image braucht einen NVIDIA-Treiber ab Version 580.
+$MinNvidiaDriverMajor = 580
+$NvidiaDriverUrl = 'https://www.nvidia.com/Download/index.aspx'
+
+function Get-NvidiaSmiCommand {
+    $cmd = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd }
+    $fallback = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
+    if ($env:SystemRoot -and (Test-Path -LiteralPath $fallback)) { return (Get-Command $fallback) }
+    return $null
+}
+
+function Test-NvidiaGpuPresent {
+    try {
+        return @(Get-CimInstance Win32_VideoController -ErrorAction Stop | Where-Object { $_.Name -match 'NVIDIA' }).Count -gt 0
+    } catch {
+        return $false
+    }
+}
+
+function Request-NvidiaDriverDownload {
+    # Treiber werden nie still installiert - nur die offizielle Downloadseite
+    # wird auf Wunsch geoeffnet.
+    Write-UiInfo $NvidiaDriverUrl
+    if ((Test-UiInteractive) -and (Confirm-UiYesNo (T 'nvidia.open_download') -DefaultYes)) {
+        Start-Process $NvidiaDriverUrl | Out-Null
+    }
+}
+
+function Assert-NvidiaDriver {
+    Write-UiStep (T 'nvidia.check')
+    $smi = Get-NvidiaSmiCommand
+    if (-not $smi) {
+        if (-not (Test-NvidiaGpuPresent)) { throw (T 'nvidia.no_gpu') }
+        Write-UiWarn (T 'nvidia.driver_missing')
+        Request-NvidiaDriverDownload
+        throw (T 'nvidia.driver_required' $MinNvidiaDriverMajor)
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $driver = (& $smi --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+    $driver = if ($driver) { $driver.ToString().Trim() } else { '' }
+    $major = 0
+    if (-not ($driver -match '^(\d+)') -or -not [int]::TryParse($Matches[1], [ref]$major)) {
+        Write-UiWarn (T 'nvidia.driver_unreadable')
+        Request-NvidiaDriverDownload
+        throw (T 'nvidia.driver_required' $MinNvidiaDriverMajor)
+    }
+    if ($major -lt $MinNvidiaDriverMajor) {
+        Write-UiWarn (T 'nvidia.driver_old' $driver $MinNvidiaDriverMajor)
+        Request-NvidiaDriverDownload
+        throw (T 'nvidia.driver_required' $MinNvidiaDriverMajor)
+    }
+    Write-UiOk (T 'nvidia.driver_ok' $driver)
+}
+
 function Ensure-DockerDesktop {
     Write-UiStep (T 'docker.check')
     Add-DockerCliToPath
@@ -320,6 +381,9 @@ function Ensure-BenchmarkImage {
 }
 
 function Setup-DockerBenchmark {
+    # Zuerst: ohne passenden NVIDIA-Treiber ist der Docker-GPU-Modus sinnlos -
+    # dann gar nicht erst WSL/Docker installieren, sondern nativ weitermachen.
+    Assert-NvidiaDriver
     Ensure-WslUbuntu
     Ensure-DockerDesktop
     Initialize-DockerEnvironment
@@ -384,8 +448,9 @@ try {
     exit 0
 } catch [RebootRequiredException] {
     Write-Host ''
+    # Den Neustart-Dialog (automatisch fortsetzen?) zeigt der Aufrufer
+    # (SETUP.ps1 bzw. START_BENCHMARK.ps1) ueber Invoke-RebootFlow.
     Write-UiWarn $_.Exception.Message
-    Write-UiWarn (T 'ui.reboot_then_rerun')
     exit $RebootExitCode
 } catch {
     Write-Host ''

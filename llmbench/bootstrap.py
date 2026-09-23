@@ -397,3 +397,19 @@ def bootstrap_config(
         "system_search": allow_system_search,
         "warnings": warnings,
     }
+
+
+def read_config_file(config_path: str | Path) -> dict[str, Any]:
+    """benchmark.yaml roh lesen (ohne Standardwerte); fehlt sie, gibt es ein leeres dict."""
+    path = Path(config_path)
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def set_default_backend(config_path: str | Path, backend: str) -> None:
+    """Traegt ``tools.backend`` ein und laesst den Rest der Datei unveraendert."""
+    path = Path(config_path)
+    cfg = read_config_file(path)
+    cfg.setdefault("tools", {})["backend"] = backend
+    path.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120), encoding="utf-8")

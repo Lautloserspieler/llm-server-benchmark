@@ -48,7 +48,9 @@ if ($Mode -ne "native") {
     if (-not $dockerReady -and $Mode -eq "docker") {
         Write-UiWarn (T 'start.docker_setup_now')
         & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $DockerScript -Action Setup
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $rc = $LASTEXITCODE
+        if ($rc -eq 3010) { Invoke-RebootFlow 'START_BENCHMARK.bat' }
+        if ($rc -ne 0) { exit $rc }
         $dockerReady = $true
     }
     if ($dockerReady) {

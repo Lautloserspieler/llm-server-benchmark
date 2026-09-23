@@ -117,7 +117,9 @@ Every run records provenance that can be checked before two servers are compared
 
 The very first step of `setup.bat` / `setup.sh` is choosing the language (Deutsch/English). The choice is saved in `.runtime/language` and used everywhere afterwards: installer scripts, Python CLI, reports and the Docker container. Set `LLMBENCH_LANG=de|en` to skip the question.
 
-`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks before each one and then downloads and installs it automatically. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup stops with a clear message; restart Windows and run `setup.bat` again to continue. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
+`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks before each one and then downloads and installs it automatically. Before setting up Docker GPU mode it checks for an NVIDIA card and a recent enough driver (580+, required by the CUDA 13 image); if it is missing or too old you get a clear message and the option to open NVIDIA's driver page — drivers are never installed silently. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup offers to continue automatically after the next sign-in and to restart right away.
+
+At the end of the native setup you can pick optional container backends (currently vLLM): a table shows their status and download size, each download is confirmed individually, and you choose the default backend for benchmarks. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
 
 ### Linux
 

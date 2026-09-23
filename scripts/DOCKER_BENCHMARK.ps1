@@ -16,16 +16,19 @@ $RuntimeDir = Join-Path $Root '.runtime'
 $ReadyFile = Join-Path $RuntimeDir 'docker-ready'
 $ImageFile = Join-Path $RuntimeDir 'docker-image'
 
+Import-Module (Join-Path $PSScriptRoot 'lib\UI.psm1') -Force -DisableNameChecking
+Initialize-LlmbenchUI
+
 function Invoke-Docker {
     param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
     & docker @Args
-    if ($LASTEXITCODE -ne 0) { throw "docker $($Args -join ' ') ist fehlgeschlagen (Exitcode $LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'docker.command_failed' "docker $($Args -join ' ')" $LASTEXITCODE) }
 }
 
 function Invoke-Compose {
     param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
     & docker compose -f $ComposeFile @Args
-    if ($LASTEXITCODE -ne 0) { throw "docker compose $($Args -join ' ') ist fehlgeschlagen (Exitcode $LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'docker.command_failed' "docker compose $($Args -join ' ')" $LASTEXITCODE) }
 }
 
 # Exitcode 3010 = "Neustart erforderlich" (Windows-Installer-Konvention).
@@ -36,20 +39,6 @@ $DockerCliDir = Join-Path $DockerDesktopDir 'resources\bin'
 
 class RebootRequiredException : System.Exception {
     RebootRequiredException([string]$Message) : base($Message) {}
-}
-
-function Confirm-Install {
-    param([string]$What)
-    # LLMBENCH_AUTO_INSTALL=1 beantwortet alle Rueckfragen automatisch mit Ja
-    # (z. B. fuer unbeaufsichtigte Installationen), =0 immer mit Nein.
-    if ($env:LLMBENCH_AUTO_INSTALL -eq '1') {
-        Write-Host "[+] $What wird installiert (LLMBENCH_AUTO_INSTALL=1)." -ForegroundColor Cyan
-        return $true
-    }
-    if ($env:LLMBENCH_AUTO_INSTALL -eq '0') { return $false }
-    if ([Console]::IsInputRedirected) { return $false }
-    $answer = Read-Host "[?] $What fehlt. Jetzt automatisch herunterladen und installieren? [J/n]"
-    return ($answer -eq '' -or $answer -match '^[jJyY]')
 }
 
 function Test-RebootPending {
@@ -95,23 +84,23 @@ function Test-DockerDesktopReady {
 }
 
 function Ensure-WslUbuntu {
-    Write-Host '[+] Pruefe WSL und Ubuntu...' -ForegroundColor Cyan
+    Write-UiStep (T 'wsl.check')
     if (Test-RebootPending) {
-        throw [RebootRequiredException]::new('Eine vorherige WSL-/Windows-Installation wartet noch auf einen Neustart.')
+        throw [RebootRequiredException]::new((T 'wsl.reboot_pending'))
     }
 
     $hasWsl = [bool](Get-Command wsl -ErrorAction SilentlyContinue)
     if ($hasWsl -and ((Get-WslDistros) -match 'Ubuntu')) {
-        Write-Host '[OK] WSL und Ubuntu sind vorhanden.' -ForegroundColor Green
+        Write-UiOk (T 'wsl.present')
         return
     }
 
-    $what = if ($hasWsl) { 'Ubuntu fuer WSL2' } else { 'WSL2 (Windows-Subsystem fuer Linux) mit Ubuntu' }
+    $what = if ($hasWsl) { T 'wsl.name_ubuntu' } else { T 'wsl.name_full' }
     if (-not (Confirm-Install $what)) {
-        throw "$what wird fuer den Docker-Modus benoetigt, die Installation wurde abgelehnt."
+        throw (T 'docker.declined' $what)
     }
 
-    Write-Host "[+] Installiere $what..." -ForegroundColor Cyan
+    Write-UiStep (T 'ui.installing' $what)
     # Direkter Aufruf ohne Umleitung: Ubuntu fragt beim ersten Start ggf.
     # interaktiv nach Benutzername und Passwort.
     $oldEap = $ErrorActionPreference
@@ -124,9 +113,9 @@ function Ensure-WslUbuntu {
     # Ist Ubuntu danach noch nicht registriert, wurden die Windows-Features
     # gerade erst aktiviert ("Aenderungen werden erst nach einem Neustart wirksam").
     if ((Test-RebootPending -IncludeSystem) -or -not ((Get-WslDistros) -match 'Ubuntu')) {
-        throw [RebootRequiredException]::new("$what wurde installiert, wird aber erst nach einem Neustart aktiv.")
+        throw [RebootRequiredException]::new((T 'ui.installed_needs_reboot' $what))
     }
-    Write-Host '[OK] WSL und Ubuntu sind installiert.' -ForegroundColor Green
+    Write-UiOk (T 'wsl.installed')
 }
 
 function Add-DockerCliToPath {
@@ -138,7 +127,7 @@ function Add-DockerCliToPath {
 function Install-DockerDesktop {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if ($winget) {
-        Write-Host '[+] Installiere Docker Desktop ueber winget...' -ForegroundColor Cyan
+        Write-UiStep (T 'docker.install_winget')
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
@@ -147,64 +136,56 @@ function Install-DockerDesktop {
             $ErrorActionPreference = $oldEap
         }
         if (Test-Path $DockerDesktopExe) { return }
-        Write-Host "[!] winget-Installation nicht erfolgreich (Exitcode $LASTEXITCODE). Versuche direkten Download..." -ForegroundColor Yellow
+        Write-UiWarn (T 'docker.winget_failed' $LASTEXITCODE)
     }
 
     $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 'arm64' } else { 'amd64' }
     $url = "https://desktop.docker.com/win/main/$arch/Docker%20Desktop%20Installer.exe"
     $installer = Join-Path ([System.IO.Path]::GetTempPath()) 'DockerDesktopInstaller.exe'
     try {
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
-        Write-Host "[+] Download: $url" -ForegroundColor Cyan
-        $oldProgress = $ProgressPreference
-        $ProgressPreference = 'SilentlyContinue'
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-        } finally {
-            $ProgressPreference = $oldProgress
-        }
-        Write-Host '[+] Docker Desktop wird installiert (das kann einige Minuten dauern)...' -ForegroundColor Cyan
+        Invoke-UiDownload $url $installer 'Docker Desktop'
+        Write-UiStep (T 'docker.installing')
         $proc = Start-Process -FilePath $installer -ArgumentList 'install', '--quiet', '--accept-license', '--backend=wsl-2' -Wait -PassThru
         if ($proc.ExitCode -eq $RebootExitCode) {
-            throw [RebootRequiredException]::new('Docker Desktop wurde installiert, wird aber erst nach einem Neustart aktiv.')
+            throw [RebootRequiredException]::new((T 'ui.installed_needs_reboot' 'Docker Desktop'))
         }
-        if ($proc.ExitCode -ne 0) { throw "Docker-Desktop-Installer fehlgeschlagen (Exitcode $($proc.ExitCode))." }
+        if ($proc.ExitCode -ne 0) { throw (T 'docker.installer_failed' $proc.ExitCode) }
     } finally {
         Remove-Item $installer -Force -ErrorAction SilentlyContinue
     }
 }
 
 function Ensure-DockerDesktop {
-    Write-Host '[+] Pruefe Docker Desktop...' -ForegroundColor Cyan
+    Write-UiStep (T 'docker.check')
     Add-DockerCliToPath
     if (Test-DockerDesktopReady) {
-        Write-Host '[OK] Docker Desktop laeuft mit Linux/WSL2-Backend.' -ForegroundColor Green
+        Write-UiOk (T 'docker.ready')
         return
     }
 
     $freshInstall = $false
     if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and -not (Test-Path $DockerDesktopExe)) {
         if (-not (Confirm-Install 'Docker Desktop')) {
-            throw 'Docker Desktop wird fuer den Docker-Modus benoetigt, die Installation wurde abgelehnt.'
+            throw (T 'docker.declined' 'Docker Desktop')
         }
         Install-DockerDesktop
         Add-DockerCliToPath
-        if (-not (Test-Path $DockerDesktopExe)) { throw 'Docker Desktop konnte nicht installiert werden.' }
-        Write-Host '[OK] Docker Desktop wurde installiert.' -ForegroundColor Green
+        if (-not (Test-Path $DockerDesktopExe)) { throw (T 'docker.install_failed') }
+        Write-UiOk (T 'docker.installed')
         $freshInstall = $true
     }
 
     if (Test-Path $DockerDesktopExe) {
         if (-not (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) {
-            Write-Host '[+] Starte Docker Desktop...' -ForegroundColor Cyan
+            Write-UiStep (T 'docker.starting')
             Start-Process -FilePath $DockerDesktopExe | Out-Null
         }
-        Write-Host '[+] Warte, bis Docker Desktop bereit ist (max. 5 Minuten)...' -ForegroundColor Cyan
+        Write-UiStep (T 'docker.waiting')
         $deadline = (Get-Date).AddMinutes(5)
         $switched = $false
         while ((Get-Date) -lt $deadline) {
             if (Test-DockerDesktopReady) {
-                Write-Host '[OK] Docker Desktop laeuft mit Linux/WSL2-Backend.' -ForegroundColor Green
+                Write-UiOk (T 'docker.ready')
                 return
             }
             $cli = Join-Path $DockerDesktopDir 'DockerCli.exe'
@@ -217,7 +198,7 @@ function Ensure-DockerDesktop {
                     $ErrorActionPreference = $oldEap
                 }
                 if ($osType -eq 'windows') {
-                    Write-Host '[+] Docker Desktop nutzt Windows-Container; wechsle auf Linux/WSL2...' -ForegroundColor Yellow
+                    Write-UiWarn (T 'docker.switch_linux')
                     & $cli -SwitchLinuxEngine
                     $switched = $true
                 }
@@ -227,9 +208,9 @@ function Ensure-DockerDesktop {
     }
 
     if ($freshInstall -or (Test-RebootPending -IncludeSystem)) {
-        throw [RebootRequiredException]::new('Docker Desktop wurde eingerichtet, startet aber erst nach Neustart/Neuanmeldung korrekt.')
+        throw [RebootRequiredException]::new((T 'docker.needs_relogin'))
     }
-    throw 'Docker Desktop mit Linux/WSL2-Backend ist nicht bereit. Bitte Docker Desktop oeffnen und Meldungen dort pruefen.'
+    throw (T 'docker.not_ready')
 }
 
 function Initialize-DockerEnvironment {
@@ -251,7 +232,7 @@ function Initialize-DockerEnvironment {
 }
 
 function Test-DockerGpu {
-    Write-Host '[+] Pruefe NVIDIA-GPU in Docker Desktop / WSL2...' -ForegroundColor Cyan
+    Write-UiStep (T 'docker.gpu_check')
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -260,7 +241,7 @@ function Test-DockerGpu {
         $ErrorActionPreference = $oldEap
     }
     if ($LASTEXITCODE -ne 0) {
-        throw 'Docker Desktop kann die NVIDIA-GPU nicht an Linux-Container durchreichen. WSL2-Backend, WSL-Update und NVIDIA-Treiber pruefen.'
+        throw (T 'docker.gpu_failed')
     }
 }
 
@@ -272,7 +253,7 @@ function Set-ContainerImageId {
     } finally {
         $ErrorActionPreference = $oldEap
     }
-    if (-not $id) { throw "Docker-Image $Image wurde nicht gefunden." }
+    if (-not $id) { throw (T 'docker.image_missing' $Image) }
     $env:LLMBENCH_CONTAINER_IMAGE_ID = $id
     return $id
 }
@@ -297,7 +278,7 @@ function Test-BenchmarkImageCompatible {
 
 function Ensure-BenchmarkImage {
     if (-not $BuildLocal) {
-        Write-Host "[+] Lade fertiges Benchmark-Image: $Image" -ForegroundColor Cyan
+        Write-UiStep (T 'docker.image_pull' $Image)
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
@@ -308,32 +289,32 @@ function Ensure-BenchmarkImage {
         if ($LASTEXITCODE -eq 0) {
             $id = Set-ContainerImageId
             if (Test-BenchmarkImageCompatible $Image) {
-                Write-Host '[OK] GHCR-Image geladen und mit diesem Setup kompatibel; lokaler CUDA-Build wird uebersprungen.' -ForegroundColor Green
+                Write-UiOk (T 'docker.image_ok')
                 return $id
             }
-            Write-Host '[!] Das geladene GHCR-Image ist aelter als der lokale Setup-Code.' -ForegroundColor Yellow
-            Write-Host '    Verhindere gemischte Versionen und baue das aktuelle Image lokal.' -ForegroundColor Yellow
+            Write-UiWarn (T 'docker.image_old')
+            Write-UiInfo (T 'docker.image_old_hint')
         } else {
-            Write-Host '[!] GHCR-Image konnte nicht geladen werden.' -ForegroundColor Yellow
+            Write-UiWarn (T 'docker.image_pull_failed')
             try {
                 $id = Set-ContainerImageId
                 if (Test-BenchmarkImageCompatible $Image) {
-                    Write-Host "[+] Verwende bereits lokal vorhandenes kompatibles Image $Image." -ForegroundColor Yellow
+                    Write-UiStep (T 'docker.image_local' $Image)
                     return $id
                 }
-                Write-Host '[!] Lokal vorhandenes Image ist ebenfalls zu alt; lokaler Build wird verwendet.' -ForegroundColor Yellow
+                Write-UiWarn (T 'docker.image_local_old')
             } catch {
-                Write-Host '[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck.' -ForegroundColor Yellow
+                Write-UiStep (T 'docker.image_build_fallback')
             }
         }
     } else {
-        Write-Host '[+] LLMBENCH_DOCKER_BUILD_LOCAL=1: erzwinge lokalen CUDA-Build.' -ForegroundColor Yellow
+        Write-UiStep (T 'docker.image_build_forced')
     }
 
     Invoke-Compose build llmbench
     $id = Set-ContainerImageId
     if (-not (Test-BenchmarkImageCompatible $Image)) {
-        throw 'Das frisch gebaute Docker-Image enthaelt die erwartete Modellauswahl nicht.'
+        throw (T 'docker.image_build_incompatible')
     }
     return $id
 }
@@ -349,9 +330,9 @@ function Setup-DockerBenchmark {
     Invoke-Compose run --rm llmbench container-setup
     Set-Content -Path $ReadyFile -Value $id -Encoding ascii
     Set-Content -Path $ImageFile -Value $Image -Encoding ascii
-    Write-Host '[OK] Docker/CUDA Benchmark-Runtime ist bereit.' -ForegroundColor Green
-    Write-Host "     Image: $Image"
-    Write-Host "     Image-ID: $id"
+    Write-UiOk (T 'docker.runtime_ready')
+    Write-UiInfo "Image: $Image"
+    Write-UiInfo "Image-ID: $id"
 }
 
 function Test-DockerBenchmarkReady {
@@ -377,34 +358,14 @@ function Refresh-DockerConfig {
 
 function Run-DockerBenchmark {
     if (-not (Test-DockerBenchmarkReady)) {
-        throw 'Docker-Runtime ist nicht eingerichtet. Bitte zuerst setup.bat starten.'
+        throw (T 'docker.runtime_missing')
     }
     Refresh-DockerConfig
 
-    Write-Host ''
-    Write-Host '=== Benchmark (Docker + CUDA) ===' -ForegroundColor Cyan
-    Write-Host 'Wie lange soll der Test laufen?'
-    Write-Host '  1: kurz (short)    - schnelle Ueberpruefung'
-    Write-Host '  2: mittel (medium) - Standardwerte'
-    Write-Host '  3: lang (long)     - praezise Ergebnisse'
-    $choice = Read-Host 'Auswahl [1-3, Standard=2]'
-    $duration = 'medium'
-    if ($choice -eq '1') { $duration = 'short' }
-    elseif ($choice -eq '3') { $duration = 'long' }
-
-    Write-Host ''
-    Write-Host 'Womit soll getestet werden?'
-    Write-Host '  1: Nur CPU'
-    Write-Host '  2: Nur GPU'
-    Write-Host '  3: CPU und GPU (Standard, inkl. Dauerlast-Test)'
-    $hwChoice = Read-Host 'Auswahl [1-3, Standard=3]'
-    $hardware = 'both'
-    if ($hwChoice -eq '1') { $hardware = 'cpu' }
-    elseif ($hwChoice -eq '2') { $hardware = 'gpu' }
-
-    $stressChoice = Read-Host 'Zusaetzliche V2-Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten? [j/N]'
-    $runArgs = @('run','--rm','llmbench','python','-m','llmbench','run','--config','/workspace/benchmark.yaml','--duration',$duration,'--hardware',$hardware)
-    if ($stressChoice -match '^[jJyY]') { $runArgs += '--stress' }
+    Write-UiHeader 'LLM Server Benchmark' (T 'run.subtitle_docker')
+    $options = Read-BenchmarkOptions
+    $runArgs = @('run','--rm','llmbench','python','-m','llmbench','run','--config','/workspace/benchmark.yaml','--duration',$options.Duration,'--hardware',$options.Hardware)
+    if ($options.Stress) { $runArgs += '--stress' }
     Set-ContainerImageId | Out-Null
     Invoke-Compose @runArgs
 }
@@ -423,11 +384,11 @@ try {
     exit 0
 } catch [RebootRequiredException] {
     Write-Host ''
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host '[!] Bitte Windows neu starten und danach setup.bat erneut ausfuehren.' -ForegroundColor Yellow
+    Write-UiWarn $_.Exception.Message
+    Write-UiWarn (T 'ui.reboot_then_rerun')
     exit $RebootExitCode
 } catch {
     Write-Host ''
-    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+    Write-UiFail $_.Exception.Message
     exit 1
 }

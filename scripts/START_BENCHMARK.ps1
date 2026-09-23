@@ -21,31 +21,62 @@ $LlamaState = Join-Path $LlamaDir ".llama-build.json"
 $ModelsDir = Join-Path $Root "models"
 $ConfigPath = if ([System.IO.Path]::IsPathRooted($Config)) { $Config } else { Join-Path $Root $Config }
 
-if (-not (Test-Path $EnsurePython)) { throw "Python-Bootstrap fehlt: $EnsurePython" }
-if (-not (Test-Path $CoreScript)) { throw "Benchmark-Core fehlt: $CoreScript" }
+Import-Module (Join-Path $PSScriptRoot "lib\UI.psm1") -Force -DisableNameChecking
+Initialize-LlmbenchUI
+Select-LlmbenchLanguage | Out-Null
+$PowerShellExe = (Get-Process -Id $PID).Path
+$DockerScript = Join-Path $PSScriptRoot "DOCKER_BENCHMARK.ps1"
+
+if (-not (Test-Path $EnsurePython)) { throw (T 'start.missing_file' $EnsurePython) }
+if (-not (Test-Path $CoreScript)) { throw (T 'start.missing_file' $CoreScript) }
+
+# Wenn im Setup eine Modellauswahl gespeichert wurde, pruefen/nachladen wir
+# spaeter nur diese Modelle statt wieder die komplette Standard-Suite.
+if (Test-Path (Join-Path $ModelsDir ".llmbench-model-selection.json")) { $env:LLMBENCH_USE_SAVED_SELECTION = "1" }
+
+Write-UiHeader "LLM Server Benchmark" (T 'start.subtitle')
+
+# --- Docker-Modus (auto/docker) --------------------------------------------
+$Mode = if ($env:LLMBENCH_EXECUTION_MODE) { $env:LLMBENCH_EXECUTION_MODE.ToLowerInvariant() } else { "auto" }
+if (@("auto", "docker", "native") -notcontains $Mode) {
+    Write-UiFail (T 'setup.invalid_mode')
+    exit 1
+}
+if ($Mode -ne "native") {
+    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $DockerScript -Action Check *> $null
+    $dockerReady = ($LASTEXITCODE -eq 0)
+    if (-not $dockerReady -and $Mode -eq "docker") {
+        Write-UiWarn (T 'start.docker_setup_now')
+        & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $DockerScript -Action Setup
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $dockerReady = $true
+    }
+    if ($dockerReady) {
+        & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $DockerScript -Action Run
+        exit $LASTEXITCODE
+    }
+}
+# Nativer Windows-Fallback. Dieser Pfad bleibt fuer Systeme ohne Docker Desktop
+# bzw. ohne WSL2-GPU-Unterstuetzung voll funktionsfaehig.
 
 # --- Automatisches Update via git pull (falls git vorhanden und .git-Verzeichnis existiert) ---
 $GitDir = Join-Path $Root ".git"
 if ((Test-Path $GitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "Pruefe auf Updates..." -ForegroundColor Cyan
+    Write-UiStep (T 'start.update_check')
     try {
         $fetchResult = & git -C $Root fetch --quiet 2>&1
         $status = & git -C $Root status -uno --short 2>&1
         if ($status -match "behind") {
-            Write-Host "Neues Update verfuegbar - aktualisiere..." -ForegroundColor Yellow
+            Write-UiStep (T 'start.update_available')
             & git -C $Root pull --ff-only --quiet 2>&1 | Out-Null
-            Write-Host "Update abgeschlossen." -ForegroundColor Green
+            Write-UiOk (T 'start.update_done')
         }
     } catch {
-        Write-Host "Git-Update uebersprungen: $($_.Exception.Message)" -ForegroundColor DarkGray
+        Write-UiInfo (T 'start.update_skipped' $_.Exception.Message)
     }
 } elseif (-not (Test-Path $GitDir)) {
-    Write-Host "" -ForegroundColor Yellow
-    Write-Host "HINWEIS: Das Projekt wurde als ZIP heruntergeladen, nicht per git clone." -ForegroundColor Yellow
-    Write-Host "         Automatische Updates sind dadurch nicht moeglich." -ForegroundColor Yellow
-    Write-Host "         Bitte klone das Repository stattdessen mit:" -ForegroundColor Yellow
-    Write-Host "         git clone https://github.com/Lautloserspieler/llm-server-benchmark.git" -ForegroundColor Cyan
-    Write-Host ""
+    Write-UiWarn (T 'start.zip_hint')
+    Write-UiInfo "git clone https://github.com/Lautloserspieler/llm-server-benchmark.git"
 }
 
 & $EnsurePython
@@ -59,13 +90,13 @@ if (Test-Path $PythonPathFile) {
 if ($ResolvedPython -and (Test-Path $ResolvedPython)) {
     $PythonDir = Split-Path -Parent $ResolvedPython
     $env:PATH = "$PythonDir;$PythonDir\Scripts;$env:PATH"
-    Write-Host "Python fuer Benchmark: $ResolvedPython"
+    Write-UiInfo (T 'start.python_used' $ResolvedPython)
 } elseif (Test-Path (Join-Path $LocalPythonDir "python.exe")) {
     $ResolvedPython = Join-Path $LocalPythonDir "python.exe"
     $env:PATH = "$LocalPythonDir;$LocalPythonDir\Scripts;$env:PATH"
-    Write-Host "Python fuer Benchmark: $ResolvedPython"
+    Write-UiInfo (T 'start.python_used' $ResolvedPython)
 } else {
-    throw "Python-Bootstrap war erfolgreich, aber es wurde kein nutzbarer Interpreterpfad uebergeben."
+    throw (T 'start.python_path_missing')
 }
 
 function Test-BenchmarkInstallationReady {
@@ -85,11 +116,11 @@ function Test-BenchmarkInstallationReady {
 
 function Get-DoctorData {
     $doctorJsonText = (& $VenvPython -m llmbench doctor --config $Config --json | Out-String).Trim()
-    if (-not $doctorJsonText) { throw "Vorpruefung lieferte keine auswertbaren Daten." }
+    if (-not $doctorJsonText) { throw (T 'start.doctor_no_data') }
     try {
         return ($doctorJsonText | ConvertFrom-Json)
     } catch {
-        throw "Vorpruefung konnte nicht ausgewertet werden: $($_.Exception.Message)"
+        throw (T 'start.doctor_parse_failed' $_.Exception.Message)
     }
 }
 
@@ -98,77 +129,51 @@ function Ensure-V2ModelSuite {
 
     & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir --verify-only *> $null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "V2-Standard-Suite: vollstaendig vorhanden." -ForegroundColor Green
+        Write-UiOk (T 'start.suite_complete')
         return
     }
 
-    Write-Host ""
-    Write-Host "=== V2 Standard-Suite unvollstaendig - Auto-Download ===" -ForegroundColor Cyan
-    Write-Host "Fehlende Modelle oder GGUF-Shards werden automatisch von HuggingFace geladen."
-    Write-Host "Vorhandene Dateien und HuggingFace-Cache werden wiederverwendet."
+    Write-UiSection (T 'start.suite_incomplete')
+    Write-UiInfo (T 'start.suite_download_hint')
     & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir
     if ($LASTEXITCODE -ne 0) {
-        throw "Automatischer Modell-Download ist fehlgeschlagen (Exitcode $LASTEXITCODE)."
+        throw (T 'start.download_failed' $LASTEXITCODE)
     }
 
     & $VenvPython -m llmbench download --suite all --models-dir $ModelsDir --verify-only
     if ($LASTEXITCODE -ne 0) {
-        throw "Die V2-Standard-Suite ist nach dem Download weiterhin unvollstaendig."
+        throw (T 'start.suite_still_incomplete')
     }
 }
 
 function Invoke-BenchmarkRun {
-    Write-Host ""
-    Write-Host "=== Vorhandene Installation erkannt ===" -ForegroundColor Green
-    Write-Host "Setup wird uebersprungen. Pruefe Modelle und starte den Benchmark."
+    Write-UiOk (T 'start.installation_found')
 
     Ensure-V2ModelSuite
 
     # Bootstrap entfernt auch alte, versehentlich eingetragene Folge-Shards und
     # bindet gesplittete GGUFs nur ueber 00001-of-XXXXX ein.
     & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
-    if ($LASTEXITCODE -ne 0) { throw "benchmark.yaml konnte nicht aktualisiert werden." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'start.bootstrap_failed') }
 
     $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)
     if ($configuredModels.Count -eq 0) {
-        throw "Trotz vollstaendiger Standard-Suite wurde kein GGUF-Modell konfiguriert."
+        throw (T 'start.no_models_configured')
     }
 
-    Write-Host "Gefundene/konfigurierte Modelle: $($configuredModels.Count)"
+    Write-UiSection (T 'start.models_title' $configuredModels.Count)
     foreach ($model in $configuredModels) {
-        $status = if ($model.exists) { "OK" } else { "FEHLT" }
-        Write-Host "  [$status] $($model.name): $($model.path)"
+        if ($model.exists) { Write-UiOk "$($model.name)" } else { Write-UiFail (T 'start.model_missing' $model.name $model.path) }
     }
 
-    Write-Host ""
-    Write-Host "=== Vorpruefung ===" -ForegroundColor Cyan
+    Write-UiSection (T 'start.doctor_title')
     & $VenvPython -m llmbench doctor --config $Config
-    if ($LASTEXITCODE -ne 0) { throw "Vorpruefung fehlgeschlagen. Siehe Ausgabe oben." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'start.doctor_failed') }
 
-    Write-Host ""
-    Write-Host "=== Benchmark ===" -ForegroundColor Cyan
-    Write-Host "Wie lange soll der Test laufen?"
-    Write-Host "  1: kurz (short)    - schnelle Ueberpruefung"
-    Write-Host "  2: mittel (medium) - Standardwerte"
-    Write-Host "  3: lang (long)     - praezise Ergebnisse"
-    $choice = Read-Host "Auswahl [1-3, Standard=2]"
-
-    $duration = "medium"
-    if ($choice -eq "1") { $duration = "short" }
-    elseif ($choice -eq "3") { $duration = "long" }
-    Write-Host "Verwende Dauer: $duration"
-
-    Write-Host ""
-    Write-Host "Womit soll getestet werden?"
-    Write-Host "  1: Nur CPU"
-    Write-Host "  2: Nur GPU"
-    Write-Host "  3: CPU und GPU (Standard, inkl. Dauerlast-Test)"
-    $hwChoice = Read-Host "Auswahl [1-3, Standard=3]"
-
-    $hardware = "both"
-    if ($hwChoice -eq "1") {
-        $hardware = "cpu"
+    $options = Read-BenchmarkOptions
+    $hardware = $options.Hardware
+    if ($hardware -eq "cpu") {
         # Pruefen ob ein GPU-Backend installiert ist – CUDA-Builds schlagen bei reinen CPU-Tests fehl
         $backendFile = Join-Path $PSScriptRoot "..\llama_cpp_state.json"
         $isCudaBuild = $false
@@ -179,30 +184,22 @@ function Invoke-BenchmarkRun {
             } catch {}
         }
         if ($isCudaBuild) {
-            Write-Host ""
-            Write-Host "HINWEIS: Das installierte llama.cpp ist ein GPU-Build ($($state.backend))." -ForegroundColor Yellow
-            Write-Host "         Reine CPU-Tests schlagen bei diesem Build haeufig mit Fehlercode 1 fehl." -ForegroundColor Yellow
-            Write-Host "         Empfehlung: Waehle stattdessen Option 3 (CPU+GPU) oder Option 2 (Nur GPU)." -ForegroundColor Yellow
-            Write-Host ""
-            $confirm = Read-Host "Trotzdem nur CPU testen? [j/N]"
-            if ($confirm -notmatch "^[jJyY]") {
-                Write-Host "Aenderung auf 'both' (CPU + GPU)."
+            Write-UiWarn (T 'start.cpu_on_gpu_build' $state.backend)
+            Write-UiInfo (T 'start.cpu_on_gpu_build_hint')
+            if (-not (Confirm-UiYesNo (T 'start.cpu_only_anyway'))) {
+                Write-UiInfo (T 'start.hardware_changed')
                 $hardware = "both"
             }
         }
     }
-    elseif ($hwChoice -eq "2") { $hardware = "gpu" }
-    Write-Host "Verwende Hardware-Auswahl: $hardware"
 
-    Write-Host ""
-    $stressChoice = Read-Host "Zusaetzliche V2-Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten? [j/N]"
-    $runArgs = @("-m", "llmbench", "run", "--config", $Config, "--duration", $duration, "--hardware", $hardware)
-    if ($stressChoice -match "^[jJyY]") {
+    $runArgs = @("-m", "llmbench", "run", "--config", $Config, "--duration", $options.Duration, "--hardware", $hardware)
+    if ($options.Stress) {
         $runArgs += "--stress"
     }
 
     & $VenvPython @runArgs
-    if ($LASTEXITCODE -ne 0) { throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'start.benchmark_failed' $LASTEXITCODE) }
 }
 
 if (-not $SetupOnly -and -not $ForceUpdateLlamaCpp -and (Test-BenchmarkInstallationReady)) {
@@ -211,14 +208,12 @@ if (-not $SetupOnly -and -not $ForceUpdateLlamaCpp -and (Test-BenchmarkInstallat
         exit 0
     } catch {
         Write-Host ""
-        Write-Host "Benchmark fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
+        Write-UiFail $_.Exception.Message
         exit 1
     }
 }
 
-Write-Host ""
-Write-Host "Installation ist noch nicht vollstaendig oder ein Setup wurde explizit angefordert."
-Write-Host "Starte einmalig den Setup-Core..." -ForegroundColor Yellow
+Write-UiStep (T 'start.core_needed')
 
 $forward = @{ Config = $Config }
 if ($LlamaCppTag) { $forward["LlamaCppTag"] = $LlamaCppTag }
@@ -228,14 +223,11 @@ if ($ForceUpdateLlamaCpp) { $forward["ForceUpdateLlamaCpp"] = $true }
 try {
     & $CoreScript @forward
     $rc = $LASTEXITCODE
-    if ($rc -ne 0) { throw "Benchmark-Core wurde mit Fehlercode $rc beendet." }
+    if ($rc -ne 0) { throw (T 'start.core_failed' $rc) }
     exit 0
 } catch {
     Write-Host ""
-    Write-Host "Setup/Benchmark fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Erwarteter llama.cpp-Zielordner:" -ForegroundColor Yellow
-    Write-Host $LlamaDir
-    Write-Host "Dort muessen llama-bench.exe und llama-server.exe liegen."
+    Write-UiFail $_.Exception.Message
+    Write-UiInfo (T 'start.llama_dir_hint' $LlamaDir)
     exit 1
 }

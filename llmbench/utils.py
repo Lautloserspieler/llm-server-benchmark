@@ -23,7 +23,37 @@ def print_msg(msg: str, style: str = "cyan") -> None:
 
 
 def print_err(msg: str) -> None:
-    console.print(f"[bold red]FEHLER:[/bold red] {msg}")
+    from .i18n import _
+
+    console.print(f"[bold red]{_('FEHLER:')}[/bold red] {msg}")
+
+
+def ask_yes_no(question: str, default: bool = True) -> bool:
+    """Ja/Nein-Frage mit sprachabhaengiger Taste (de: j/n, en: y/n); beide werden akzeptiert."""
+    from rich.prompt import Confirm, InvalidResponse
+
+    from .i18n import current_language
+
+    yes_key = "j" if current_language() == "de" else "y"
+
+    class _LocalizedConfirm(Confirm):
+        choices = [yes_key, "n"]
+
+        def process_response(self, value: str) -> bool:
+            answer = value.strip().lower()
+            if answer in ("j", "ja", "y", "yes"):
+                return True
+            if answer in ("n", "nein", "no"):
+                return False
+            raise InvalidResponse(self.validate_error_message)
+
+    return _LocalizedConfirm.ask(f"[cyan]{question}[/cyan]", default=default, console=console)
+
+
+def print_section(title: str) -> None:
+    """Abschnittsueberschrift als Linie - einheitlich mit den Setup-Skripten."""
+    console.print()
+    console.rule(f"[bold cyan]{title}[/bold cyan]", align="left", style="cyan")
 
 
 def print_panel(msg: str, title: str = "LLM Benchmark") -> None:

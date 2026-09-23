@@ -86,7 +86,28 @@ Python 3.10 und 3.12.
   `_()` gibt den deutschen Text unverändert zurück, wenn `_current_lang == "de"` (Default),
   sonst wird der passende Eintrag aus `en.json` nachgeschlagen (Fallback: deutscher Text,
   falls kein Eintrag existiert). Interne Log-/Debug-Ausgaben ohne Nutzerbezug müssen nicht
-  über `_()` laufen.
+  über `_()` laufen. Werte kommen als Platzhalter in den Text und werden danach gefüllt –
+  `_(f"...")` ist nicht übersetzbar:
+
+  ```python
+  print(_("Modell: {name}").format(name=model["name"]))
+  ```
+
+  Die Sprache wird **einmal ganz am Anfang** von `setup.bat`/`setup.sh` (bzw. den
+  Start-Skripten) gewählt, in `.runtime/language` gespeichert und als `LLMBENCH_LANG` an
+  Python und den Docker-Container weitergereicht; ein ausdrückliches `project.language` in
+  `benchmark.yaml` hat Vorrang.
+- **Installer-Skripte** (PowerShell/Bash) schreiben keine Texte direkt, sondern holen sie
+  per Schlüssel: `T 'docker.check'` (PowerShell, Texte in `scripts/locales/de.psd1` +
+  `en.psd1`, Platzhalter `{0}`) bzw. `ui_step docker.gpu_check` (Bash, Texte in
+  `scripts/locales/de.sh` + `en.sh`, Platzhalter `%s`). Ausgabe immer über die gemeinsamen
+  UI-Helfer (`scripts/lib/UI.psm1` bzw. `scripts/lib/ui.sh`: Kopfzeile, Abschnitte,
+  `[+]`/`[OK]`/`[!]`/`[X]`, Menüs, Ja/Nein-Fragen, Download-Fortschritt), damit alles
+  einheitlich aussieht. Vor jeder Installation wird gefragt (`Confirm-Install` /
+  `ui_confirm_install`, `LLMBENCH_AUTO_INSTALL=1/0` überspringt die Frage).
+- **`tests/test_i18n_coverage.py`** schlägt fehl, sobald ein `_()`-Text keinen Eintrag in
+  `en.json` hat, ein Schlüssel nur in einer Sprache der Skript-Texte existiert oder ein
+  Skript einen unbekannten Schlüssel benutzt.
 - **Tests mocken Subprocess-/HTTP-Grenzen**, statt echte GPUs, Binaries oder Docker zu
   benötigen. Zwei kanonische Beispiele:
   - `tests/test_backends.py`: `LlamaCppBackend`-Methoden werden getestet, indem die

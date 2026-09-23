@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .llama_bench import flatten_bench_rows
+from .i18n import _
 from .report import CSS, esc, fms, fnum
 from .utils import read_json, write_json
 
@@ -320,7 +321,7 @@ def _issues_html(issues: list[dict[str, str]]) -> str:
 
 
 def _status_cell(status: str | None, error: str | None = None) -> str:
-    label = "Zeitueberschreitung" if status == "timeout" else "Fehler"
+    label = _("Zeitueberschreitung") if status == "timeout" else _("Fehler")
     cls = "status-timeout" if status == "timeout" else "status-failed"
     title = f" title='{esc(error)}'" if error else ""
     return f"<td class='num'><span class='{cls}'{title}>{label}</span></td>"

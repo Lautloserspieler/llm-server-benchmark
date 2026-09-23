@@ -11,6 +11,9 @@ $InstallLog = Join-Path $RuntimeRoot "python-install.log"
 
 New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
 
+Import-Module (Join-Path $PSScriptRoot "lib\UI.psm1") -Force -DisableNameChecking
+Initialize-LlmbenchUI
+
 function Save-PythonPath([string]$Path) {
     if (-not $Path) { return $false }
     $Path = $Path.Trim().Trim('"')
@@ -25,7 +28,7 @@ function Save-PythonPath([string]$Path) {
         if ($LASTEXITCODE -ne 0) { return $false }
 
         [System.IO.File]::WriteAllText($PythonPathFile, $resolved, [System.Text.UTF8Encoding]::new($false))
-        Write-Host "Python erkannt: $resolved (Version $version)" -ForegroundColor Green
+        Write-UiOk (T 'python.found' $resolved $version)
         return $true
     } catch {
         return $false
@@ -89,20 +92,11 @@ if (Find-ExistingPython) {
     exit 0
 }
 
-Write-Host ""
-Write-Host "=== Python $PythonVersion wird eingerichtet ===" -ForegroundColor Cyan
-Write-Host "Kein startbares Python 3.10+ wurde über py/python oder Standardpfade gefunden."
+Write-UiWarn (T 'python.missing')
 
 # LLMBENCH_AUTO_INSTALL=1 installiert ohne Rückfrage, =0 bricht ohne Rückfrage ab.
-$installApproved = $false
-if ($env:LLMBENCH_AUTO_INSTALL -eq "1") {
-    $installApproved = $true
-} elseif ($env:LLMBENCH_AUTO_INSTALL -ne "0" -and -not [Console]::IsInputRedirected) {
-    $answer = Read-Host "Python $PythonVersion jetzt automatisch herunterladen und installieren? [J/n]"
-    $installApproved = ($answer -eq "" -or $answer -match "^[jJyY]")
-}
-if (-not $installApproved) {
-    Write-Host "Python-Installation abgelehnt. Bitte Python 3.10+ manuell installieren." -ForegroundColor Yellow
+if (-not (Confirm-Install "Python $PythonVersion")) {
+    Write-UiFail (T 'python.declined')
     exit 1
 }
 
@@ -117,7 +111,7 @@ switch ($arch) {
         $expectedSha256 = "377ac8fd478987940088e879441e702a71b53164d2a1e6f1d51ff77a7e470258"
     }
     default {
-        throw "Nicht unterstützte Windows-Architektur '$arch'. Unterstützt werden x64 und ARM64."
+        throw (T 'python.unsupported_arch' $arch)
     }
 }
 
@@ -129,19 +123,18 @@ New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 try {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
-    Write-Host "Download: $url"
-    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+    Invoke-UiDownload $url $installer "Python $PythonVersion"
     if (-not (Test-Path -LiteralPath $installer)) {
-        throw "Python-Installer wurde nicht heruntergeladen."
+        throw (T 'python.download_failed')
     }
 
     $actualSha256 = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $expectedSha256) {
-        throw "SHA256-Prüfung fehlgeschlagen. Erwartet: $expectedSha256, erhalten: $actualSha256"
+        throw (T 'python.sha_failed' $expectedSha256 $actualSha256)
     }
 
-    Write-Host "SHA256-Prüfung erfolgreich."
-    Write-Host "Python-Installer wird ausgeführt..."
+    Write-UiOk (T 'python.sha_ok')
+    Write-UiStep (T 'python.installing')
 
     # Standardmäßige Per-User-Installation. Launcher und PATH werden bewusst
     # aktiviert, damit Python sowohl sofort als auch bei späteren Starts
@@ -162,30 +155,32 @@ try {
 
     $proc = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
-        throw "Python-Installer fehlgeschlagen (Exitcode $($proc.ExitCode)). Log: $InstallLog"
+        throw (T 'python.installer_failed' $proc.ExitCode $InstallLog)
     }
 
     # Der Installer aktualisiert PATH der laufenden PowerShell nicht immer.
     # Deshalb zuerst direkte Standardpfade und Launcherpfade prüfen.
     foreach ($attempt in 1..10) {
         if (Find-ExistingPython) {
-            Write-Host "Python-Setup erfolgreich abgeschlossen." -ForegroundColor Green
+            Write-UiOk (T 'python.installed')
             exit 0
         }
         Start-Sleep -Seconds 1
     }
 
-    Write-Host ""
-    Write-Host "Diagnose:" -ForegroundColor Yellow
-    Write-Host "  where py:"
-    & where.exe py 2>$null | ForEach-Object { Write-Host "    $_" }
-    Write-Host "  where python:"
-    & where.exe python 2>$null | ForEach-Object { Write-Host "    $_" }
-    Write-Host "  Erwarteter Benutzerpfad:"
-    Write-Host "    $(Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe')"
-    Write-Host "  Installationslog: $InstallLog"
+    Write-UiWarn (T 'python.diagnosis')
+    Write-UiInfo "where py:"
+    & where.exe py 2>$null | ForEach-Object { Write-UiInfo "  $_" }
+    Write-UiInfo "where python:"
+    & where.exe python 2>$null | ForEach-Object { Write-UiInfo "  $_" }
+    Write-UiInfo (T 'python.expected_path' (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'))
+    Write-UiInfo (T 'python.install_log' $InstallLog)
 
-    throw "Python-Installer meldete Erfolg, aber Python konnte danach nicht gestartet werden."
+    throw (T 'python.not_startable')
+}
+catch {
+    Write-UiFail $_.Exception.Message
+    exit 1
 }
 finally {
     Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue

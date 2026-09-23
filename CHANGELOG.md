@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Sprachsystem ueberall + einheitliche Terminal-Oberflaeche
+
+- Die Sprache (Deutsch/English) wird jetzt **ganz am Anfang** von
+  `setup.bat`/`setup.sh` bzw. der Start-Skripte gewaehlt, in `.runtime/language`
+  gespeichert und ueberall genutzt: Installer-Skripte, Python-CLI, Berichte und
+  Docker-Container (`LLMBENCH_LANG` wird ueber `compose.yaml` durchgereicht).
+- Alle Windows-Skripte (PowerShell) und Linux/macOS-Skripte (Bash) holen ihre
+  Texte aus `scripts/locales/{de,en}.psd1` bzw. `{de,en}.sh` und nutzen
+  gemeinsame UI-Helfer (`scripts/lib/UI.psm1`, `scripts/lib/ui.sh`): Kopfzeile,
+  Abschnittslinien, farbige `[+]`/`[OK]`/`[!]`/`[X]`-Meldungen, nummerierte
+  Menues mit markierter Vorauswahl, Ja/Nein-Fragen (`j/n` bzw. `y/n`) und ein
+  Download-Fortschrittsbalken mit Tempo und Restzeit.
+- `setup.bat`/`START_BENCHMARK.bat` sind nur noch duenne Starter; die Logik
+  liegt in `scripts/SETUP.ps1` bzw. `scripts/START_BENCHMARK.ps1`.
+- Modellauswahl, Setup-Wizard, Stresstests, Backend-Installation und
+  Docker-Meldungen sind uebersetzt; die Modellauswahl zeigt eine Tabelle.
+- Linux: `setup.sh` fragt jetzt ebenfalls vor jeder Installation (Python,
+  Docker Engine, Compose-Plugin, NVIDIA Container Toolkit) und laeuft mit der
+  Bash 3.2 von macOS.
+- Neuer Test `tests/test_i18n_coverage.py` stellt sicher, dass jeder Text in
+  allen Sprachen vorhanden ist; `tests/test_installer_scripts.py` fuehrt die
+  Installer-Skripte mit Attrappen tatsaechlich aus (pwsh/bash).
+- Fix: `llmbench bootstrap` (bei jedem Start ausgefuehrt) hat die gewaehlte
+  Sprache in `benchmark.yaml` stets auf Deutsch zurueckgesetzt.
+- Fix: Statusangaben "Zeitueberschreitung" erschienen in englischen Berichten
+  auf Deutsch; fuenf PDF-Beschriftungen hatten keine englische Uebersetzung.
+
 ### Windows-Setup installiert fehlende Komponenten nach Rueckfrage
 
 - `setup.bat` erkennt fehlendes WSL2/Ubuntu, Docker Desktop und Python 3.10+,

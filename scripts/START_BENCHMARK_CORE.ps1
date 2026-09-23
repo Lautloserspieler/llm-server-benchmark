@@ -18,10 +18,8 @@ $VenvDir = Join-Path $Root ".venv"
 $StateFile = Join-Path $LlamaDir ".llama-build.json"
 $PinFile = Join-Path $Root "llama-cpp-version.txt"
 
-function Write-Step([string]$Message) {
-    Write-Host ""
-    Write-Host "=== $Message ===" -ForegroundColor Cyan
-}
+Import-Module (Join-Path $PSScriptRoot "lib\UI.psm1") -Force -DisableNameChecking
+Initialize-LlmbenchUI
 
 function Get-PythonCommand {
     $candidates = @(
@@ -56,7 +54,7 @@ function Get-NvidiaInfo {
     if ($driver) { $driver = $driver.ToString().Trim() }
 
     $reportedCuda = $null
-    $source = "nicht ermittelbar"
+    $source = T 'core.unknown'
     $text = (& $nvsmi.Source 2>$null | Out-String)
     if ($text -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
         $reportedCuda = ConvertTo-Version $Matches[1]
@@ -78,7 +76,7 @@ function Get-NvidiaInfo {
 
     if (-not $reportedCuda -and $supportedCudaMajor) {
         $reportedCuda = [version]("$supportedCudaMajor.0")
-        $source = "Treiberversion $driver"
+        $source = T 'core.driver_version' $driver
     }
 
     return @{
@@ -101,15 +99,15 @@ function Invoke-GitHubApi([string]$Url, [switch]$AllowMissing) {
         if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
         if ($status -eq 404 -and $AllowMissing) { return $null }
         if ($status -eq 403) {
-            throw "GitHub hat die Anfrage abgelehnt (403). Meist ist das API-Limit erreicht. Spaeter erneut versuchen oder GITHUB_TOKEN setzen."
+            throw (T 'core.github_403')
         }
-        throw "GitHub-Anfrage fehlgeschlagen ($Url): $($_.Exception.Message)"
+        throw (T 'core.github_failed' $Url $_.Exception.Message)
     }
 }
 
 function Assert-LlamaTag([string]$Value, [string]$Origin) {
     if ($Value -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $Value -match '\.(ya?ml|txt|json|exe|bat|ps1)$') {
-        throw "'$Value' ist keine gueltige llama.cpp-Release-Kennung (Quelle: $Origin). Erwartet wird z.B. b10604."
+        throw (T 'core.invalid_tag' $Value $Origin)
     }
     return $Value
 }
@@ -200,9 +198,9 @@ function Select-CompatibleCudaBackend($Release, $Nvidia) {
 function Get-ReleaseCandidates {
     $pinned = Get-PinnedLlamaTag
     if ($pinned) {
-        Write-Host "Vorgegebener llama.cpp-Build: $pinned"
+        Write-UiInfo (T 'core.pinned_build' $pinned)
         $release = Invoke-GitHubApi "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/$pinned" -AllowMissing
-        if (-not $release) { throw "Das llama.cpp-Release '$pinned' existiert nicht." }
+        if (-not $release) { throw (T 'core.release_missing' $pinned) }
         return @($release)
     }
 
@@ -217,7 +215,7 @@ function Get-ReleaseCandidates {
 
 function Resolve-LlamaCppPackage($Nvidia) {
     $releases = @(Get-ReleaseCandidates)
-    if ($releases.Count -eq 0) { throw "Keine llama.cpp-Releases konnten von GitHub geladen werden." }
+    if ($releases.Count -eq 0) { throw (T 'core.no_releases') }
 
     foreach ($release in $releases) {
         if ($Nvidia) {
@@ -248,7 +246,7 @@ function Resolve-LlamaCppPackage($Nvidia) {
         }
     }
 
-    throw "Kein passendes Windows-x64 llama.cpp-Paket gefunden."
+    throw (T 'core.no_package')
 }
 
 function Invoke-LlamaBenchProbe([string]$BenchExe) {
@@ -296,19 +294,19 @@ function Test-ExistingLlamaInstall($Nvidia) {
     # Wenn ein moderner CUDA-13-faehiger Treiber vorhanden ist, einen alten
     # cuda-12-Build nicht dauerhaft festhalten. Neu installieren und CUDA 13 nutzen.
     if ($Nvidia -and $Nvidia.SupportedCudaMajor -ge 13 -and $state.backend -like "cuda-12*") {
-        Write-Host "Vorhandener Build $($state.backend) wird durch CUDA-13-Build ersetzt."
+        Write-UiStep (T 'core.replace_cuda12' $state.backend)
         return $false
     }
 
     $probe = Invoke-LlamaBenchProbe $benchExe
     if (-not $probe.Success) {
-        Write-Warning "Vorhandene llama.cpp-Installation ist nicht startbar und wird automatisch neu installiert (Exitcode $($probe.ExitCode))."
+        Write-UiWarn (T 'core.existing_broken' $probe.ExitCode)
         return $false
     }
 
-    Write-Host "llama.cpp ist bereits installiert: $LlamaDir"
-    Write-Host "Build: $($state.tag) / $($state.backend)"
-    if ($probe.DeviceLine) { Write-Host "Startprobe: $($probe.DeviceLine.Trim())" }
+    Write-UiOk (T 'core.llama_installed_already' $LlamaDir)
+    Write-UiInfo "Build: $($state.tag) / $($state.backend)"
+    if ($probe.DeviceLine) { Write-UiInfo (T 'core.probe' $probe.DeviceLine.Trim()) }
     return $true
 }
 
@@ -317,14 +315,14 @@ function Install-LlamaCpp {
 
     if (-not $ForceUpdateLlamaCpp -and (Test-ExistingLlamaInstall $nvidia)) { return }
 
-    Write-Step "llama.cpp wird automatisch eingerichtet"
+    Write-UiSection (T 'core.llama_setup')
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
     if ($nvidia) {
-        $family = if ($nvidia.SupportedCudaMajor) { "CUDA-$($nvidia.SupportedCudaMajor).x" } else { "unbekannt" }
-        Write-Host "NVIDIA erkannt: Treiber $($nvidia.Driver), nvidia-smi CUDA $($nvidia.Cuda), unterstuetzte Familie $family"
+        $family = if ($nvidia.SupportedCudaMajor) { "CUDA-$($nvidia.SupportedCudaMajor).x" } else { T 'core.unknown' }
+        Write-UiOk (T 'core.nvidia_found' $nvidia.Driver $nvidia.Cuda $family)
     } else {
-        Write-Warning "nvidia-smi wurde nicht gefunden. Es wird ein CPU-Build installiert."
+        Write-UiWarn (T 'core.no_nvidia')
     }
 
     $package = Resolve-LlamaCppPackage $nvidia
@@ -333,23 +331,21 @@ function Install-LlamaCpp {
     $mainPattern = $package.MainPattern
     $runtimePattern = $package.RuntimePattern
 
-    Write-Host "Ausgewaehltes llama.cpp-Paket: $backend"
-    Write-Host "Verwendetes llama.cpp-Release: $($release.tag_name)"
+    Write-UiInfo (T 'core.package' $backend $release.tag_name)
 
     $main = $release.assets | Where-Object { $_.name -match $mainPattern } | Select-Object -First 1
     $runtime = $null
     if ($runtimePattern) {
         $runtime = $release.assets | Where-Object { $_.name -match $runtimePattern } | Select-Object -First 1
     }
-    if (-not $main) { throw "Kein passendes llama.cpp-Asset fuer '$backend' gefunden." }
-    if ($runtimePattern -and -not $runtime) { throw "CUDA-Runtime-Asset fuer '$backend' nicht gefunden." }
+    if (-not $main) { throw (T 'core.asset_missing' $backend) }
+    if ($runtimePattern -and -not $runtime) { throw (T 'core.runtime_missing' $backend) }
 
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("llmbench-llama-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
         $mainZip = Join-Path $tmp $main.name
-        Write-Host "Lade $($main.name)..."
-        Invoke-WebRequest -Uri $main.browser_download_url -OutFile $mainZip -UseBasicParsing
+        Invoke-UiDownload $main.browser_download_url $mainZip $main.name
 
         if (Test-Path $LlamaDir) { Remove-Item -Recurse -Force $LlamaDir }
         New-Item -ItemType Directory -Force -Path $LlamaDir | Out-Null
@@ -357,8 +353,7 @@ function Install-LlamaCpp {
 
         if ($runtime) {
             $runtimeZip = Join-Path $tmp $runtime.name
-            Write-Host "Lade $($runtime.name)..."
-            Invoke-WebRequest -Uri $runtime.browser_download_url -OutFile $runtimeZip -UseBasicParsing
+            Invoke-UiDownload $runtime.browser_download_url $runtimeZip $runtime.name
             Expand-Archive -Path $runtimeZip -DestinationPath $LlamaDir -Force
         }
 
@@ -374,8 +369,8 @@ function Install-LlamaCpp {
 
         $benchExe = Join-Path $LlamaDir "llama-bench.exe"
         $serverExe = Join-Path $LlamaDir "llama-server.exe"
-        if (-not (Test-Path $benchExe)) { throw "llama-bench.exe wurde nach dem Entpacken nicht gefunden." }
-        if (-not (Test-Path $serverExe)) { throw "llama-server.exe wurde nach dem Entpacken nicht gefunden." }
+        if (-not (Test-Path $benchExe)) { throw (T 'core.exe_missing' 'llama-bench.exe') }
+        if (-not (Test-Path $serverExe)) { throw (T 'core.exe_missing' 'llama-server.exe') }
 
         $probe = Invoke-LlamaBenchProbe $benchExe
         if (-not $probe.Success) {
@@ -384,16 +379,16 @@ function Install-LlamaCpp {
                 try { $hex = ('0x{0:X8}' -f ([uint32]$probe.ExitCode)) } catch { }
             }
             if ($probe.ExitCode -eq -1073741515 -or $probe.ExitCode -eq 3221225781) {
-                throw "llama-bench.exe ist nach der Installation nicht startbar (STATUS_DLL_NOT_FOUND).`nDem System fehlen wahrscheinlich die Microsoft Visual C++ Redistributables oder zwingende CUDA-Bibliotheken.`nBitte installiere die aktuellen C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`nAusgabe:`n$($probe.Output)"
+                throw ((T 'core.dll_missing') + "`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`n$($probe.Output)")
             } else {
-                throw "llama-bench.exe ist nach der Installation nicht startbar. Backend: $backend, Exitcode: $($probe.ExitCode) $hex`nAusgabe:`n$($probe.Output)"
+                throw ((T 'core.not_startable') + "`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`n$($probe.Output)")
             }
         }
 
         if ($probe.DeviceLine) {
-            Write-Host "Startprobe erfolgreich: $($probe.DeviceLine.Trim())" -ForegroundColor Green
+            Write-UiOk (T 'core.probe_ok_device' $probe.DeviceLine.Trim())
         } else {
-            Write-Host "Startprobe erfolgreich." -ForegroundColor Green
+            Write-UiOk (T 'core.probe_ok')
         }
 
         $state = [ordered]@{
@@ -407,90 +402,63 @@ function Install-LlamaCpp {
             cuda_family = if ($nvidia) { $nvidia.SupportedCudaMajor } else { $null }
         }
         $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
-        Write-Host "llama.cpp $($release.tag_name) wurde installiert."
+        Write-UiOk (T 'core.llama_installed' $release.tag_name)
 
         if (-not (Get-PinnedLlamaTag)) {
-            Write-Host "Fuer Serververgleiche denselben llama.cpp-Build auf allen Systemen verwenden:" -ForegroundColor Yellow
-            Write-Host "  $($release.tag_name)" -ForegroundColor Yellow
+            Write-UiWarn (T 'core.pin_hint' $release.tag_name)
         }
     } finally {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
 }
 
-Write-Step "Systempruefung"
+Write-UiSection (T 'core.system_check')
 $PythonExe = Get-PythonCommand
 if (-not $PythonExe) {
-    throw "Python 3.10+ wurde vom Bootstrap nicht in PATH bereitgestellt."
+    throw (T 'core.python_not_in_path')
 }
-Write-Host "Python: $PythonExe"
+Write-UiOk "Python: $PythonExe"
 
-Write-Step "Python-Umgebung und Pakete"
+Write-UiSection (T 'setup.section_packages')
 if (-not (Test-Path $VenvDir)) {
+    Write-UiStep (T 'setup.venv_create')
     & $PythonExe -m venv $VenvDir
-    if ($LASTEXITCODE -ne 0) { throw "Virtuelle Python-Umgebung konnte nicht erstellt werden." }
+    if ($LASTEXITCODE -ne 0) { throw (T 'core.venv_failed') }
 }
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
-if (-not (Test-Path $VenvPython)) { throw "Python in .venv wurde nicht gefunden." }
-& $VenvPython -m pip install --upgrade pip setuptools wheel
-if ($LASTEXITCODE -ne 0) { throw "pip konnte nicht aktualisiert werden." }
-& $VenvPython -m pip install -e "."
-if ($LASTEXITCODE -ne 0) { throw "Projektabhaengigkeiten konnten nicht installiert werden." }
+if (-not (Test-Path $VenvPython)) { throw (T 'core.venv_python_missing') }
+Write-UiStep (T 'setup.pip_install')
+& $VenvPython -m pip install --quiet --upgrade pip setuptools wheel
+if ($LASTEXITCODE -ne 0) { throw (T 'core.pip_failed') }
+& $VenvPython -m pip install --quiet -e "."
+if ($LASTEXITCODE -ne 0) { throw (T 'core.deps_failed') }
+Write-UiOk (T 'setup.packages_ready')
 
 Install-LlamaCpp
 
-Write-Step "Konfiguration und Modellerkennung"
+Write-UiSection (T 'setup.section_config')
 New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
-if ($LASTEXITCODE -ne 0) { throw "benchmark.yaml konnte nicht automatisch konfiguriert werden." }
+if ($LASTEXITCODE -ne 0) { throw (T 'core.bootstrap_failed') }
 
 $Models = Get-ChildItem -Path $ModelsDir -Filter "*.gguf" -Recurse -File -ErrorAction SilentlyContinue
 if (-not $Models -or $Models.Count -eq 0) {
-    Write-Host ""
-    Write-Host "Setup abgeschlossen." -ForegroundColor Green
-    Write-Host "Es wurde noch kein GGUF-Modell gefunden."
-    Write-Host "Lege eine oder mehrere .gguf-Dateien in folgenden Ordner und starte erneut:"
-    Write-Host "  $ModelsDir" -ForegroundColor Yellow
+    Write-UiDone (T 'core.setup_done') @((T 'core.no_models'), $ModelsDir)
     exit 0
 }
 
-Write-Host "Gefundene Modelle: $($Models.Count)"
-$Models | ForEach-Object { Write-Host "  - $($_.Name)" }
+Write-UiSection (T 'start.models_title' $Models.Count)
+$Models | ForEach-Object { Write-UiInfo "- $($_.Name)" }
 
-Write-Step "Vorpruefung"
+Write-UiSection (T 'start.doctor_title')
 & $VenvPython -m llmbench doctor --config $Config
-if ($LASTEXITCODE -ne 0) { throw "Vorpruefung fehlgeschlagen. Siehe Ausgabe oben." }
+if ($LASTEXITCODE -ne 0) { throw (T 'start.doctor_failed') }
 
 if ($SetupOnly) {
-    Write-Host ""
-    Write-Host "Setup erfolgreich abgeschlossen." -ForegroundColor Green
+    Write-UiDone (T 'core.setup_done')
     exit 0
 }
 
-Write-Step "Benchmark"
-Write-Host "Wie lange soll der Test laufen?"
-Write-Host "  1: kurz (short)    - schnelle Ueberpruefung"
-Write-Host "  2: mittel (medium) - Standardwerte"
-Write-Host "  3: lang (long)     - praezise Ergebnisse"
-$choice = Read-Host "Auswahl [1-3, Standard=2]"
-
-$duration = "medium"
-if ($choice -eq "1") { $duration = "short" }
-elseif ($choice -eq "3") { $duration = "long" }
-
-Write-Host "Verwende Dauer: $duration"
-
-Write-Host ""
-Write-Host "Womit soll getestet werden?"
-Write-Host "  1: Nur CPU"
-Write-Host "  2: Nur GPU"
-Write-Host "  3: CPU und GPU gleichzeitig (Standard, inkl. Dauerlast-Test)"
-$hwChoice = Read-Host "Auswahl [1-3, Standard=3]"
-
-$hardware = "both"
-if ($hwChoice -eq "1") { $hardware = "cpu" }
-elseif ($hwChoice -eq "2") { $hardware = "gpu" }
-
-Write-Host "Verwende Hardware-Auswahl: $hardware"
-& $VenvPython -m llmbench run --config $Config --duration $duration --hardware $hardware
-if ($LASTEXITCODE -ne 0) { throw "Benchmark fehlgeschlagen (Exitcode $LASTEXITCODE)." }
+$options = Read-BenchmarkOptions -NoStress
+& $VenvPython -m llmbench run --config $Config --duration $options.Duration --hardware $options.Hardware
+if ($LASTEXITCODE -ne 0) { throw (T 'start.benchmark_failed' $LASTEXITCODE) }

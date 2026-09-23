@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Gemeinsame Docker-Helfer fuer setup.sh und START_BENCHMARK.sh.
 # Diese Datei ist intern; fuer Nutzer bleiben die beiden Top-Level-Skripte die Einstiegspunkte.
+# Texte laufen ueber scripts/lib/ui.sh (Sprachsystem); wird hier nachgeladen,
+# falls der Aufrufer es noch nicht getan hat.
+if ! declare -F ui_t >/dev/null 2>&1; then
+    # shellcheck disable=SC1091
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/ui.sh"
+fi
 
 LLMBENCH_DOCKER_CMD=()
 LLMBENCH_DOCKER_IMAGE="${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest}"
@@ -13,7 +19,7 @@ _llmbench_sudo() {
     elif command -v sudo >/dev/null 2>&1; then
         sudo "$@"
     else
-        echo "[!] Root-Rechte werden benoetigt, aber sudo ist nicht installiert." >&2
+        ui_fail docker.sudo_missing
         return 1
     fi
 }
@@ -52,7 +58,7 @@ _llmbench_linux_family() {
 llmbench_install_docker_engine_linux() {
     local family codename arch
     family=$(_llmbench_linux_family) || {
-        echo "[!] Automatische Docker-Installation wird nur auf Ubuntu/Debian vorgenommen." >&2
+        ui_fail docker.only_debian
         return 1
     }
 
@@ -63,10 +69,11 @@ llmbench_install_docker_engine_linux() {
     else
         codename="${VERSION_CODENAME:-}"
     fi
-    [ -n "$codename" ] || { echo "[!] Linux-Codename konnte nicht ermittelt werden." >&2; return 1; }
+    [ -n "$codename" ] || { ui_fail docker.no_codename; return 1; }
     arch=$(dpkg --print-architecture)
 
-    echo "[+] Installiere Docker Engine + Buildx + Compose Plugin aus dem offiziellen Docker-Repository..."
+    ui_confirm_install "Docker Engine + Buildx + Compose" || { ui_fail docker.declined "Docker Engine"; return 1; }
+    ui_step docker.install_engine
     _llmbench_sudo apt-get update
     _llmbench_sudo apt-get install -y ca-certificates curl
     _llmbench_sudo install -m 0755 -d /etc/apt/keyrings
@@ -98,7 +105,8 @@ llmbench_install_compose_plugin_linux() {
         return 0
     fi
     if _llmbench_linux_family >/dev/null 2>&1; then
-        echo "[+] Docker Compose Plugin fehlt; installiere es..."
+        ui_confirm_install "Docker Compose Plugin" || { ui_fail docker.declined "Docker Compose Plugin"; return 1; }
+        ui_step docker.install_compose
         _llmbench_sudo apt-get update
         _llmbench_sudo apt-get install -y docker-compose-plugin || return 1
     fi
@@ -106,16 +114,17 @@ llmbench_install_compose_plugin_linux() {
 
 llmbench_install_nvidia_toolkit_linux() {
     command -v nvidia-smi >/dev/null 2>&1 || {
-        echo "[!] Keine NVIDIA-GPU bzw. kein NVIDIA-Treiber auf dem Host erkannt." >&2
+        ui_fail docker.no_nvidia
         return 1
     }
 
     if ! command -v nvidia-ctk >/dev/null 2>&1; then
         _llmbench_linux_family >/dev/null 2>&1 || {
-            echo "[!] NVIDIA Container Toolkit muss auf dieser Distribution manuell installiert werden." >&2
+            ui_fail docker.toolkit_manual
             return 1
         }
-        echo "[+] Installiere NVIDIA Container Toolkit aus dem offiziellen NVIDIA-Repository..."
+        ui_confirm_install "NVIDIA Container Toolkit" || { ui_fail docker.declined "NVIDIA Container Toolkit"; return 1; }
+        ui_step docker.install_toolkit
         _llmbench_sudo apt-get update
         _llmbench_sudo apt-get install -y ca-certificates curl gnupg
         curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
@@ -128,7 +137,7 @@ llmbench_install_nvidia_toolkit_linux() {
         _llmbench_sudo apt-get install -y nvidia-container-toolkit
     fi
 
-    echo "[+] Konfiguriere NVIDIA Container Runtime fuer Docker..."
+    ui_step docker.configure_runtime
     _llmbench_sudo nvidia-ctk runtime configure --runtime=docker
     if command -v systemctl >/dev/null 2>&1; then
         _llmbench_sudo systemctl restart docker
@@ -142,7 +151,7 @@ llmbench_prepare_docker_host() {
     llmbench_install_compose_plugin_linux || return 1
 
     if ! llmbench_resolve_docker_cmd; then
-        echo "[!] Docker Daemon ist nicht erreichbar." >&2
+        ui_fail docker.daemon_unreachable
         return 1
     fi
 
@@ -155,7 +164,7 @@ llmbench_prepare_docker_host() {
             command -v systemctl >/dev/null 2>&1 && _llmbench_sudo systemctl restart docker
         fi
     else
-        echo "[!] Docker-GPU-Modus benoetigt einen funktionierenden NVIDIA-Treiber auf dem Host." >&2
+        ui_fail docker.needs_driver
         return 1
     fi
 
@@ -178,7 +187,7 @@ llmbench_prepare_docker_paths() {
 }
 
 llmbench_docker_gpu_smoke() {
-    echo "[+] Pruefe NVIDIA-GPU im Docker Runtime..."
+    ui_step docker.gpu_check
     _llmbench_docker run --rm --gpus all "$LLMBENCH_CUDA_SMOKE_IMAGE" nvidia-smi >/dev/null
 }
 
@@ -192,21 +201,21 @@ llmbench_docker_build() {
     llmbench_prepare_docker_paths
 
     if [ "$LLMBENCH_DOCKER_BUILD_LOCAL" != "1" ]; then
-        echo "[+] Lade fertiges Benchmark-Image: $LLMBENCH_DOCKER_IMAGE"
+        ui_step docker.image_pull "$LLMBENCH_DOCKER_IMAGE"
         if _llmbench_docker pull "$LLMBENCH_DOCKER_IMAGE"; then
             llmbench_set_container_image_id || return 1
-            echo "[OK] GHCR-Image geladen; lokaler CUDA-Build wird uebersprungen."
+            ui_ok docker.image_ok
             return 0
         fi
 
-        echo "[!] GHCR-Image konnte nicht geladen werden." >&2
+        ui_warn docker.image_pull_failed
         if llmbench_set_container_image_id; then
-            echo "[+] Verwende bereits lokal vorhandenes Image $LLMBENCH_DOCKER_IMAGE."
+            ui_step docker.image_local "$LLMBENCH_DOCKER_IMAGE"
             return 0
         fi
-        echo "[+] Kein lokales Image vorhanden; falle auf lokalen reproduzierbaren CUDA-Build zurueck."
+        ui_step docker.image_build_fallback
     else
-        echo "[+] LLMBENCH_DOCKER_BUILD_LOCAL=1: erzwinge lokalen CUDA-Build."
+        ui_step docker.image_build_forced
     fi
 
     _llmbench_compose build llmbench
@@ -234,9 +243,9 @@ llmbench_setup_docker() {
     llmbench_docker_build || return 1
     llmbench_docker_container_check || return 1
     llmbench_docker_setup_project || return 1
-    echo "[OK] Docker/CUDA Benchmark-Runtime ist bereit."
-    echo "     Image: $LLMBENCH_DOCKER_IMAGE"
-    echo "     Image-ID: $LLMBENCH_CONTAINER_IMAGE_ID"
+    ui_ok docker.runtime_ready
+    ui_info_raw "Image: $LLMBENCH_DOCKER_IMAGE"
+    ui_info_raw "Image-ID: $LLMBENCH_CONTAINER_IMAGE_ID"
 }
 
 llmbench_docker_ready() {
@@ -261,29 +270,9 @@ llmbench_docker_run() {
     llmbench_prepare_docker_paths
     llmbench_docker_refresh_config || return 1
 
-    echo "=== Benchmark (Docker + CUDA) ==="
-    echo "Wie lange soll der Test laufen?"
-    echo "  1: kurz (short)    - schnelle Ueberpruefung"
-    echo "  2: mittel (medium) - Standardwerte"
-    echo "  3: lang (long)     - praezise Ergebnisse"
-    read -r -p "Auswahl [1-3, Standard=2]: " choice
-    local duration="medium"
-    [ "$choice" = "1" ] && duration="short"
-    [ "$choice" = "3" ] && duration="long"
-
-    echo ""
-    echo "Womit soll getestet werden?"
-    echo "  1: Nur CPU"
-    echo "  2: Nur GPU"
-    echo "  3: CPU und GPU (Standard, inkl. Dauerlast-Test)"
-    read -r -p "Auswahl [1-3, Standard=3]: " hw_choice
-    local hardware="both"
-    [ "$hw_choice" = "1" ] && hardware="cpu"
-    [ "$hw_choice" = "2" ] && hardware="gpu"
-
-    read -r -p "Zusaetzliche V2-Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten? [j/N]: " stress_choice
-    local args=(python -m llmbench run --config /workspace/benchmark.yaml --duration "$duration" --hardware "$hardware")
-    if [[ "$stress_choice" =~ ^[jJyY]$ ]]; then
+    ui_benchmark_options
+    local args=(python -m llmbench run --config /workspace/benchmark.yaml --duration "$UI_DURATION" --hardware "$UI_HARDWARE")
+    if [ "$UI_STRESS" = "1" ]; then
         args+=(--stress)
     fi
 

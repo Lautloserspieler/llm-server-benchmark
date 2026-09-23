@@ -437,7 +437,9 @@ class PerformanceMode:
     def _linux_rapl(self) -> None:
         powercap = self.sys / "sys" / "class" / "powercap"
         changes = []
-        for zone in sorted(powercap.glob("intel-rapl*:*")):
+        # "intel-rapl:0", "intel-rapl:0:1", "intel-rapl-mmio:0"; der Steuerordner
+        # "intel-rapl" selbst hat keine constraint_*-Dateien.
+        for zone in sorted(powercap.glob("intel-rapl*")):
             for limit in sorted(zone.glob("constraint_*_power_limit_uw")):
                 prefix = limit.name[: -len("power_limit_uw")]
                 hw_max = _to_int(_read(zone / f"{prefix}max_power_uw"))

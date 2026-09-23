@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -21,6 +22,10 @@ class FakeRunner:
             if tuple(argv[: len(prefix)]) == prefix:
                 return subprocess.CompletedProcess(argv, rc, out, "")
         return subprocess.CompletedProcess(argv, 0, "", "")
+
+
+# Unter Windows ist ":" im Dateinamen verboten; der Code sucht nur nach "intel-rapl*".
+RAPL_ZONE = "sys/class/powercap/" + ("intel-rapl-0" if os.name == "nt" else "intel-rapl:0")
 
 
 def _write(path: Path, text: str) -> Path:
@@ -45,7 +50,7 @@ def linux_sysfs(tmp_path):
     _write(cpu / "intel_pstate/max_perf_pct", "100\n")
     _write(root / "sys/firmware/acpi/platform_profile", "balanced\n")
     _write(root / "sys/firmware/acpi/platform_profile_choices", "low-power balanced performance\n")
-    rapl = root / "sys/class/powercap/intel-rapl:0"
+    rapl = root / RAPL_ZONE
     _write(rapl / "constraint_0_power_limit_uw", "65000000\n")
     _write(rapl / "constraint_0_max_power_uw", "125000000\n")
     _write(root / "sys/module/pcie_aspm/parameters/policy", "[default] performance powersave powersupersave\n")
@@ -72,7 +77,7 @@ def test_linux_sets_everything_and_restores_it(tmp_path, linux_sysfs):
         assert (cpu / "cpufreq/policy0/scaling_max_freq").read_text() == "5000000"
         assert (cpu / "intel_pstate/no_turbo").read_text() == "0"
         assert (linux_sysfs / "sys/firmware/acpi/platform_profile").read_text() == "performance"
-        rapl = linux_sysfs / "sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw"
+        rapl = linux_sysfs / RAPL_ZONE / "constraint_0_power_limit_uw"
         assert rapl.read_text() == "125000000"
         assert (linux_sysfs / "sys/module/pcie_aspm/parameters/policy").read_text() == "performance"
         amd = linux_sysfs / "sys/class/drm/card0/device"
@@ -85,7 +90,7 @@ def test_linux_sets_everything_and_restores_it(tmp_path, linux_sysfs):
     assert (cpu / "cpufreq/policy0/scaling_governor").read_text() == "powersave"
     assert (cpu / "intel_pstate/no_turbo").read_text() == "1"
     assert (linux_sysfs / "sys/module/pcie_aspm/parameters/policy").read_text() == "default"
-    assert (linux_sysfs / "sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw").read_text() == "65000000"
+    assert (linux_sysfs / RAPL_ZONE / "constraint_0_power_limit_uw").read_text() == "65000000"
     assert not (tmp_path / performance.STATE_FILE).exists()
 
 

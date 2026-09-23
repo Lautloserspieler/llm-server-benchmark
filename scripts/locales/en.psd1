@@ -1,4 +1,4 @@
-# English texts for the Windows scripts. Keys must match de.psd1 (checked by tests/test_i18n_coverage.py).
+﻿# English texts for the Windows scripts. Keys must match de.psd1 (checked by tests/test_i18n_coverage.py).
 @{
     'ui.yes_key' = 'y'
     'ui.yes' = 'yes'

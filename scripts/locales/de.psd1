@@ -1,4 +1,4 @@
-# Deutsche Texte der Windows-Skripte (Referenzsprache). Neue Schluessel auch in en.psd1 eintragen.
+﻿# Deutsche Texte der Windows-Skripte (Referenzsprache). Neue Schluessel auch in en.psd1 eintragen.
 @{
     'ui.yes_key' = 'j'
     'ui.yes' = 'ja'

@@ -77,14 +77,16 @@ def _power_state_warning() -> str | None:
         return (
             f"power-profiles-daemon-Profil ist '{profile}', nicht 'performance'. "
             "Das kostet Tokens/s und verfaelscht Serververgleiche. "
-            "Vor dem Benchmark: sudo powerprofilesctl set performance"
+            "Vor dem Benchmark: sudo powerprofilesctl set performance "
+            "(oder `llmbench performance on`; `llmbench run` stellt das automatisch um)."
         )
     governors = state.get("governors")
     if governors and "performance" not in governors:
         return (
             "CPU-Governor ist " + ",".join(governors) + ", nicht 'performance'. "
             "Das kostet Tokens/s und verfaelscht Serververgleiche. "
-            "Vor dem Benchmark: sudo cpupower frequency-set -g performance"
+            "Vor dem Benchmark: sudo cpupower frequency-set -g performance "
+            "(oder `llmbench performance on`; `llmbench run` stellt das automatisch um)."
         )
     return None
 

@@ -238,8 +238,8 @@ def run_soak_test(
             log_dir / "gpu-server.log",
         )
         startup_timeout = float(soak_cfg.get("startup_timeout_seconds", 300))
-        backend.wait_health(cpu_url, startup_timeout)
-        backend.wait_health(gpu_url, startup_timeout)
+        backend.wait_health(cpu_url, startup_timeout, proc=cpu_proc)
+        backend.wait_health(gpu_url, startup_timeout, proc=gpu_proc)
 
         monitor = ResourceMonitor(float(soak_cfg.get("sample_interval_seconds", 2.0)))
         monitor.set_target_pids(

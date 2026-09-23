@@ -113,7 +113,7 @@ def test_start_and_stop_collect_samples_via_the_telemetry_provider(monkeypatch):
     provider = FakeProvider([[_gpu(util=77.0)]])
     monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: provider)
 
-    monitor = ResourceMonitor(interval=0.02)
+    monitor = ResourceMonitor(interval=0.02, idle_wait_seconds=0)
     monitor.start()
     
     # Wait for at least one sample instead of a fixed sleep to prevent flakiness
@@ -133,7 +133,7 @@ def test_summary_reports_telemetry_source_from_provider_attribute(monkeypatch):
     provider.TELEMETRY_SOURCE = "rocm_smi"
     monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: provider)
 
-    monitor = ResourceMonitor(interval=0.02)
+    monitor = ResourceMonitor(interval=0.02, idle_wait_seconds=0)
     monitor.start()
 
     start_time = time.time()
@@ -163,3 +163,23 @@ def test_latest_returns_baseline_before_any_sample_is_collected(monkeypatch):
     monitor._baseline = {"ram_used_bytes": 1024}
     monitor._samples = []
     assert monitor.latest() is monitor._baseline
+
+
+def test_start_waits_until_gpu_is_idle_before_taking_the_baseline(monkeypatch):
+    # Direkt nach einem GPU-Test laeuft die Karte kurz nach - das ist kein "ausgelastet".
+    busy_then_idle = iter([80.0, 40.0, 3.0])
+    provider = FakeProvider([[_gpu(util=next(busy_then_idle, 3.0))] for _ in range(50)])
+    monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: provider)
+    monkeypatch.setattr("llmbench.monitor.time.sleep", lambda _s: None)
+
+    monitor = ResourceMonitor(interval=10.0, idle_wait_seconds=15)
+    monitor._provider = provider
+    baseline = monitor._wait_for_idle_gpu()
+    assert baseline["gpus"][0]["util_gpu_percent"] == 3.0
+
+
+def test_idle_wait_gives_up_after_the_limit():
+    provider = FakeProvider([[_gpu(util=90.0)] for _ in range(50)])
+    monitor = ResourceMonitor(interval=10.0, idle_wait_seconds=0)
+    monitor._provider = provider
+    assert monitor._wait_for_idle_gpu()["gpus"][0]["util_gpu_percent"] == 90.0

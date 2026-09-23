@@ -54,6 +54,7 @@ def _measure_performance(
         wait_health(
             endpoint_cfg["base_url"],
             float(endpoint_cfg.get("startup_timeout_seconds", 300)),
+            proc=proc,
         )
 
         ep = run_endpoint_load(

@@ -167,8 +167,8 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
         print_msg(_("Warte auf Health Checks..."))
         timeout = float(base_endpoint.get("startup_timeout_seconds", 300))
         await asyncio.gather(
-            wait_health_async(ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1)),
-            wait_health_async(ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2)),
+            wait_health_async(ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1), proc1),
+            wait_health_async(ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2), proc2),
         )
         print_msg(_("Beide Server bereit."), style="green")
 

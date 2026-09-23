@@ -69,6 +69,7 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
             endpoint_cfg["base_url"],
             float(endpoint_cfg.get("startup_timeout_seconds", 300)),
             {"Authorization": f"Bearer {endpoint_cfg['api_key']}"} if endpoint_cfg.get("api_key") else None,
+            proc=proc,
         )
         result = run_endpoint_load(
             endpoint_cfg["base_url"],

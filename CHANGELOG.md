@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### llama-server-Startfehler werden sofort und mit echtem Grund gemeldet
+
+- Fix: Beendete sich `llama-server` direkt beim Start (Absturz, abgelehnter
+  Parameter, ...), wartete der Dauerlast-/Endpoint-/Stresstest bis zu 300 s und
+  meldete dann nur `llama-server wurde nicht bereit: All connection attempts
+  failed`. Jetzt wird der beendete Prozess sofort erkannt; die Meldung nennt den
+  Exitcode lesbar (z. B. `0xC0000005 – Absturz`), die letzten Zeilen des
+  Server-Logs und den Log-Pfad.
+- Ein bereits belegter Port wird vor dem Start erkannt und klar gemeldet.
+- Windows-Setup: Die Startprobe prueft neben `llama-bench` jetzt auch
+  `llama-server --version`; stuerzt der Server-Build ab, greift die
+  Fallback-Kette (naechster CUDA-Build, Vulkan, CPU).
+- Vor jedem Test wartet die Messung bis zu 15 s, bis die GPU vom vorigen Test
+  zur Ruhe gekommen ist; der Hinweis "GPU war bereits vor dem Testlauf
+  ausgelastet" erscheint nur noch, wenn sie danach weiter ausgelastet ist.
+  Die Monitor-Hinweise sind jetzt uebersetzt.
+
 ### Windows: llama.cpp weicht automatisch auf einen lauffaehigen Build aus
 
 - Fix: Stuerzte der gewaehlte llama.cpp-Build beim ersten Start ab (z. B.

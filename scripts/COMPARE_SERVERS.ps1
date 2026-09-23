@@ -8,10 +8,13 @@ $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 
+Import-Module (Join-Path $PSScriptRoot "lib\UI.psm1") -Force -DisableNameChecking
+Initialize-LlmbenchUI
+
 if (-not (Test-Path $Python)) {
-    Write-Host "Bitte zuerst START_BENCHMARK.ps1 ausführen."
+    Write-UiFail (T 'compare.run_setup_first')
     exit 1
 }
 
 & $Python -m llmbench compare @Runs --out comparison
-Write-Host "Vergleich: $Root\comparison\comparison.html"
+Write-UiOk (T 'compare.done' "$Root\comparison\comparison.html")

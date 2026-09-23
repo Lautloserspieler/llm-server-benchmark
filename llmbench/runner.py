@@ -18,6 +18,7 @@ from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
 from .tuner import tune_gpu_layers
 from .backends import backend_name, get_backend
+from .i18n import _
 from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
@@ -460,7 +461,7 @@ def print_summary_table(summary: dict[str, Any]) -> None:
             for kind, result in profile.get("benchmarks", {}).items():
                 bench_rows = flatten_bench_rows(result)
                 if not bench_rows:
-                    label = "Zeitueberschreitung" if result.get("status") == "timeout" else "Fehler"
+                    label = _("Zeitueberschreitung") if result.get("status") == "timeout" else _("Fehler")
                     rows.append((model_name, str(profile.get("name")), kind, label, ""))
                     continue
                 for row in bench_rows:

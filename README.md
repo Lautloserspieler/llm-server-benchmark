@@ -115,7 +115,9 @@ Every run records provenance that can be checked before two servers are compared
 5. Select benchmark duration and hardware mode
 ```
 
-`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks `[J/n]` before each one and then downloads and installs it automatically. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup stops with a clear message; restart Windows and run `setup.bat` again to continue. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
+The very first step of `setup.bat` / `setup.sh` is choosing the language (Deutsch/English). The choice is saved in `.runtime/language` and used everywhere afterwards: installer scripts, Python CLI, reports and the Docker container. Set `LLMBENCH_LANG=de|en` to skip the question.
+
+`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks before each one and then downloads and installs it automatically. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup stops with a clear message; restart Windows and run `setup.bat` again to continue. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
 
 ### Linux
 
@@ -126,6 +128,8 @@ chmod +x setup.sh START_BENCHMARK.sh
 ./setup.sh
 ./START_BENCHMARK.sh
 ```
+
+`setup.sh` asks before installing anything it needs (Python via apt, Docker Engine, NVIDIA Container Toolkit); `LLMBENCH_AUTO_INSTALL=1/0` works the same as on Windows. It runs on the Bash 3.2 that ships with macOS.
 
 On an NVIDIA Linux workstation, install a working NVIDIA driver and CUDA Toolkit (`nvcc`) to get the automatic native CUDA source-build path.
 

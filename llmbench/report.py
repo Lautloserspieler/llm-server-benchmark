@@ -58,8 +58,8 @@ def fms(seconds: Any) -> str:
 
 def status_cell(status: str | None) -> str:
     cls = {"ok": "status-ok", "timeout": "status-timeout"}.get(str(status), "status-failed")
-    label = {"ok": "OK", "timeout": "Zeitueberschreitung", "failed": "Fehler"}.get(str(status), str(status))
-    return f"<span class='{cls}'>{esc(_(label))}</span>"
+    label = {"ok": _("OK"), "timeout": _("Zeitueberschreitung"), "failed": _("Fehler")}.get(str(status), str(status))
+    return f"<span class='{cls}'>{esc(label)}</span>"
 
 
 def _gpu_text(hw: dict[str, Any]) -> str:

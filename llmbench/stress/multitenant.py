@@ -16,7 +16,17 @@ from llmbench.capacity import (
 )
 from llmbench.config import load_config, resolve_path
 from llmbench.endpoint import _run_endpoint_load_async, wait_health_async
-from llmbench.utils import auth_headers, ensure_dir, file_fingerprint, modify_url_port, print_err, print_msg, write_json
+from llmbench.i18n import _
+from llmbench.utils import (
+    auth_headers,
+    ensure_dir,
+    file_fingerprint,
+    modify_url_port,
+    print_err,
+    print_msg,
+    print_section,
+    write_json,
+)
 
 _MULTI_TENANT_VRAM_FRACTION = 0.80
 
@@ -93,7 +103,7 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     """Startet zwei automatisch VRAM-kompatibel ausgewaehlte GPU-Modelle parallel."""
     cfg = load_config(config_path)
     if len(cfg.get("models", [])) < 2:
-        print_err("Multi-Tenant Stresstest benoetigt mindestens 2 Modelle in der Konfiguration.")
+        print_err(_("Multi-Tenant Stresstest benoetigt mindestens 2 Modelle in der Konfiguration."))
         return 1
 
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_multitenant"
@@ -101,9 +111,9 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
 
     pair, reason = _select_multitenant_pair(cfg)
     if not pair:
-        result = {"status": "skipped", "reason": reason or "Kein geeignetes Modellpaar gefunden."}
+        result = {"status": "skipped", "reason": reason or _("Kein geeignetes Modellpaar gefunden.")}
         write_json(out_dir / "multitenant.json", result)
-        print_msg(f"Multi-Tenant uebersprungen: {result['reason']}")
+        print_msg(_("Multi-Tenant uebersprungen: {reason}").format(reason=result["reason"]))
         return 2
 
     first, second = pair
@@ -111,9 +121,9 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     prof1, prof2 = first["profile"], second["profile"]
     model_path1, model_path2 = first["path"], second["path"]
 
-    print_msg("=== Multi-Tenant Stresstest ===")
-    print_msg(f"Modell 1: {model1['name']} ({prof1.get('name')})")
-    print_msg(f"Modell 2: {model2['name']} ({prof2.get('name')})")
+    print_section(_("Multi-Tenant Stresstest"))
+    print_msg(_("Modell {n}: {name} ({profile})").format(n=1, name=model1["name"], profile=prof1.get("name")))
+    print_msg(_("Modell {n}: {name} ({profile})").format(n=2, name=model2["name"], profile=prof2.get("name")))
 
     load_dir1 = ensure_dir(out_dir / "model1")
     load_dir2 = ensure_dir(out_dir / "model2")
@@ -136,7 +146,7 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     proc2 = None
     started = time.perf_counter()
     try:
-        print_msg("Starte Server 1...")
+        print_msg(_("Starte Server {n}...").format(n=1))
         proc1, command1 = backend.start_server(
             model_path1,
             prof1,
@@ -145,7 +155,7 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
             out_dir / "server1.log",
         )
 
-        print_msg("Starte Server 2...")
+        print_msg(_("Starte Server {n}...").format(n=2))
         proc2, command2 = backend.start_server(
             model_path2,
             prof2,
@@ -154,16 +164,16 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
             out_dir / "server2.log",
         )
 
-        print_msg("Warte auf Health Checks...")
+        print_msg(_("Warte auf Health Checks..."))
         timeout = float(base_endpoint.get("startup_timeout_seconds", 300))
         await asyncio.gather(
             wait_health_async(ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1)),
             wait_health_async(ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2)),
         )
-        print_msg("Beide Server bereit.")
+        print_msg(_("Beide Server bereit."), style="green")
 
         interval = float(cfg["benchmark"].get("resource_sample_interval", 0.5))
-        print_msg("Starte parallele Endpoint-Last auf beide Server...")
+        print_msg(_("Starte parallele Endpoint-Last auf beide Server..."))
         res1, res2 = await asyncio.gather(
             _run_endpoint_load_async(
                 ep_cfg1["base_url"],
@@ -211,16 +221,17 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
             ],
         }
         write_json(out_dir / "multitenant.json", result)
-        print_msg(f"{model1['name']}: {_average_system_tps(res1):.2f} System-TPS im Mittel")
-        print_msg(f"{model2['name']}: {_average_system_tps(res2):.2f} System-TPS im Mittel")
-        print_msg(f"Ergebnis: {out_dir / 'multitenant.json'}")
+        for name, res in ((model1["name"], res1), (model2["name"], res2)):
+            tps = f"{_average_system_tps(res):.2f}"
+            print_msg(_("{name}: {tps} System-TPS im Mittel").format(name=name, tps=tps))
+        print_msg(_("Ergebnis: {path}").format(path=out_dir / "multitenant.json"), style="green")
         return 0
     except Exception as exc:
         write_json(
             out_dir / "multitenant.json",
             {"status": "failed", "error": str(exc), "duration_seconds": time.perf_counter() - started},
         )
-        print_err(f"Fehler im Stresstest: {exc}")
+        print_err(_("Fehler im Stresstest: {error}").format(error=exc))
         return 1
     finally:
         if proc1 is not None:

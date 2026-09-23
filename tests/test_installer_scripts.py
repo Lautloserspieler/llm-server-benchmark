@@ -201,3 +201,121 @@ def test_bootstrap_keeps_chosen_language(tmp_path, monkeypatch):
     monkeypatch.delenv("LLMBENCH_LANG")
     bootstrap_config(cfg_path, tmp_path)
     assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["project"]["language"] == "en"
+
+
+# --------------------------------------------------------------------------- llama.cpp (Windows)
+
+_LLAMA_MODULES = (
+    f"Import-Module '{(ROOT / 'scripts' / 'lib' / 'UI.psm1').as_posix()}' -Force -DisableNameChecking\n"
+    f"Import-Module '{(ROOT / 'scripts' / 'lib' / 'LlamaCpp.psm1').as_posix()}' -Force -DisableNameChecking\n"
+    "Initialize-LlmbenchUI\n"
+    "function Asset($n) { [pscustomobject]@{ name = $n; browser_download_url = \"https://example.invalid/$n\" } }\n"
+)
+
+
+def _release(*versions: str, vulkan: bool = True) -> str:
+    assets = []
+    for version in versions:
+        assets += [f"(Asset 'llama-b1-bin-win-cuda-{version}-x64.zip')", f"(Asset 'cudart-llama-bin-win-cuda-{version}-x64.zip')"]
+    if vulkan:
+        assets.append("(Asset 'llama-b1-bin-win-vulkan-x64.zip')")
+    assets.append("(Asset 'llama-b1-bin-win-cpu-x64.zip')")
+    return "$release = [pscustomobject]@{ tag_name = 'b1'; assets = @(" + ", ".join(assets) + ") }\n"
+
+
+@needs_pwsh
+@pytest.mark.parametrize(
+    ("versions", "nvidia", "preference", "expected"),
+    [
+        # Screenshot-Fall: Treiber meldet CUDA 13.0, es gibt nur 13.4 -> danach 12.4, Vulkan, CPU.
+        (("13.4", "12.4"), "@{ SupportedCudaMajor = 13; Cuda = [version]'13.0'; ComputeCap = [version]'8.6' }", "auto",
+         "cuda-13.4,cuda-12.4,vulkan,cpu"),
+        # Passende Version <= Treiber zuerst, neuere derselben Familie danach.
+        (("13.4", "13.0", "12.4"), "@{ SupportedCudaMajor = 13; Cuda = [version]'13.0'; ComputeCap = [version]'8.6' }",
+         "auto", "cuda-13.0,cuda-13.4,cuda-12.4,vulkan,cpu"),
+        # Pascal (6.1): CUDA 13 unterstuetzt die Karte nicht mehr.
+        (("13.4", "12.4"), "@{ SupportedCudaMajor = 13; Cuda = [version]'13.0'; ComputeCap = [version]'6.1' }", "auto",
+         "cuda-12.4,vulkan,cpu"),
+        # Treiber kann nur CUDA 12: keine CUDA-13-Builds.
+        (("13.4", "12.4"), "@{ SupportedCudaMajor = 12; Cuda = [version]'12.8'; ComputeCap = [version]'8.6' }", "auto",
+         "cuda-12.4,vulkan,cpu"),
+        (("13.4", "12.4"), "$null", "auto", "cpu"),
+        (("13.4", "12.4"), "@{ SupportedCudaMajor = 13; Cuda = [version]'13.0' }", "vulkan", "vulkan"),
+    ],
+)
+def test_llama_candidate_order(tmp_path, versions, nvidia, preference, expected):
+    script = tmp_path / "order.ps1"
+    script.write_text(
+        _LLAMA_MODULES
+        + _release(*versions)
+        + f"$nvidia = {nvidia}\n"
+        + f"(Get-LlamaPackageCandidates -Release $release -Nvidia $nvidia -Preference '{preference}' | "
+        "ForEach-Object { $_.Backend }) -join ','\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.stdout.strip().splitlines()[-1] == expected
+
+
+def _install_script(tmp_path: Path, probe_results: str) -> Path:
+    # Echte Zip-Dateien mit Platzhalter-Programmen; Download = Kopie, Probe = vorgegebene Ergebnisse.
+    script = tmp_path / "install.ps1"
+    script.write_text(
+        _LLAMA_MODULES
+        + _release("13.4", "12.4")
+        + f"$work = '{tmp_path.as_posix()}'\n"
+        "$pkg = Join-Path $work 'pkg'; New-Item -ItemType Directory -Force $pkg | Out-Null\n"
+        "Set-Content (Join-Path $pkg 'llama-bench.exe') 'x'; Set-Content (Join-Path $pkg 'llama-server.exe') 'x'\n"
+        "$zip = Join-Path $work 'pkg.zip'; Compress-Archive -Path (Join-Path $pkg '*') -DestinationPath $zip -Force\n"
+        "$nvidia = @{ SupportedCudaMajor = 13; Cuda = [version]'13.0'; ComputeCap = [version]'8.6' }\n"
+        "$candidates = @(Get-LlamaPackageCandidates -Release $release -Nvidia $nvidia)\n"
+        f"$script:results = @({probe_results})\n"
+        "$script:calls = 0\n"
+        "$prober = { param($exe) $r = $script:results[$script:calls]; $script:calls++;"
+        " [pscustomobject]@{ Success = ($r -eq 0); ExitCode = $r; Output = ''; DeviceLine = $null } }\n"
+        "$downloader = { param($url, $out, $label) Copy-Item $zip $out }\n"
+        "$llamaDir = Join-Path $work 'tools/llama.cpp'\n"
+        "try {\n"
+        "  $result = Install-LlamaFromCandidates -Candidates $candidates -LlamaDir $llamaDir"
+        " -ProbeLog (Join-Path $work 'probe.log') -Downloader $downloader -Prober $prober\n"
+        "  \"CHOSEN=$($result.Candidate.Backend)\"\n"
+        "  \"INSTALLED=$(Test-Path (Join-Path $llamaDir 'llama-bench.exe'))\"\n"
+        "} catch { \"FAILED=$($_.Exception.Message)\"; exit 1 }\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+@needs_pwsh
+def test_llama_install_falls_back_after_crash(tmp_path):
+    # Wie auf dem Screenshot: cuda-13.4 stuerzt mit 0xC0000005 ab -> cuda-12.4 wird installiert.
+    script = _install_script(tmp_path, "-1073741819, 0")
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CHOSEN=cuda-12.4" in proc.stdout
+    assert "INSTALLED=True" in proc.stdout
+    assert "cuda-13.4 does not start on this machine (0xC0000005 – crash (access violation))" in proc.stdout
+    assert "0xC0000005" in (tmp_path / "probe.log").read_text(encoding="utf-8-sig")
+    assert not list((tmp_path / "tools").glob(".llama-staging-*")), "Staging-Ordner wurden nicht aufgeraeumt"
+
+
+@needs_pwsh
+def test_llama_install_reports_all_attempts_when_nothing_starts(tmp_path):
+    script = _install_script(tmp_path, "-1073741819, -1073741819, -1073741795, 1")
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en")
+    assert proc.returncode == 1
+    assert "No llama.cpp build starts on this machine" in proc.stdout
+    for line in ("- cuda-13.4: 0xC0000005", "- cuda-12.4: 0xC0000005", "- vulkan: 0xC000001D", "- cpu: exit code 1"):
+        assert line in proc.stdout
+
+
+def test_powershell_files_with_non_ascii_have_bom():
+    # Windows PowerShell 5.1 liest UTF-8 ohne BOM als ANSI - Umlaute/Striche in
+    # Texten wuerden dann verstuemmelt ("â€“" statt "–").
+    bad = []
+    for path in sorted((ROOT / "scripts").rglob("*.ps*1")):
+        data = path.read_bytes()
+        if any(byte > 0x7F for byte in data) and not data.startswith(b"\xef\xbb\xbf"):
+            bad.append(str(path.relative_to(ROOT)))
+    assert not bad, "Nicht-ASCII ohne UTF-8-BOM: " + ", ".join(bad)

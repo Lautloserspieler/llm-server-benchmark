@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Windows: llama.cpp weicht automatisch auf einen lauffaehigen Build aus
+
+- Fix: Stuerzte der gewaehlte llama.cpp-Build beim ersten Start ab (z. B.
+  `cuda-13.4` mit Exitcode `-1073741819` = `0xC0000005`, Zugriffsverletzung),
+  brach das komplette Setup ab. Jetzt probiert das Setup eine Liste von Builds
+  nacheinander: passende CUDA-Version (hoechste <= der vom Treiber gemeldeten),
+  weitere derselben Hauptversion, aeltere CUDA-Hauptversion (z. B. `cuda-12.4`),
+  Vulkan, CPU. Der erste Build, der startet, wird installiert.
+- GPUs unter Compute Capability 7.5 (z. B. Pascal) ueberspringen CUDA-13-Builds;
+  Grafikkarte und Compute Capability werden angezeigt.
+- Verstaendliche Fehlercodes statt Zahlen (Absturz, fehlende DLL, fehlender
+  CPU-Befehlssatz); Ausgabe aller Startproben in `.runtime/llama-probe.log`.
+- Warnung, wenn statt CUDA nur Vulkan/CPU laeuft (Ergebnisse dann nicht mit
+  CUDA-Servern vergleichbar). Ein bewusst gewaehlter Ausweich-Build wird im
+  Zustand vermerkt und beim naechsten Start nicht wieder durch den
+  abstuerzenden Build ersetzt.
+- `LLMBENCH_LLAMACPP_BUILD_BACKEND=auto|cuda|vulkan|cpu` gilt jetzt auch unter
+  Windows.
+- Paketauswahl und Installation liegen im neuen Modul
+  `scripts/lib/LlamaCpp.psm1` und sind mit pwsh-Tests abgedeckt.
+
 ### Setup: NVIDIA-Treiberpruefung, Neustart-Fortsetzung, Backend-Auswahl
 
 - Windows: Vor dem Docker-GPU-Setup wird geprueft, ob eine NVIDIA-Karte und ein

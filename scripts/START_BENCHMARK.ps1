@@ -176,7 +176,7 @@ function Invoke-BenchmarkRun {
     $options = Read-BenchmarkOptions
     $hardware = $options.Hardware
     if ($hardware -eq "cpu") {
-        # Pruefen ob ein GPU-Backend installiert ist – CUDA-Builds schlagen bei reinen CPU-Tests fehl
+        # Pruefen ob ein GPU-Backend installiert ist - CUDA-Builds schlagen bei reinen CPU-Tests fehl
         $backendFile = Join-Path $PSScriptRoot "..\llama_cpp_state.json"
         $isCudaBuild = $false
         if (Test-Path $backendFile) {

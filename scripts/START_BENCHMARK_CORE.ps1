@@ -19,7 +19,9 @@ $StateFile = Join-Path $LlamaDir ".llama-build.json"
 $PinFile = Join-Path $Root "llama-cpp-version.txt"
 
 Import-Module (Join-Path $PSScriptRoot "lib\UI.psm1") -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot "lib\LlamaCpp.psm1") -Force -DisableNameChecking
 Initialize-LlmbenchUI
+$ProbeLog = Join-Path $Root ".runtime\llama-probe.log"
 
 function Get-PythonCommand {
     $candidates = @(
@@ -38,55 +40,6 @@ function Get-PythonCommand {
         } catch { }
     }
     return $null
-}
-
-function ConvertTo-Version([string]$Value) {
-    if (-not $Value) { return $null }
-    if ($Value -notmatch '\.') { $Value = "$Value.0" }
-    try { return [version]$Value } catch { return $null }
-}
-
-function Get-NvidiaInfo {
-    $nvsmi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
-    if (-not $nvsmi) { return $null }
-
-    $driver = (& $nvsmi.Source --query-gpu=driver_version --format=csv,noheader 2>$null | Select-Object -First 1)
-    if ($driver) { $driver = $driver.ToString().Trim() }
-
-    $reportedCuda = $null
-    $source = T 'core.unknown'
-    $text = (& $nvsmi.Source 2>$null | Out-String)
-    if ($text -match 'CUDA\s*Version\s*:?\s*([0-9]+(?:\.[0-9]+)?)') {
-        $reportedCuda = ConvertTo-Version $Matches[1]
-        if ($reportedCuda) { $source = "nvidia-smi" }
-    }
-
-    $driverMajor = $null
-    $supportedCudaMajor = $null
-    if ($driver -match '^([0-9]+)') {
-        $driverMajor = [int]$Matches[1]
-        # NVIDIA minor-version compatibility:
-        # CUDA 13.x => driver >= 580
-        # CUDA 12.x => driver >= 525
-        # CUDA 11.x => driver >= 450
-        if ($driverMajor -ge 580) { $supportedCudaMajor = 13 }
-        elseif ($driverMajor -ge 525) { $supportedCudaMajor = 12 }
-        elseif ($driverMajor -ge 450) { $supportedCudaMajor = 11 }
-    }
-
-    if (-not $reportedCuda -and $supportedCudaMajor) {
-        $reportedCuda = [version]("$supportedCudaMajor.0")
-        $source = T 'core.driver_version' $driver
-    }
-
-    return @{
-        Command = $nvsmi.Source
-        Driver = $driver
-        DriverMajor = $driverMajor
-        Cuda = $reportedCuda
-        CudaSource = $source
-        SupportedCudaMajor = $supportedCudaMajor
-    }
 }
 
 function Invoke-GitHubApi([string]$Url, [switch]$AllowMissing) {
@@ -126,75 +79,6 @@ function Get-PinnedLlamaTag {
     return $null
 }
 
-function Test-ReleaseHasAssets($Release, [string]$MainPattern, [string]$RuntimePattern) {
-    if (-not $Release -or -not $Release.assets) { return $false }
-    $names = @($Release.assets | ForEach-Object { $_.name })
-    if (-not ($names | Where-Object { $_ -match $MainPattern })) { return $false }
-    if ($RuntimePattern -and -not ($names | Where-Object { $_ -match $RuntimePattern })) { return $false }
-    return $true
-}
-
-function Get-AvailableCudaBackends($Release) {
-    if (-not $Release -or -not $Release.assets) { return @() }
-
-    $mainVersions = @{}
-    $runtimeVersions = @{}
-    foreach ($asset in @($Release.assets)) {
-        $name = [string]$asset.name
-        if ($name -match '^llama-.*-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
-            $mainVersions[$Matches[1]] = $true
-        } elseif ($name -match '^cudart-llama-bin-win-cuda-([0-9]+(?:\.[0-9]+)*)-x64\.zip$') {
-            $runtimeVersions[$Matches[1]] = $true
-        }
-    }
-
-    $result = foreach ($versionText in $mainVersions.Keys) {
-        if (-not $runtimeVersions.ContainsKey($versionText)) { continue }
-        $parsed = ConvertTo-Version $versionText
-        if (-not $parsed) { continue }
-        [pscustomobject]@{
-            Version = $parsed
-            VersionText = $versionText
-            Backend = "cuda-$versionText"
-        }
-    }
-    return @($result | Sort-Object Version -Descending)
-}
-
-function Select-CompatibleCudaBackend($Release, $Nvidia) {
-    $available = @(Get-AvailableCudaBackends $Release)
-    if ($available.Count -eq 0) { return $null }
-
-    # Wichtig: nvidia-smi kann z.B. "CUDA 13.0" anzeigen, obwohl ein
-    # CUDA-13.3-Runtime-Build auf demselben Treiber lauffaehig ist.
-    # CUDA minor-version compatibility gilt innerhalb der Major-Familie.
-    # Daher NICHT 13.3 <= 13.0 vergleichen, sondern nach Major-Familie waehlen.
-    $targetMajor = $null
-    if ($Nvidia -and $Nvidia.SupportedCudaMajor) {
-        $targetMajor = [int]$Nvidia.SupportedCudaMajor
-    } elseif ($Nvidia -and $Nvidia.Cuda) {
-        $targetMajor = [int]$Nvidia.Cuda.Major
-    }
-
-    if ($targetMajor) {
-        $sameMajor = @($available | Where-Object { $_.Version.Major -eq $targetMajor })
-        if ($sameMajor.Count -gt 0) {
-            return ($sameMajor | Sort-Object Version -Descending | Select-Object -First 1)
-        }
-
-        # Falls llama.cpp fuer diese Major-Familie gerade kein Paket anbietet,
-        # ist ein aelterer CUDA-Major-Build auf neueren Treibern zulaessig.
-        $older = @($available | Where-Object { $_.Version.Major -lt $targetMajor })
-        if ($older.Count -gt 0) {
-            return ($older | Sort-Object Version -Descending | Select-Object -First 1)
-        }
-        return $null
-    }
-
-    # CUDA-Familie unbekannt: konservativ den aeltesten Build nehmen.
-    return ($available | Sort-Object Version | Select-Object -First 1)
-}
-
 function Get-ReleaseCandidates {
     $pinned = Get-PinnedLlamaTag
     if ($pinned) {
@@ -213,75 +97,6 @@ function Get-ReleaseCandidates {
     return @($all)
 }
 
-function Resolve-LlamaCppPackage($Nvidia) {
-    $releases = @(Get-ReleaseCandidates)
-    if ($releases.Count -eq 0) { throw (T 'core.no_releases') }
-
-    foreach ($release in $releases) {
-        if ($Nvidia) {
-            $cuda = Select-CompatibleCudaBackend $release $Nvidia
-            if ($cuda) {
-                $escaped = [regex]::Escape($cuda.Backend)
-                $mainPattern = "^llama-.*-bin-win-$escaped-x64\.zip$"
-                $runtimePattern = "^cudart-llama-bin-win-$escaped-x64\.zip$"
-                if (Test-ReleaseHasAssets $release $mainPattern $runtimePattern) {
-                    return [pscustomobject]@{
-                        Release = $release
-                        Backend = $cuda.Backend
-                        MainPattern = $mainPattern
-                        RuntimePattern = $runtimePattern
-                    }
-                }
-            }
-        }
-
-        $cpuPattern = '^llama-.*-bin-win-cpu-x64\.zip$'
-        if (Test-ReleaseHasAssets $release $cpuPattern $null) {
-            return [pscustomobject]@{
-                Release = $release
-                Backend = "cpu"
-                MainPattern = $cpuPattern
-                RuntimePattern = $null
-            }
-        }
-    }
-
-    throw (T 'core.no_package')
-}
-
-function Invoke-LlamaBenchProbe([string]$BenchExe) {
-    if (-not (Test-Path $BenchExe)) {
-        return [pscustomobject]@{ Success = $false; ExitCode = $null; Output = "llama-bench.exe fehlt"; DeviceLine = $null }
-    }
-
-    $outFile = [System.IO.Path]::GetTempFileName()
-    $errFile = [System.IO.Path]::GetTempFileName()
-    $probe = ""
-    $probeExit = 1
-    try {
-        $proc = Start-Process -FilePath $BenchExe -ArgumentList "--list-devices" `
-            -NoNewWindow -Wait -PassThru `
-            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-        $probeExit = $proc.ExitCode
-        $probe = ((Get-Content $outFile -Raw -ErrorAction SilentlyContinue) + "`n" +
-                  (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)).Trim()
-    } catch {
-        $probe = $_.Exception.Message
-    } finally {
-        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
-    }
-
-    $backendsLoaded = $probe -match 'load_backend|ggml_cuda_init|Device \d+:'
-    $success = ($probeExit -eq 0 -or $backendsLoaded)
-    $deviceLine = ($probe -split "`r?`n" | Where-Object { $_ -match 'Device \d+:' } | Select-Object -First 1)
-    return [pscustomobject]@{
-        Success = $success
-        ExitCode = $probeExit
-        Output = $probe
-        DeviceLine = $deviceLine
-    }
-}
-
 function Test-ExistingLlamaInstall($Nvidia) {
     $benchExe = Join-Path $LlamaDir "llama-bench.exe"
     $serverExe = Join-Path $LlamaDir "llama-server.exe"
@@ -293,14 +108,16 @@ function Test-ExistingLlamaInstall($Nvidia) {
 
     # Wenn ein moderner CUDA-13-faehiger Treiber vorhanden ist, einen alten
     # cuda-12-Build nicht dauerhaft festhalten. Neu installieren und CUDA 13 nutzen.
-    if ($Nvidia -and $Nvidia.SupportedCudaMajor -ge 13 -and $state.backend -like "cuda-12*") {
+    # Nicht, wenn cuda-12 bewusst als Ausweichloesung installiert wurde (fallback_from),
+    # weil der CUDA-13-Build hier abgestuerzt ist - sonst Endlosschleife bei jedem Start.
+    if ($Nvidia -and $Nvidia.SupportedCudaMajor -ge 13 -and $state.backend -like "cuda-12*" -and -not $state.fallback_from) {
         Write-UiStep (T 'core.replace_cuda12' $state.backend)
         return $false
     }
 
     $probe = Invoke-LlamaBenchProbe $benchExe
     if (-not $probe.Success) {
-        Write-UiWarn (T 'core.existing_broken' $probe.ExitCode)
+        Write-UiWarn (T 'core.existing_broken' (Format-LlamaExitCode $probe.ExitCode))
         return $false
     }
 
@@ -321,94 +138,64 @@ function Install-LlamaCpp {
     if ($nvidia) {
         $family = if ($nvidia.SupportedCudaMajor) { "CUDA-$($nvidia.SupportedCudaMajor).x" } else { T 'core.unknown' }
         Write-UiOk (T 'core.nvidia_found' $nvidia.Driver $nvidia.Cuda $family)
+        if ($nvidia.GpuName) {
+            $cc = if ($nvidia.ComputeCap) { $nvidia.ComputeCap } else { T 'core.unknown' }
+            Write-UiInfo (T 'core.nvidia_gpu' $nvidia.GpuName $cc)
+        }
     } else {
         Write-UiWarn (T 'core.no_nvidia')
     }
 
-    $package = Resolve-LlamaCppPackage $nvidia
-    $release = $package.Release
-    $backend = $package.Backend
-    $mainPattern = $package.MainPattern
-    $runtimePattern = $package.RuntimePattern
+    $preference = Get-LlamaBuildPreference
+    $selection = Select-LlamaRelease -Releases (Get-ReleaseCandidates) -Nvidia $nvidia -Preference $preference
+    $release = $selection.Release
+    $candidates = @($selection.Candidates)
+    Write-UiInfo (T 'core.candidates' $release.tag_name (($candidates | ForEach-Object { $_.Backend }) -join ' -> '))
 
-    Write-UiInfo (T 'core.package' $backend $release.tag_name)
+    $result = Install-LlamaFromCandidates -Candidates $candidates -LlamaDir $LlamaDir -ProbeLog $ProbeLog
+    $chosen = $result.Candidate
+    $probe = $result.Probe
 
-    $main = $release.assets | Where-Object { $_.name -match $mainPattern } | Select-Object -First 1
-    $runtime = $null
-    if ($runtimePattern) {
-        $runtime = $release.assets | Where-Object { $_.name -match $runtimePattern } | Select-Object -First 1
+    if ($probe.DeviceLine) {
+        Write-UiOk (T 'core.probe_ok_device' $probe.DeviceLine.Trim())
+    } else {
+        Write-UiOk (T 'core.probe_ok')
     }
-    if (-not $main) { throw (T 'core.asset_missing' $backend) }
-    if ($runtimePattern -and -not $runtime) { throw (T 'core.runtime_missing' $backend) }
 
-    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("llmbench-llama-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-    try {
-        $mainZip = Join-Path $tmp $main.name
-        Invoke-UiDownload $main.browser_download_url $mainZip $main.name
+    $preferred = $candidates[0]
+    $fallbackFrom = $null
+    $fallbackReason = $null
+    if ($chosen.Backend -ne $preferred.Backend) {
+        $fallbackFrom = $preferred.Backend
+        $fallbackReason = ($result.Attempts | ForEach-Object { "$($_.Backend): $($_.Reason)" }) -join '; '
+        Write-UiWarn (T 'core.fallback_used' $chosen.Backend $preferred.Backend)
+        Write-UiInfo (T 'core.probe_log' $ProbeLog)
+    }
+    if ($nvidia -and $chosen.Kind -ne 'cuda') {
+        Write-UiWarn (T 'core.not_cuda_warning' $chosen.Backend)
+    }
 
-        if (Test-Path $LlamaDir) { Remove-Item -Recurse -Force $LlamaDir }
-        New-Item -ItemType Directory -Force -Path $LlamaDir | Out-Null
-        Expand-Archive -Path $mainZip -DestinationPath $LlamaDir -Force
+    $state = [ordered]@{
+        tag = $release.tag_name
+        backend = $chosen.Backend
+        installed_at = (Get-Date).ToString("o")
+        main_asset = $chosen.MainAsset.name
+        runtime_asset = if ($chosen.RuntimeAsset) { $chosen.RuntimeAsset.name } else { $null }
+        nvidia_driver = if ($nvidia) { $nvidia.Driver } else { $null }
+        gpu_name = if ($nvidia) { $nvidia.GpuName } else { $null }
+        compute_capability = if ($nvidia -and $nvidia.ComputeCap) { $nvidia.ComputeCap.ToString() } else { $null }
+        cuda_compatibility = if ($nvidia -and $nvidia.Cuda) { $nvidia.Cuda.ToString() } else { $null }
+        cuda_family = if ($nvidia) { $nvidia.SupportedCudaMajor } else { $null }
+        # Merkt sich, dass der bevorzugte Build hier nicht lief - sonst wuerde
+        # Test-ExistingLlamaInstall ihn beim naechsten Start erneut installieren.
+        fallback_from = $fallbackFrom
+        fallback_reason = $fallbackReason
+    }
+    $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
+    Write-UiOk (T 'core.llama_installed' $release.tag_name)
 
-        if ($runtime) {
-            $runtimeZip = Join-Path $tmp $runtime.name
-            Invoke-UiDownload $runtime.browser_download_url $runtimeZip $runtime.name
-            Expand-Archive -Path $runtimeZip -DestinationPath $LlamaDir -Force
-        }
-
-        if (-not (Test-Path (Join-Path $LlamaDir "llama-bench.exe"))) {
-            $bench = Get-ChildItem -Path $LlamaDir -Filter "llama-bench.exe" -Recurse -File | Select-Object -First 1
-            if ($bench) {
-                $sourceDir = $bench.Directory.FullName
-                Get-ChildItem -Path $sourceDir -Force | ForEach-Object {
-                    Copy-Item $_.FullName -Destination $LlamaDir -Recurse -Force
-                }
-            }
-        }
-
-        $benchExe = Join-Path $LlamaDir "llama-bench.exe"
-        $serverExe = Join-Path $LlamaDir "llama-server.exe"
-        if (-not (Test-Path $benchExe)) { throw (T 'core.exe_missing' 'llama-bench.exe') }
-        if (-not (Test-Path $serverExe)) { throw (T 'core.exe_missing' 'llama-server.exe') }
-
-        $probe = Invoke-LlamaBenchProbe $benchExe
-        if (-not $probe.Success) {
-            $hex = ""
-            if ($null -ne $probe.ExitCode) {
-                try { $hex = ('0x{0:X8}' -f ([uint32]$probe.ExitCode)) } catch { }
-            }
-            if ($probe.ExitCode -eq -1073741515 -or $probe.ExitCode -eq 3221225781) {
-                throw ((T 'core.dll_missing') + "`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`n$($probe.Output)")
-            } else {
-                throw ((T 'core.not_startable') + "`nBackend: $backend, Exitcode: $($probe.ExitCode) $hex`n$($probe.Output)")
-            }
-        }
-
-        if ($probe.DeviceLine) {
-            Write-UiOk (T 'core.probe_ok_device' $probe.DeviceLine.Trim())
-        } else {
-            Write-UiOk (T 'core.probe_ok')
-        }
-
-        $state = [ordered]@{
-            tag = $release.tag_name
-            backend = $backend
-            installed_at = (Get-Date).ToString("o")
-            main_asset = $main.name
-            runtime_asset = if ($runtime) { $runtime.name } else { $null }
-            nvidia_driver = if ($nvidia) { $nvidia.Driver } else { $null }
-            cuda_compatibility = if ($nvidia -and $nvidia.Cuda) { $nvidia.Cuda.ToString() } else { $null }
-            cuda_family = if ($nvidia) { $nvidia.SupportedCudaMajor } else { $null }
-        }
-        $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
-        Write-UiOk (T 'core.llama_installed' $release.tag_name)
-
-        if (-not (Get-PinnedLlamaTag)) {
-            Write-UiWarn (T 'core.pin_hint' $release.tag_name)
-        }
-    } finally {
-        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    if (-not (Get-PinnedLlamaTag)) {
+        Write-UiWarn (T 'core.pin_hint' $release.tag_name)
     }
 }
 

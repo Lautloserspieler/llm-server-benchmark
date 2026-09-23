@@ -205,8 +205,8 @@ ui_benchmark_options() {
     ui_section run.title
     ui_choice run.duration_question 2 run.duration_short run.duration_medium run.duration_long
     case "$UI_CHOICE" in 1) UI_DURATION=short ;; 3) UI_DURATION=long ;; *) UI_DURATION=medium ;; esac
-    ui_choice run.hardware_question 3 run.hardware_cpu run.hardware_gpu run.hardware_both
-    case "$UI_CHOICE" in 1) UI_HARDWARE=cpu ;; 2) UI_HARDWARE=gpu ;; *) UI_HARDWARE=both ;; esac
+    ui_choice run.hardware_question 4 run.hardware_cpu run.hardware_gpu run.hardware_gpu_overload run.hardware_both
+    case "$UI_CHOICE" in 1) UI_HARDWARE=cpu ;; 2) UI_HARDWARE=gpu ;; 3) UI_HARDWARE=gpu_overload ;; *) UI_HARDWARE=both ;; esac
     printf '\n'
     UI_STRESS=0
     if ui_confirm run.stress_question; then UI_STRESS=1; fi

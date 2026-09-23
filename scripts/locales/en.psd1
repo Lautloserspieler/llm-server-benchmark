@@ -1,4 +1,4 @@
-﻿# English texts for the Windows scripts. Keys must match de.psd1 (checked by tests/test_i18n_coverage.py).
+# English texts for the Windows scripts. Keys must match de.psd1 (checked by tests/test_i18n_coverage.py).
 @{
     'ui.yes_key' = 'y'
     'ui.yes' = 'yes'
@@ -85,6 +85,7 @@
     'run.hardware_question' = 'What should be tested?'
     'run.hardware_cpu' = 'CPU only'
     'run.hardware_gpu' = 'GPU only'
+    'run.hardware_gpu_overload' = 'GPU only (RAM overload allowed)'
     'run.hardware_both' = 'CPU and GPU (incl. sustained load test)'
     'run.stress_question' = 'Run additional stress tests (TTFT/multi-tenant/OOM/quant)?'
     'run.selection' = 'Duration: {0} · Hardware: {1} · Stress tests: {2}'

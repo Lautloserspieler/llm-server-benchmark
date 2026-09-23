@@ -334,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--duration", choices=["short", "medium", "long"], default=None)
     run.add_argument(
         "--hardware",
-        choices=["cpu", "gpu", "both"],
+        choices=["cpu", "gpu", "gpu_overload", "both"],
         default="both",
         help="Nur CPU-, nur GPU-Profile oder beides testen.",
     )

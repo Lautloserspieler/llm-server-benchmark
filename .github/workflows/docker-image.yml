@@ -93,12 +93,12 @@ jobs:
           {
             echo "## Docker image validation"
             echo ""
-            echo "- Image: `${IMAGE_NAME}:sha-${GITHUB_SHA}`"
-            echo "- Platform: `linux/amd64`"
-            echo "- CUDA architectures: `sm_89;sm_120`"
+            echo "- Image: \`${IMAGE_NAME}:sha-${GITHUB_SHA}\`"
+            echo "- Platform: \`linux/amd64\`"
+            echo "- CUDA architectures: \`sm_89;sm_120\`"
             echo "- Trivy HIGH/CRITICAL scan: enforced"
             echo "- Published: no (validation image)"
-            echo "- Build digest: `${{ steps.build.outputs.digest }}`"
+            echo "- Build digest: \`${{ steps.build.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-quality:
@@ -194,10 +194,10 @@ jobs:
           {
             echo "## Published Docker image"
             echo ""
-            echo "- Registry: `${IMAGE_NAME}`"
-            echo "- Immutable tag: `sha-${GITHUB_SHA}`"
-            echo "- CUDA architectures: `sm_89;sm_120`"
-            echo "- Digest: `${{ steps.build.outputs.digest }}`"
+            echo "- Registry: \`${IMAGE_NAME}\`"
+            echo "- Immutable tag: \`sha-${GITHUB_SHA}\`"
+            echo "- CUDA architectures: \`sm_89;sm_120\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
             echo "- SBOM: enabled"
             echo "- Build provenance: mode=max"
             echo "- Publish gated by tests, lint, mypy, pip-audit and Trivy"

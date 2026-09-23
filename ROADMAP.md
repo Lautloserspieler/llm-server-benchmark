@@ -18,8 +18,8 @@ belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 
 | Backend | Status | Transportweg | Anmerkung |
 | --- | --- | --- | --- |
-| llama.cpp | ✅ fertig | lokales Binary (`llama-bench`/`llama-server`) | aktuell einziges unterstütztes Backend |
-| vLLM | 🚧 in Arbeit | Docker-Container (`vllm/vllm-openai`) | Phase A, siehe unten |
+| llama.cpp | ✅ fertig | lokales Binary (`llama-bench`/`llama-server`) | Referenz-Backend |
+| vLLM | ✅ fertig (1.6.0) | Docker-Container (`vllm/vllm-openai`) | Phase A |
 | TGI | 📋 geplant | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase C, baut auf Phase A auf |
 | Ollama | 📋 geplant | Docker-Container (`ollama/ollama`) | Phase B, eigene native API statt OpenAI-kompatibel |
 
@@ -36,14 +36,28 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 | Hersteller | Status | Quelle | Anmerkung |
 | --- | --- | --- | --- |
 | NVIDIA | ✅ fertig | NVML (`nvidia-ml-py`) | Auslastung, VRAM, Temperatur, Power, Compute-PIDs |
-| AMD | 🚧 in Arbeit | `rocm-smi --json` | Phase D, `compute_pids` bleibt vorerst leer |
+| AMD | ✅ fertig (1.6.0) | `rocm-smi --json` | Phase D, `compute_pids` bleibt vorerst leer |
 | Intel | 📋 geplant | `xpu-smi stats -d <id> -j` | Phase E, ein Subprozessaufruf pro GPU |
 
-Bei mehreren gleichzeitig vorhandenen GPU-Herstellern soll künftig ein
-`CompositeProvider` alle verfügbaren Provider parallel nutzen, statt wie aktuell nur den
-erstbesten Hersteller zu berücksichtigen ("erster gewinnt").
+Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
+(seit 1.6.0) alle verfügbaren Provider parallel.
 
-## Phasenplan
+## Nächste Schritte (Stand: nach 1.6.0)
+
+Für alles gilt: **Das Sprachsystem (de/en) muss überall funktionieren**, und alles läuft über
+eine einheitliche, schöne Terminal-Oberfläche.
+
+1. **Sprachsystem + Terminal-UI** ✅ *umgesetzt (unveröffentlicht)* — Sprachwahl ganz am Anfang,
+   übersetzte Installer-Skripte (PowerShell/Bash), gemeinsame UI-Helfer, Test für
+   Übersetzungsvollständigkeit.
+2. **Setup/Installer fertigstellen** — NVIDIA-Treiberprüfung unter Windows, nach Neustart
+   automatisch weitermachen, Backend-Auswahl im Setup, Tests der Installer in CI.
+3. **Stresstests für alle Backends** — TTFT/Multi-Tenant/OOM/Quant sind heute fest an
+   llama.cpp gebunden; künftig über `get_backend()`, nicht unterstützte Tests werden mit
+   Begründung übersprungen.
+4. **TGI-Backend** (Phase C), danach **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs).
+
+## Phasenplan (ursprünglich)
 
 Die vollständige technische Planung (Architekturentscheidungen, betroffene Module, Tests)
 lebt im internen Planungsdokument der Roadmap-Session; hier die grobe Reihenfolge, wie sie
@@ -51,7 +65,7 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
 
 1. **Phase F, Teil 1 — Projekt-Infrastruktur (dieses Dokument + CONTRIBUTING.md)**
    Risikoarm, kein Verhaltenscode, dient als Kompass für den Rest der Roadmap.
-2. **Phase A — vLLM-Backend** 🚧 *in Arbeit* (separater Branch, noch nicht gemerged)
+2. **Phase A — vLLM-Backend** ✅ *ausgeliefert in 1.6.0*
    Architektonischer Machbarkeitsnachweis: `BenchmarkBackend` bekommt optionale
    `begin_profile`/`end_profile`-Hooks, ein neues `docker_backend.py` orchestriert
    Container-Lifecycle, ein neues `http_bench.py` misst pp/tg/long-context über
@@ -62,7 +76,7 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
 4. **Phase B — Ollama-Backend**
    Bewusst zuletzt unter den Backends, da die native Ollama-API (`/api/generate`) am
    stärksten von der OpenAI-kompatiblen Norm abweicht.
-5. **Phase D — AMD-GPU-Telemetrie** 🚧 *in Arbeit* (separater Branch, noch nicht gemerged)
+5. **Phase D — AMD-GPU-Telemetrie** ✅ *ausgeliefert in 1.6.0*
    Unabhängiger Strang, kann parallel zu den Backend-Phasen laufen. Neuer
    `AmdProvider` gegen `rocm-smi`, plus Fix für die aktuell fehlerhafte
    Telemetriequellen-Erkennung bei Nicht-NVIDIA-Providern.

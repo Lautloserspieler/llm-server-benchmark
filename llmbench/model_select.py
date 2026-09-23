@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from rich import box
+from rich.markup import escape
+from rich.table import Table
+
 from .download import (
     download_models,
     find_downloaded_model,
@@ -13,6 +17,8 @@ from .download import (
     save_model_selection,
     verify_suite,
 )
+from .i18n import _
+from .utils import console
 
 
 def parse_selection(value: str, model_names: list[str]) -> list[str]:
@@ -28,15 +34,15 @@ def parse_selection(value: str, model_names: list[str]) -> list[str]:
         if not part:
             continue
         if not part.isdigit():
-            raise ValueError(f"Ungueltige Auswahl: '{part}'. Bitte Nummern mit Komma trennen.")
+            raise ValueError(_("Ungueltige Auswahl: '{part}'. Bitte Nummern mit Komma trennen.").format(part=part))
         index = int(part)
         if index < 1 or index > len(model_names):
-            raise ValueError(f"Modellnummer {index} existiert nicht.")
+            raise ValueError(_("Modellnummer {index} existiert nicht.").format(index=index))
         name = model_names[index - 1]
         if name not in selected:
             selected.append(name)
     if not selected and value.strip():
-        raise ValueError("Keine gueltige Modellauswahl erkannt.")
+        raise ValueError(_("Keine gueltige Modellauswahl erkannt."))
     return selected
 
 
@@ -55,32 +61,36 @@ def prompt_model_selection(models_dir: str | Path) -> list[str]:
     names = list(catalog)
     saved = load_model_selection(models_root)
 
-    print("")
-    print("====================================================")
-    print("  Modell-Auswahl fuer den Benchmark")
-    print("====================================================")
-    print("Waehle nur die Modelle aus, die wirklich geladen werden sollen.")
-    print("Mehrere Nummern mit Komma trennen, z.B. 1,2,3.")
-    print("")
+    console.print()
+    console.print(_("Waehle nur die Modelle aus, die wirklich geladen werden sollen."))
+    console.print(_("Mehrere Nummern mit Komma trennen, z.B. 1,2,3."), style="dim")
 
+    table = Table(box=box.ROUNDED, border_style="cyan", header_style="bold cyan")
+    table.add_column("#", justify="right", style="bold")
+    table.add_column(_("Modell"))
+    table.add_column(_("Status"))
     for index, (name, config) in enumerate(catalog.items(), start=1):
         existing = find_downloaded_model(models_root, config)
-        state = "vorhanden" if existing is not None else f"ca. {config['estimated_gib']:.0f} GiB Download"
-        selected_mark = " *" if saved is not None and name in saved else ""
-        print(f"  {index}: {name:<28} [{state}]{selected_mark}")
+        if existing is not None:
+            state = "[green]" + _("vorhanden") + "[/green]"
+        else:
+            state = _("ca. {gib} GiB Download").format(gib=f"{config['estimated_gib']:.0f}")
+        mark = " [cyan]*[/cyan]" if saved is not None and name in saved else ""
+        table.add_row(str(index), name + mark, state)
 
     total = sum(config["estimated_gib"] for config in catalog.values())
-    print(f"  A: Alle Standardmodelle        [ca. {total:.0f} GiB gesamt]")
-    print("  0: Keine neuen Standardmodelle laden (vorhandene/eigene Modelle verwenden)")
-    print("")
+    table.add_row("A", _("Alle Standardmodelle"), _("ca. {gib} GiB gesamt").format(gib=f"{total:.0f}"))
+    table.add_row("0", _("Keine neuen Standardmodelle laden"), _("vorhandene/eigene Modelle verwenden"))
+    console.print(table)
 
     default = _default_selection(names, saved)
     while True:
-        raw = input(f"Auswahl [Standard={default}]: ").strip() or default
+        prompt = _("Auswahl [Standard={default}]: ").format(default=default)
+        raw = console.input(f"[magenta]\\[?][/magenta] {escape(prompt)}").strip() or default
         try:
             selected = parse_selection(raw, names)
         except ValueError as exc:
-            print(f"[!] {exc}")
+            console.print(f"[yellow]\\[!][/yellow] {escape(str(exc))}")
             continue
 
         missing_estimate = sum(
@@ -88,16 +98,18 @@ def prompt_model_selection(models_dir: str | Path) -> list[str]:
             for name in selected
             if find_downloaded_model(models_root, catalog[name]) is None
         )
+        console.print()
         if selected:
-            print("")
-            print("Ausgewaehlt: " + ", ".join(selected))
+            console.print(_("Ausgewaehlt: {names}").format(names=", ".join(selected)))
             if missing_estimate > 0:
-                print(f"Voraussichtlich noch zu laden: ca. {missing_estimate:.0f} GiB")
+                console.print(
+                    _("Voraussichtlich noch zu laden: ca. {gib} GiB").format(gib=f"{missing_estimate:.0f}"),
+                    style="dim",
+                )
             else:
-                print("Alle ausgewaehlten Modelle sind bereits vorhanden.")
+                console.print(_("Alle ausgewaehlten Modelle sind bereits vorhanden."), style="green")
         else:
-            print("")
-            print("Es werden keine neuen Standardmodelle heruntergeladen.")
+            console.print(_("Es werden keine neuen Standardmodelle heruntergeladen."))
         return selected
 
 
@@ -110,17 +122,17 @@ def ensure_model_selection(models_dir: str | Path, force_select: bool = False) -
     if selected is None:
         selected = prompt_model_selection(models_root)
         path = save_model_selection(models_root, selected)
-        print(f"Auswahl gespeichert: {path}")
+        console.print(_("Auswahl gespeichert: {path}").format(path=path), style="dim")
 
     if not selected:
         return []
 
     complete, missing = verify_suite(models_root, "all", model_names=selected)
     if complete:
-        print("[OK] Alle ausgewaehlten Standardmodelle sind bereits vollstaendig vorhanden.")
+        console.print("[green]\\[OK][/green] " + _("Alle ausgewaehlten Standardmodelle sind bereits vollstaendig vorhanden."))
         return selected
 
-    print("Fehlend/unvollstaendig: " + ", ".join(missing))
+    console.print(_("Fehlend/unvollstaendig: {names}").format(names=", ".join(missing)))
     download_models(models_root, "all", model_names=selected)
     return selected
 
@@ -142,10 +154,10 @@ def main(argv: list[str] | None = None) -> int:
         ensure_model_selection(args.models_dir, force_select=args.select)
         return 0
     except (EOFError, KeyboardInterrupt):
-        print("\nModellauswahl abgebrochen.")
+        console.print("\n" + _("Modellauswahl abgebrochen."), style="yellow")
         return 130
     except Exception as exc:
-        print(f"Modellauswahl/Download fehlgeschlagen: {exc}")
+        console.print("[red]\\[X][/red] " + escape(_("Modellauswahl/Download fehlgeschlagen: {error}").format(error=exc)))
         return 1
 
 

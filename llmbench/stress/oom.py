@@ -9,7 +9,8 @@ import httpx
 from llmbench.backends.llama_cpp import LlamaCppBackend
 from llmbench.config import load_config, resolve_path
 from llmbench.endpoint import wait_health_async
-from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, write_json
+from llmbench.i18n import _
+from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, print_section, write_json
 
 
 def _prompt_for_target(target_tokens: int) -> str:
@@ -96,18 +97,18 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
     """
     cfg = load_config(config_path)
     if not cfg.get("models"):
-        print_err("Keine Modelle in Konfiguration.")
+        print_err(_("Keine Modelle in Konfiguration."))
         return 1
 
     model = cfg["models"][0]
     profiles = model.get("profiles") or []
     if not profiles:
-        print_err("Das Modell besitzt kein Profil.")
+        print_err(_("Das Modell besitzt kein Profil."))
         return 1
 
     model_path = resolve_path(model["path"], cfg)
-    print_msg("=== KV-Cache / Kontext-OOM-Stresstest ===")
-    print_msg(f"Modell: {model['name']}")
+    print_section(_("KV-Cache / Kontext-OOM-Stresstest"))
+    print_msg(_("Modell: {name}").format(name=model["name"]))
 
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_oom"
     out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
@@ -121,7 +122,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
     profile = profiles[0]
     levels = _context_levels(cfg)
     if not levels:
-        print_err("Keine Kontextstufen fuer den OOM-Test konfiguriert.")
+        print_err(_("Keine Kontextstufen fuer den OOM-Test konfiguriert."))
         return 1
 
     results: list[dict] = []
@@ -132,7 +133,12 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
         endpoint_cfg = dict(base_endpoint)
         endpoint_cfg["context_size"] = level + 512
         proc = None
-        print_msg(f"\nTeste Kontextstufe ~{level} Tokens (Server -c {endpoint_cfg['context_size']})...")
+        print_msg(
+            "\n"
+            + _("Teste Kontextstufe ~{level} Tokens (Server -c {ctx})...").format(
+                level=level, ctx=endpoint_cfg["context_size"]
+            )
+        )
         stage_started = time.perf_counter()
         try:
             proc, command = backend.start_server(
@@ -156,7 +162,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
                 "duration_seconds": time.perf_counter() - stage_started,
             }
             results.append(result)
-            print_err(f"Serverstart/KV-Cache fehlgeschlagen bei ~{level} Tokens: {exc}")
+            print_err(_("Serverstart/KV-Cache fehlgeschlagen bei ~{level} Tokens: {error}").format(level=level, error=exc))
             if proc is not None:
                 backend.stop_server(proc)
             break
@@ -175,12 +181,15 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
             results.append(result)
             if probe["ok"]:
                 max_stable = int(probe.get("actual_prompt_tokens") or level)
+                actual = probe.get("actual_prompt_tokens") or _("unbekannt")
                 print_msg(
-                    f"[OK] Ziel {level}, tatsaechlich tokenisiert: "
-                    f"{probe.get('actual_prompt_tokens') or 'unbekannt'}"
+                    "[OK] " + _("Ziel {level}, tatsaechlich tokenisiert: {actual}").format(level=level, actual=actual),
+                    style="green",
                 )
             else:
-                print_err(f"Request fehlgeschlagen bei ~{level} Tokens: {probe.get('error')}")
+                print_err(
+                    _("Request fehlgeschlagen bei ~{level} Tokens: {error}").format(level=level, error=probe.get("error"))
+                )
                 break
         finally:
             if proc is not None:
@@ -197,6 +206,6 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
         "duration_seconds": time.perf_counter() - overall_started,
     }
     write_json(out_dir / "oom.json", result_doc)
-    print_msg(f"\nMaximale stabile gemessene Promptlaenge: {max_stable} Tokens")
-    print_msg(f"Ergebnis: {out_dir / 'oom.json'}")
+    print_msg("\n" + _("Maximale stabile gemessene Promptlaenge: {tokens} Tokens").format(tokens=max_stable))
+    print_msg(_("Ergebnis: {path}").format(path=out_dir / "oom.json"), style="green")
     return 0 if max_stable else 1

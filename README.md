@@ -341,6 +341,33 @@ llmbench run --duration long
 
 ---
 
+## Full performance mode
+
+Every `llmbench run` and `llmbench stress-*` switches the machine to full performance first, so results reflect the hardware and not a power-saving profile. This is on by default and **stays active after the run**.
+
+| Platform | What is changed |
+| --- | --- |
+| **Linux** | power-profiles-daemon / tuned → `performance`, ACPI platform profile → `performance`, CPU governor and energy-performance-preference → `performance`, turbo/boost on, `scaling_max_freq` → hardware maximum, Intel RAPL power limits → maximum allowed, PCIe ASPM → `performance`, NVIDIA persistence mode on and power limit → `power.max_limit`, AMD GPU power cap → `power1_cap_max` and DPM level `high` |
+| **Windows** | a dedicated `llmbench Volle Leistung` power plan (copy of *Ultimate Performance*, falling back to *High performance*) with 100 % min/max processor state, aggressive boost, no core parking, no PCIe ASPM, no standby; NVIDIA power limit → `power.max_limit` |
+
+```bash
+llmbench performance status   # was anything set by llmbench?
+llmbench performance on       # full performance now, without a benchmark
+llmbench performance off      # restore the exact previous settings
+llmbench run --no-performance-mode   # leave power settings untouched for one run
+```
+
+Power limits and sysfs values need root (Linux, via `sudo`; asked once if needed) or an elevated shell (Windows). Anything that cannot be set is listed in the run output and in `summary.json` (`performance_mode`, `warnings`) — the benchmark still runs. The original values are stored in `.runtime/performance_state.json`, so `performance off` always restores the state from before llmbench touched it. Configure it in `benchmark.yaml`:
+
+```yaml
+performance:
+  enabled: true
+  restore_after_run: false   # true = restore after every run
+  use_sudo: true
+```
+
+Firmware-level limits (BIOS/UEFI PL1/PL2, laptop EC limits, thermal limits) cannot be lifted from the OS.
+
 ## llama.cpp setup
 
 Install or verify llama.cpp directly:

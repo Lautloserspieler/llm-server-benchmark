@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Immer volle Leistung: Energieplan und Power-Limits unter Linux und Windows
+
+- Neu: Vor jedem `llmbench run` und `llmbench stress-*` stellt llmbench die
+  Maschine auf volle Leistung und laesst sie standardmaessig auch danach so.
+  Linux: power-profiles-daemon/tuned, ACPI-Plattformprofil, CPU-Governor,
+  Energy-Performance-Preference, Turbo/Boost, `scaling_max_freq`,
+  Intel-RAPL-Limits, PCIe-ASPM, NVIDIA Persistence Mode und Power-Limit,
+  AMD-GPU-Power-Cap und DPM-Level. Windows: eigener Energieplan auf Basis von
+  "Ultimative Leistung" (100 % Prozessorleistung, aggressiver Boost, kein Core
+  Parking, kein ASPM, kein Standby) und NVIDIA-Power-Limit.
+- `llmbench performance on|off|status`; `off` stellt exakt die Werte von vor
+  llmbench wieder her (gespeichert in `.runtime/performance_state.json`).
+- Neuer Konfigurationsabschnitt `performance` (`enabled`, `restore_after_run`,
+  `use_sudo`) und Schalter `--no-performance-mode`. Was ohne root/Administrator
+  nicht gesetzt werden konnte, steht in der Ausgabe und in `summary.json`.
+
 ### Neue llama.cpp-Builds: `--no-mmap` durch `--load-mode` ersetzt
 
 - Fix: Aktuelle llama.cpp-Builds kennen `--no-mmap`/`--mlock` nicht mehr

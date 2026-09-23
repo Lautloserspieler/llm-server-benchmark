@@ -127,24 +127,44 @@ See [ROADMAP.md](ROADMAP.md) for the current development plan.
 
 ### Windows
 
-The easiest Windows path is:
+Open **PowerShell** and clone the repository:
 
-```text
-1. Clone or download the repository
-2. Run setup.bat
-3. Run START_BENCHMARK.bat
-4. Let the setup verify/install required components
-5. Select benchmark duration and hardware mode
+```powershell
+git clone https://github.com/Lautloserspieler/llm-server-benchmark.git
+cd llm-server-benchmark
 ```
 
-The setup detects missing components such as Python, WSL2, Docker Desktop and GPU prerequisites. Installations that modify the system always require confirmation unless automatic installation has explicitly been enabled.
+Run the setup:
 
-Language can be selected during setup or forced with:
+```powershell
+.\setup.bat
+```
+
+The setup checks the required components and guides you through missing dependencies such as Python 3.10+, WSL2, Docker Desktop and GPU prerequisites. System-changing installations require confirmation unless automatic installation was explicitly enabled.
+
+After setup, start the benchmark launcher:
+
+```powershell
+.\START_BENCHMARK.bat
+```
+
+The launcher then lets you choose the benchmark duration, hardware mode and other available options.
+
+If script execution is restricted in your PowerShell environment, the `.bat` launchers can also be started from Command Prompt:
+
+```cmd
+setup.bat
+START_BENCHMARK.bat
+```
+
+Language can be selected during setup or forced before starting:
 
 ```powershell
 $env:LLMBENCH_LANG = "de"
 # or
 $env:LLMBENCH_LANG = "en"
+
+.\setup.bat
 ```
 
 ### Linux

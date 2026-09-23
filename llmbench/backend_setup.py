@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import docker_backend
+from .i18n import _
 
 LogFn = Callable[[str], None]
 
@@ -50,7 +51,9 @@ def _noop(_msg: str) -> None:
 def _check_name(name: str) -> str:
     if name not in BACKEND_IMAGES:
         raise ValueError(
-            f"Unbekanntes Backend: {name!r}. Erlaubt: " + ", ".join(SUPPORTED_BACKENDS)
+            _("Unbekanntes Backend: {name}. Erlaubt: {allowed}").format(
+                name=repr(name), allowed=", ".join(SUPPORTED_BACKENDS)
+            )
         )
     return name
 
@@ -109,14 +112,16 @@ def ensure_backend(
 
     existing = read_state(name, root)
     if existing and existing.get("image") == image and docker_backend.image_exists(image):
-        log(f"Backend '{name}' ist bereits installiert: {image}")
+        log(_("Backend '{name}' ist bereits installiert: {image}").format(name=name, image=image))
         return existing
 
     if not docker_backend.docker_available():
         raise RuntimeError(
-            f"Backend '{name}' braucht einen erreichbaren Docker-Daemon. "
-            "Pruefe, ob Docker laeuft (Linux: `systemctl status docker`, "
-            "Windows/macOS: Docker Desktop starten)."
+            _(
+                "Backend '{name}' braucht einen erreichbaren Docker-Daemon. "
+                "Pruefe, ob Docker laeuft (Linux: `systemctl status docker`, "
+                "Windows/macOS: Docker Desktop starten)."
+            ).format(name=name)
         )
 
     docker_backend.pull_image(image, log=log)
@@ -133,7 +138,7 @@ def ensure_backend(
     target = state_file(name, root)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
-    log(f"Backend '{name}' wurde installiert: {image}")
+    log(_("Backend '{name}' wurde installiert: {image}").format(name=name, image=image))
     return state
 
 
@@ -185,25 +190,29 @@ def remove_backend(
             docker_backend.remove_volume(volume, log=log)
         else:
             log(
-                f"Volume '{volume}' bleibt erhalten (heruntergeladene Modell-Gewichte). "
-                "Mit --purge-models wird es ebenfalls entfernt."
+                _(
+                    "Volume '{volume}' bleibt erhalten (heruntergeladene Modell-Gewichte). "
+                    "Mit --purge-models wird es ebenfalls entfernt."
+                ).format(volume=volume)
             )
     else:
         log(
-            "Docker ist nicht erreichbar - Container, Image und Volume koennen nicht "
-            "entfernt werden. Es wird nur die lokale Zustandsdatei bereinigt."
+            _(
+                "Docker ist nicht erreichbar - Container, Image und Volume koennen nicht "
+                "entfernt werden. Es wird nur die lokale Zustandsdatei bereinigt."
+            )
         )
 
     path = state_file(name, root)
     if path.exists():
         path.unlink()
-        log(f"Zustandsdatei entfernt: {path}")
+        log(_("Zustandsdatei entfernt: {path}").format(path=path))
 
     directory = state_dir(name, root)
     if directory.is_dir() and not any(directory.iterdir()):
         directory.rmdir()
 
     if state is None:
-        log(f"Backend '{name}' war nicht installiert - es gab nichts zu entfernen.")
+        log(_("Backend '{name}' war nicht installiert - es gab nichts zu entfernen.").format(name=name))
     else:
-        log(f"Backend '{name}' wurde vollstaendig entfernt.")
+        log(_("Backend '{name}' wurde vollstaendig entfernt.").format(name=name))

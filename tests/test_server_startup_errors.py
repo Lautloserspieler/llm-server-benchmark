@@ -100,3 +100,47 @@ def test_busy_port_is_rejected_before_start(tmp_path):
 )
 def test_format_exit_code(code, expected):
     assert format_exit_code(code) == expected
+
+
+def test_exit_during_last_health_attempt_is_still_reported(monkeypatch):
+    # Der letzte Request verbraucht die restliche Zeit, waehrend der Server stirbt:
+    # trotzdem Exitcode statt generischem Timeout.
+    class DiesLate:
+        polls = 0
+
+        def poll(self):
+            self.polls += 1
+            return None if self.polls == 1 else -1073741819
+
+    async def slow_get(*_args, **_kwargs):
+        import asyncio
+
+        await asyncio.sleep(0.3)
+        raise endpoint.httpx.ConnectError("All connection attempts failed")
+
+    monkeypatch.setattr(endpoint.httpx.AsyncClient, "get", slow_get)
+    with pytest.raises(RuntimeError, match="0xC0000005"):
+        endpoint.wait_health("http://127.0.0.1:9", 0.2, proc=DiesLate())
+
+
+def test_gpu_idle_wait_is_not_counted_as_benchmark_duration(monkeypatch, tmp_path):
+    from llmbench import llama_bench
+
+    class SlowStartMonitor:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            time.sleep(0.4)  # steht fuer die Wartezeit auf eine ruhige GPU
+
+        def stop(self):
+            return {"sample_count": 0, "samples": []}
+
+    monkeypatch.setattr(llama_bench, "ResourceMonitor", SlowStartMonitor)
+    monkeypatch.setattr(llama_bench, "resolve_executable", lambda exe: exe)
+    monkeypatch.setattr(llama_bench, "_execute", lambda *_a, **_k: ("", "boom", 1, False))
+    result = llama_bench.run_llama_bench(
+        "llama-bench", "m.gguf", {"repetitions": 1, "batch_size": 512, "ubatch_size": 512, "prompt_tokens": [512]},
+        {"name": "p"}, "prompt", tmp_path,
+    )
+    assert result["duration_seconds"] < 0.3

@@ -492,8 +492,9 @@ async def _run_http_bench_async(
     errors: list[str] = []
 
     monitor = ResourceMonitor(float(bench_cfg.get("resource_sample_interval", 0.5)))
-    started = time.perf_counter()
+    # Erst der Monitor (wartet ggf. auf eine ruhige GPU), dann die Zeitmessung.
     monitor.start()
+    started = time.perf_counter()
     # Unter nativem Linux-Docker laesst sich der Containerprozess zuordnen,
     # unter Docker Desktop nicht - ResourceMonitor misst dann ohne Ziel-PID.
     if target_pid:

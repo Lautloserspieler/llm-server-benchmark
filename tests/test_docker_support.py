@@ -105,18 +105,23 @@ def test_linux_and_windows_runtime_pull_ghcr_before_local_build():
     assert "Invoke-Compose build llmbench" in windows
 
 
-def test_docker_image_workflow_builds_prs_and_publishes_main_to_ghcr():
+def test_docker_image_workflow_builds_scans_and_publishes_to_ghcr():
     workflow = (ROOT / ".github" / "workflows" / "docker-image.yml").read_text(encoding="utf-8")
     assert "my-image-name" not in workflow
     assert f"IMAGE_NAME: {GHCR_IMAGE}" in workflow
-    assert "actions/checkout@v7.0.1" in workflow
-    assert "docker/setup-buildx-action@v4.3.0" in workflow
-    assert "docker/login-action@v4.6.0" in workflow
-    assert "docker/metadata-action@v6.2.0" in workflow
-    assert "docker/build-push-action@v7.3.0" in workflow
+
+    # Third-party actions must be pinned to immutable commit SHAs.
+    assert "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5" in workflow
+    assert "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e" in workflow
+    assert "docker/login-action@dbcb813823bdd20940b903addbd779551569679f" in workflow
+    assert "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302" in workflow
+    assert "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a" in workflow
+    assert "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25" in workflow
+
     assert "packages: write" in workflow
-    assert "if: github.event_name == 'push'" in workflow
-    assert "if: github.event_name != 'push'" in workflow
+    assert "name: Build, smoke-test and scan image" in workflow
+    assert "name: Release quality gate" in workflow
+    assert "needs: [validate, release-quality]" in workflow
     assert "push: true" in workflow
     assert "push: false" in workflow
     assert "cache-from: type=gha" in workflow
@@ -126,3 +131,7 @@ def test_docker_image_workflow_builds_prs_and_publishes_main_to_ghcr():
     assert "type=sha,format=long,prefix=sha-" in workflow
     assert "type=raw,value=latest,enable={{is_default_branch}}" in workflow
     assert 'tags: ["v*.*.*"]' in workflow
+
+    # Public image publishing is blocked on a vulnerability scan.
+    assert "severity: HIGH,CRITICAL" in workflow
+    assert 'exit-code: "1"' in workflow

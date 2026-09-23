@@ -44,7 +44,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LLMBENCH_CUDA_ARCHITECTURES=${LLMBENCH_CUDA_ARCHITECTURES} \
     LLMBENCH_LLAMA_DIR=/opt/llama.cpp
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates libgomp1 python3 python3-pip python3-venv \
+      ca-certificates libgomp1 python3 python3-venv \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
 

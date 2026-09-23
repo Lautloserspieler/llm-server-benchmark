@@ -1,0 +1,18 @@
+name: 01 - Auto-Label PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  label-pr:
+    name: 01 - Labels anwenden
+    uses: ./.github/workflows/reusable-label-pr.yml

@@ -1,0 +1,137 @@
+# Automatische PR-Labels nach geänderten Pfaden
+# Analog zu JarvisCore: actions/labeler v5 + wiederverwendbarer Workflow.
+#
+# Ein PR kann mehrere Labels gleichzeitig erhalten, z. B.
+# "core" + "benchmark" + "tests".
+
+"core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/**'
+
+"cli":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/cli.py'
+          - 'llmbench/__main__.py'
+          - 'START_BENCHMARK.*'
+          - 'scripts/START_BENCHMARK*'
+
+"backends":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/backends/**'
+          - 'llmbench/backend_setup.py'
+          - 'llmbench/docker_backend.py'
+          - 'llmbench/endpoint.py'
+
+"benchmark":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/runner.py'
+          - 'llmbench/http_bench.py'
+          - 'llmbench/llama_bench.py'
+          - 'llmbench/execution.py'
+          - 'llmbench/capacity.py'
+          - 'llmbench/compare.py'
+          - 'llmbench/tuner.py'
+
+"stress":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/stress/**'
+          - 'llmbench/soak.py'
+
+"hardware":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/hardware.py'
+          - 'llmbench/telemetry.py'
+          - 'llmbench/capacity.py'
+
+"reports":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/report.py'
+          - 'llmbench/terminal_report.py'
+          - 'llmbench/export.py'
+          - 'llmbench/compare.py'
+
+"models":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'models/**'
+          - 'llmbench/model_select.py'
+          - 'llmbench/download.py'
+          - 'llama-cpp-version.txt'
+
+"llama.cpp":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/llama_bench.py'
+          - 'llmbench/llama_cpp_setup.py'
+          - 'llama-cpp-version.txt'
+          - 'scripts/ENSURE_LLAMA_CPP.ps1'
+          - 'scripts/PREPARE_LLAMA_SOURCE.py'
+
+"dashboard":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'dashboard/**'
+
+"docker":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Dockerfile'
+          - '.dockerignore'
+          - 'compose.yaml'
+          - 'docker/**'
+          - 'scripts/DOCKER_BENCHMARK.ps1'
+          - 'scripts/docker_common.sh'
+          - 'llmbench/docker_backend.py'
+
+"tests":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**'
+
+"scripts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+          - 'START_BENCHMARK.sh'
+          - 'START_BENCHMARK.bat'
+          - 'setup.sh'
+          - 'setup.bat'
+
+"docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '*.md'
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+
+"config":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'benchmark.example.yaml'
+          - 'llmbench/config.py'
+          - 'pyproject.toml'
+          - 'requirements.txt'
+          - 'VERSION'
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'pyproject.toml'
+          - 'requirements.txt'
+
+"i18n":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/i18n.py'
+          - 'llmbench/locales/**'

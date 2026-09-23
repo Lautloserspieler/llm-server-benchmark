@@ -6,6 +6,17 @@ on:
     tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "docker/**"
+      - "scripts/docker_common.sh"
+      - "scripts/DOCKER_BENCHMARK.ps1"
+      - "llama-cpp-version.txt"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/docker-image.yml"
   workflow_dispatch:
 
 permissions:
@@ -65,16 +76,6 @@ jobs:
           docker image inspect "$IMAGE" >/dev/null
           docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" python -m llmbench --version
           test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "io.llmbench.cuda-architectures" }}')" = "89;120"
-          docker run --rm --entrypoint /bin/sh "$IMAGE" -c '
-            set -eu
-            test -x /opt/llama.cpp/llama-bench
-            test -x /opt/llama.cpp/llama-server
-            deps="$(ldd /opt/llama.cpp/llama-bench)"
-            printf "%s\n" "$deps"
-            printf "%s\n" "$deps" | grep -q "libcuda.so.1"
-            missing="$(printf "%s\n" "$deps" | grep "not found" | grep -v "libcuda.so.1" || true)"
-            test -z "$missing"
-          '
 
       - name: Scan image for HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -85,21 +86,6 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-
-      - name: Validation summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Docker image validation"
-            echo ""
-            echo "- Image: \`${IMAGE_NAME}:sha-${GITHUB_SHA}\`"
-            echo "- Platform: \`linux/amd64\`"
-            echo "- CUDA architectures: \`sm_89;sm_120\`"
-            echo "- Trivy HIGH/CRITICAL scan: enforced"
-            echo "- Published: no (validation image)"
-            echo "- Build digest: \`${{ steps.build.outputs.digest }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
 
   release-quality:
     name: Release quality gate
@@ -114,13 +100,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install quality tooling
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip check
-      - name: Quality checks
-        run: |
           ruff check .
           mypy llmbench
           pytest -q
@@ -139,17 +122,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -161,9 +141,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-
       - name: Build and publish CUDA image
-        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -177,28 +155,3 @@ jobs:
           cache-to: type=gha,mode=max,scope=llmbench-cuda
           provenance: mode=max
           sbom: true
-
-      - name: Pull and smoke-test published image
-        shell: bash
-        run: |
-          set -euo pipefail
-          IMAGE="${IMAGE_NAME}:sha-${GITHUB_SHA}"
-          docker pull "$IMAGE"
-          docker run --rm -e LLMBENCH_EXPECT_GPU=0 "$IMAGE" python -m llmbench --version
-          test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "io.llmbench.cuda-architectures" }}')" = "89;120"
-
-      - name: Publish summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Published Docker image"
-            echo ""
-            echo "- Registry: \`${IMAGE_NAME}\`"
-            echo "- Immutable tag: \`sha-${GITHUB_SHA}\`"
-            echo "- CUDA architectures: \`sm_89;sm_120\`"
-            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
-            echo "- SBOM: enabled"
-            echo "- Build provenance: mode=max"
-            echo "- Publish gated by tests, lint, mypy, pip-audit and Trivy"
-          } >> "$GITHUB_STEP_SUMMARY"

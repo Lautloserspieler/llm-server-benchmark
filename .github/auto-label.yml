@@ -1,0 +1,70 @@
+# Automatische PR-Labels nach geänderten Pfaden
+# Wird von actions/labeler genutzt (siehe .github/workflows/auto-label.yml)
+
+"core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'llmbench/**'
+
+"dashboard":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'dashboard/**'
+
+"docker":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Dockerfile'
+          - '.dockerignore'
+          - 'compose.yaml'
+          - 'docker/**'
+
+"tests":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**'
+
+"scripts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+          - 'START_BENCHMARK.sh'
+          - 'START_BENCHMARK.bat'
+          - 'setup.sh'
+          - 'setup.bat'
+
+"docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '*.md'
+          - 'README.md'
+          - 'CHANGELOG.md'
+          - 'ROADMAP.md'
+          - 'CONTRIBUTING.md'
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+
+"config":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'benchmark.example.yaml'
+          - 'pyproject.toml'
+          - 'requirements.txt'
+          - 'VERSION'
+          - 'llama-cpp-version.txt'
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'pyproject.toml'
+          - 'requirements.txt'
+
+"models":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'models/**'
+          - 'llama-cpp-version.txt'

@@ -23,6 +23,7 @@ if /I not "%MODE%"=="native" (
     echo === Docker Desktop + WSL2 + NVIDIA CUDA ===
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\DOCKER_BENCHMARK.ps1" -Action Setup
     if !errorlevel! equ 0 goto :docker_ok
+    if !errorlevel! equ 3010 goto :reboot
     if /I "%MODE%"=="docker" (
         echo [!] Docker-Modus wurde erzwungen und konnte nicht eingerichtet werden.
         goto :fail
@@ -31,18 +32,19 @@ if /I not "%MODE%"=="native" (
     echo.
 )
 
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [!] Python wurde nicht gefunden.
-    echo Bitte Python 3.10+ installieren oder START_BENCHMARK.bat verwenden,
-    echo das Python bei Bedarf projektlokal einrichtet.
-    pause
-    exit /b 1
+rem Python suchen; fehlt es, fragt ENSURE_PYTHON.ps1 nach und installiert es.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ENSURE_PYTHON.ps1"
+if !errorlevel! neq 0 goto :fail
+set "PYTHON_EXE="
+if exist ".runtime\python-path.txt" set /p PYTHON_EXE=<".runtime\python-path.txt"
+if not defined PYTHON_EXE (
+    echo [!] Python 3.10+ wurde nicht gefunden.
+    goto :fail
 )
 
 if not exist .venv (
     echo [+] Erstelle virtuelle Umgebung ^(.venv^)...
-    python -m venv .venv
+    "!PYTHON_EXE!" -m venv .venv
     if !errorlevel! neq 0 goto :fail
 )
 
@@ -92,6 +94,17 @@ echo ====================================================
 echo.
 pause
 exit /b 0
+
+:reboot
+echo.
+echo ====================================================
+echo   Neustart erforderlich.
+echo   Bitte Windows neu starten und danach setup.bat
+echo   erneut ausfuehren - die Einrichtung macht dann weiter.
+echo ====================================================
+echo.
+pause
+exit /b 3010
 
 :fail
 echo.

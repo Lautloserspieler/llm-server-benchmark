@@ -115,7 +115,7 @@ Every run records provenance that can be checked before two servers are compared
 5. Select benchmark duration and hardware mode
 ```
 
-If Python 3.10+ is already installed, `setup.bat` can also be used directly.
+`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks `[J/n]` before each one and then downloads and installs it automatically. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup stops with a clear message; restart Windows and run `setup.bat` again to continue. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
 
 ### Linux
 

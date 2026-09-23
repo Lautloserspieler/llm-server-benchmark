@@ -93,6 +93,19 @@ Write-Host ""
 Write-Host "=== Python $PythonVersion wird eingerichtet ===" -ForegroundColor Cyan
 Write-Host "Kein startbares Python 3.10+ wurde über py/python oder Standardpfade gefunden."
 
+# LLMBENCH_AUTO_INSTALL=1 installiert ohne Rückfrage, =0 bricht ohne Rückfrage ab.
+$installApproved = $false
+if ($env:LLMBENCH_AUTO_INSTALL -eq "1") {
+    $installApproved = $true
+} elseif ($env:LLMBENCH_AUTO_INSTALL -ne "0" -and -not [Console]::IsInputRedirected) {
+    $answer = Read-Host "Python $PythonVersion jetzt automatisch herunterladen und installieren? [J/n]"
+    $installApproved = ($answer -eq "" -or $answer -match "^[jJyY]")
+}
+if (-not $installApproved) {
+    Write-Host "Python-Installation abgelehnt. Bitte Python 3.10+ manuell installieren." -ForegroundColor Yellow
+    exit 1
+}
+
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($arch) {
     "x64" {

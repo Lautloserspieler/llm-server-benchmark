@@ -28,6 +28,56 @@ function Invoke-Compose {
     if ($LASTEXITCODE -ne 0) { throw "docker compose $($Args -join ' ') ist fehlgeschlagen (Exitcode $LASTEXITCODE)." }
 }
 
+# Exitcode 3010 = "Neustart erforderlich" (Windows-Installer-Konvention).
+$RebootExitCode = 3010
+$DockerDesktopDir = Join-Path $env:ProgramFiles 'Docker\Docker'
+$DockerDesktopExe = Join-Path $DockerDesktopDir 'Docker Desktop.exe'
+$DockerCliDir = Join-Path $DockerDesktopDir 'resources\bin'
+
+class RebootRequiredException : System.Exception {
+    RebootRequiredException([string]$Message) : base($Message) {}
+}
+
+function Confirm-Install {
+    param([string]$What)
+    # LLMBENCH_AUTO_INSTALL=1 beantwortet alle Rueckfragen automatisch mit Ja
+    # (z. B. fuer unbeaufsichtigte Installationen), =0 immer mit Nein.
+    if ($env:LLMBENCH_AUTO_INSTALL -eq '1') {
+        Write-Host "[+] $What wird installiert (LLMBENCH_AUTO_INSTALL=1)." -ForegroundColor Cyan
+        return $true
+    }
+    if ($env:LLMBENCH_AUTO_INSTALL -eq '0') { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    $answer = Read-Host "[?] $What fehlt. Jetzt automatisch herunterladen und installieren? [J/n]"
+    return ($answer -eq '' -or $answer -match '^[jJyY]')
+}
+
+function Test-RebootPending {
+    # -IncludeSystem beruecksichtigt auch allgemeine Windows-Neustartmarker;
+    # nur sinnvoll direkt nach einer eigenen Installation.
+    param([switch]$IncludeSystem)
+    foreach ($feature in 'Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform') {
+        try {
+            $state = (Get-WindowsOptionalFeature -Online -FeatureName $feature -ErrorAction Stop).State.ToString()
+            if ($state -match 'Pending') { return $true }
+        } catch { }
+    }
+    if (-not $IncludeSystem) { return $false }
+    return (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+}
+
+function Get-WslDistros {
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return ((& wsl -l -q 2>$null) -join ' ') -replace '\x00', ''
+    } catch {
+        return ''
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
 function Test-DockerDesktopReady {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
     $oldEap = $ErrorActionPreference
@@ -46,43 +96,140 @@ function Test-DockerDesktopReady {
 
 function Ensure-WslUbuntu {
     Write-Host '[+] Pruefe WSL und Ubuntu...' -ForegroundColor Cyan
-    $wslExe = Get-Command wsl -ErrorAction SilentlyContinue
-    if (-not $wslExe) {
-        Write-Host '[!] WSL (Windows Subsystem for Linux) fehlt. Installiere WSL und Ubuntu...' -ForegroundColor Yellow
-        $oldEap = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            & wsl --install -d Ubuntu
-        } finally {
-            $ErrorActionPreference = $oldEap
-        }
-        Write-Host '[!] Die Installation wurde angestossen. Ggf. ist ein Systemneustart erforderlich!' -ForegroundColor Red
+    if (Test-RebootPending) {
+        throw [RebootRequiredException]::new('Eine vorherige WSL-/Windows-Installation wartet noch auf einen Neustart.')
+    }
+
+    $hasWsl = [bool](Get-Command wsl -ErrorAction SilentlyContinue)
+    if ($hasWsl -and ((Get-WslDistros) -match 'Ubuntu')) {
+        Write-Host '[OK] WSL und Ubuntu sind vorhanden.' -ForegroundColor Green
         return
     }
 
+    $what = if ($hasWsl) { 'Ubuntu fuer WSL2' } else { 'WSL2 (Windows-Subsystem fuer Linux) mit Ubuntu' }
+    if (-not (Confirm-Install $what)) {
+        throw "$what wird fuer den Docker-Modus benoetigt, die Installation wurde abgelehnt."
+    }
+
+    Write-Host "[+] Installiere $what..." -ForegroundColor Cyan
+    # Direkter Aufruf ohne Umleitung: Ubuntu fragt beim ersten Start ggf.
+    # interaktiv nach Benutzername und Passwort.
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $distros = ""
     try {
-        $distros = (& wsl -l -q 2>$null) -join " "
+        & wsl --install -d Ubuntu
     } finally {
         $ErrorActionPreference = $oldEap
     }
+    # Ist Ubuntu danach noch nicht registriert, wurden die Windows-Features
+    # gerade erst aktiviert ("Aenderungen werden erst nach einem Neustart wirksam").
+    if ((Test-RebootPending -IncludeSystem) -or -not ((Get-WslDistros) -match 'Ubuntu')) {
+        throw [RebootRequiredException]::new("$what wurde installiert, wird aber erst nach einem Neustart aktiv.")
+    }
+    Write-Host '[OK] WSL und Ubuntu sind installiert.' -ForegroundColor Green
+}
 
-    $distrosClean = $distros -replace '\x00', ''
-    if ($distrosClean -notmatch 'Ubuntu') {
-        Write-Host '[!] Ubuntu ist nicht in WSL installiert. Installiere...' -ForegroundColor Yellow
+function Add-DockerCliToPath {
+    if ((Test-Path (Join-Path $DockerCliDir 'docker.exe')) -and ($env:PATH -notlike "*$DockerCliDir*")) {
+        $env:PATH = "$DockerCliDir;$env:PATH"
+    }
+}
+
+function Install-DockerDesktop {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host '[+] Installiere Docker Desktop ueber winget...' -ForegroundColor Cyan
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
-            & wsl --install -d Ubuntu
+            & winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements --silent
         } finally {
             $ErrorActionPreference = $oldEap
         }
-        Write-Host '[OK] Ubuntu-Installation abgeschlossen.' -ForegroundColor Green
-    } else {
-        Write-Host '[OK] WSL und Ubuntu sind vorhanden.' -ForegroundColor Green
+        if (Test-Path $DockerDesktopExe) { return }
+        Write-Host "[!] winget-Installation nicht erfolgreich (Exitcode $LASTEXITCODE). Versuche direkten Download..." -ForegroundColor Yellow
     }
+
+    $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -eq 'Arm64') { 'arm64' } else { 'amd64' }
+    $url = "https://desktop.docker.com/win/main/$arch/Docker%20Desktop%20Installer.exe"
+    $installer = Join-Path ([System.IO.Path]::GetTempPath()) 'DockerDesktopInstaller.exe'
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+        Write-Host "[+] Download: $url" -ForegroundColor Cyan
+        $oldProgress = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+        } finally {
+            $ProgressPreference = $oldProgress
+        }
+        Write-Host '[+] Docker Desktop wird installiert (das kann einige Minuten dauern)...' -ForegroundColor Cyan
+        $proc = Start-Process -FilePath $installer -ArgumentList 'install', '--quiet', '--accept-license', '--backend=wsl-2' -Wait -PassThru
+        if ($proc.ExitCode -eq $RebootExitCode) {
+            throw [RebootRequiredException]::new('Docker Desktop wurde installiert, wird aber erst nach einem Neustart aktiv.')
+        }
+        if ($proc.ExitCode -ne 0) { throw "Docker-Desktop-Installer fehlgeschlagen (Exitcode $($proc.ExitCode))." }
+    } finally {
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Ensure-DockerDesktop {
+    Write-Host '[+] Pruefe Docker Desktop...' -ForegroundColor Cyan
+    Add-DockerCliToPath
+    if (Test-DockerDesktopReady) {
+        Write-Host '[OK] Docker Desktop laeuft mit Linux/WSL2-Backend.' -ForegroundColor Green
+        return
+    }
+
+    $freshInstall = $false
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and -not (Test-Path $DockerDesktopExe)) {
+        if (-not (Confirm-Install 'Docker Desktop')) {
+            throw 'Docker Desktop wird fuer den Docker-Modus benoetigt, die Installation wurde abgelehnt.'
+        }
+        Install-DockerDesktop
+        Add-DockerCliToPath
+        if (-not (Test-Path $DockerDesktopExe)) { throw 'Docker Desktop konnte nicht installiert werden.' }
+        Write-Host '[OK] Docker Desktop wurde installiert.' -ForegroundColor Green
+        $freshInstall = $true
+    }
+
+    if (Test-Path $DockerDesktopExe) {
+        if (-not (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) {
+            Write-Host '[+] Starte Docker Desktop...' -ForegroundColor Cyan
+            Start-Process -FilePath $DockerDesktopExe | Out-Null
+        }
+        Write-Host '[+] Warte, bis Docker Desktop bereit ist (max. 5 Minuten)...' -ForegroundColor Cyan
+        $deadline = (Get-Date).AddMinutes(5)
+        $switched = $false
+        while ((Get-Date) -lt $deadline) {
+            if (Test-DockerDesktopReady) {
+                Write-Host '[OK] Docker Desktop laeuft mit Linux/WSL2-Backend.' -ForegroundColor Green
+                return
+            }
+            $cli = Join-Path $DockerDesktopDir 'DockerCli.exe'
+            if (-not $switched -and (Test-Path $cli)) {
+                $oldEap = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                try {
+                    $osType = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
+                } finally {
+                    $ErrorActionPreference = $oldEap
+                }
+                if ($osType -eq 'windows') {
+                    Write-Host '[+] Docker Desktop nutzt Windows-Container; wechsle auf Linux/WSL2...' -ForegroundColor Yellow
+                    & $cli -SwitchLinuxEngine
+                    $switched = $true
+                }
+            }
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    if ($freshInstall -or (Test-RebootPending -IncludeSystem)) {
+        throw [RebootRequiredException]::new('Docker Desktop wurde eingerichtet, startet aber erst nach Neustart/Neuanmeldung korrekt.')
+    }
+    throw 'Docker Desktop mit Linux/WSL2-Backend ist nicht bereit. Bitte Docker Desktop oeffnen und Meldungen dort pruefen.'
 }
 
 function Initialize-DockerEnvironment {
@@ -193,10 +340,7 @@ function Ensure-BenchmarkImage {
 
 function Setup-DockerBenchmark {
     Ensure-WslUbuntu
-    
-    if (-not (Test-DockerDesktopReady)) {
-        throw 'Docker Desktop mit Linux/WSL2-Backend ist nicht bereit.'
-    }
+    Ensure-DockerDesktop
     Initialize-DockerEnvironment
     Test-DockerGpu
 
@@ -265,11 +409,25 @@ function Run-DockerBenchmark {
     Invoke-Compose @runArgs
 }
 
-switch ($Action) {
-    'Check' {
-        if (Test-DockerBenchmarkReady) { exit 0 }
-        exit 1
+if ($Action -eq 'Check') {
+    Add-DockerCliToPath
+    if (Test-DockerBenchmarkReady) { exit 0 }
+    exit 1
+}
+
+try {
+    switch ($Action) {
+        'Setup' { Setup-DockerBenchmark }
+        'Run' { Add-DockerCliToPath; Run-DockerBenchmark }
     }
-    'Setup' { Setup-DockerBenchmark; exit 0 }
-    'Run' { Run-DockerBenchmark; exit 0 }
+    exit 0
+} catch [RebootRequiredException] {
+    Write-Host ''
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host '[!] Bitte Windows neu starten und danach setup.bat erneut ausfuehren.' -ForegroundColor Yellow
+    exit $RebootExitCode
+} catch {
+    Write-Host ''
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }

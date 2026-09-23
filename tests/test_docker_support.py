@@ -72,10 +72,18 @@ def test_user_facing_launchers_keep_auto_native_docker_modes():
     linux_start = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
     windows_setup = (ROOT / "setup.bat").read_text(encoding="utf-8")
     windows_start = (ROOT / "START_BENCHMARK.bat").read_text(encoding="utf-8")
-    for content in (linux_setup, linux_start, windows_setup, windows_start):
+    # Die .bat-Dateien sind nur noch duenne Starter; Modus-Logik und alle Texte
+    # (Sprachsystem) liegen in den PowerShell-Skripten.
+    assert "scripts\\SETUP.ps1" in windows_setup
+    assert "scripts\\START_BENCHMARK.ps1" in windows_start
+    windows_setup_ps = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    windows_start_ps = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    for content in (linux_setup, linux_start, windows_setup_ps, windows_start_ps):
         assert "LLMBENCH_EXECUTION_MODE" in content
+        assert "native" in content and "docker" in content
     assert "scripts/docker_common.sh" in linux_setup
-    assert "scripts\\DOCKER_BENCHMARK.ps1" in windows_setup
+    assert "DOCKER_BENCHMARK.ps1" in windows_setup_ps
+    assert "DOCKER_BENCHMARK.ps1" in windows_start_ps
 
 
 def test_container_entrypoint_has_real_gpu_preflight():

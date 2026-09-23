@@ -311,8 +311,12 @@ def load_config(path: str | Path) -> dict[str, Any]:
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {} if p.exists() else {}
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
 
-    from llmbench.i18n import set_language
-    set_language(cfg_dict.get("project", {}).get("language", "de"))
+    # Nur ein in der Datei ausdruecklich gesetztes project.language ueberschreibt
+    # die beim Start gewaehlte Sprache (LLMBENCH_LANG bzw. .runtime/language).
+    from llmbench.i18n import current_language, detect_language, set_language
+    explicit = ((raw.get("project") or {}) if isinstance(raw, dict) else {}).get("language")
+    set_language(explicit or detect_language(p.parent))
+    cfg_dict.setdefault("project", {})["language"] = current_language()
 
     # Keine Validierung hier: ein ungueltiges RootConfig(**cfg_dict) wuerde mit
     # einer rohen ValidationError abbrechen. validate_config() liefert

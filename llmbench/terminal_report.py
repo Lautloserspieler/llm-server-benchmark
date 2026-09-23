@@ -22,13 +22,15 @@ from .utils import human_bytes
 from .i18n import _
 
 STATUS_STYLES = {"ok": "bold green", "timeout": "bold yellow"}
-STATUS_LABELS = {"ok": "OK", "timeout": "Zeitueberschreitung", "failed": "Fehler"}
+def status_label(status: str | None) -> str:
+    # Literale _()-Aufrufe, damit die Uebersetzungspruefung sie findet.
+    labels = {"ok": _("OK"), "timeout": _("Zeitueberschreitung"), "failed": _("Fehler")}
+    return labels.get(str(status), str(status))
 
 
 def _status_text(status: str | None) -> Text:
     style = STATUS_STYLES.get(str(status), "bold red")
-    label = STATUS_LABELS.get(str(status), str(status))
-    return Text(_(label), style=style)
+    return Text(status_label(status), style=style)
 
 
 def _gpu_text(hw: dict[str, Any]) -> str:

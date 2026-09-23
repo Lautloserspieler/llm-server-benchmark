@@ -7,7 +7,8 @@ from pathlib import Path
 from llmbench.bootstrap import discover_models, shard_info
 from llmbench.config import load_config
 from llmbench.llama_bench import flatten_bench_rows, run_llama_bench
-from llmbench.utils import ensure_dir, print_err, print_msg, safe_name, write_json
+from llmbench.i18n import _
+from llmbench.utils import ensure_dir, print_err, print_msg, print_section, safe_name, write_json
 
 # Typische llama.cpp/GGUF-Quantisierungsnamen. Wichtig ist, dass nur Varianten
 # desselben Basis-Modells gegeneinander verglichen werden.
@@ -69,8 +70,10 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
     groups = discover_quant_groups(root, models_dir)
     if not groups:
         print_err(
-            "Kein echter Quantisierungsvergleich moeglich. Lege mindestens zwei Quantisierungen "
-            "desselben Modells (z.B. Q4_K_M und Q8_0) unter models/ ab."
+            _(
+                "Kein echter Quantisierungsvergleich moeglich. Lege mindestens zwei Quantisierungen "
+                "desselben Modells (z.B. Q4_K_M und Q8_0) unter models/ ab."
+            )
         )
         return 1
 
@@ -86,10 +89,10 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
     document: dict = {"status": "ok", "groups": []}
     any_success = False
     for base_name, variants in groups.items():
-        print_msg(f"\n=== Quantisierungsvergleich: {base_name} ===")
+        print_section(_("Quantisierungsvergleich: {name}").format(name=base_name))
         group_result = {"base_model": base_name, "variants": []}
         for quant, model_path in variants.items():
-            print_msg(f"Teste {quant}: {model_path.name}")
+            print_msg(_("Teste {quant}: {file}").format(quant=quant, file=model_path.name))
             variant_dir = ensure_dir(out_dir / safe_name(base_name) / safe_name(quant))
             prompt_result = run_llama_bench(
                 exe, str(model_path), bench_cfg, profile, "prompt", variant_dir
@@ -115,11 +118,11 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
                     f"TG {entry['generation_tps'] or 0:.2f} t/s"
                 )
             else:
-                print_err(f"{quant} konnte nicht vollstaendig gemessen werden.")
+                print_err(_("{quant} konnte nicht vollstaendig gemessen werden.").format(quant=quant))
         document["groups"].append(group_result)
 
     if not any_success:
         document["status"] = "failed"
     write_json(out_dir / "quant.json", document)
-    print_msg(f"\nStrukturierte Ergebnisse: {out_dir / 'quant.json'}")
+    print_msg("\n" + _("Strukturierte Ergebnisse: {path}").format(path=out_dir / "quant.json"), style="green")
     return 0 if any_success else 1

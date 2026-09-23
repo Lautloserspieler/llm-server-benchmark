@@ -17,6 +17,8 @@ import sys
 import time
 from typing import Any, TextIO
 
+from .i18n import _
+
 
 def format_duration(seconds: float | None) -> str:
     if seconds is None:
@@ -103,7 +105,7 @@ class Reporter:
                     f"   ±{float(row.get('stddev_ts') or 0):.2f}"
                 )
         else:
-            label = "Zeitueberschreitung" if status == "timeout" else "Fehler"
+            label = _("Zeitueberschreitung") if status == "timeout" else _("Fehler")
             self._write_line(f"    {label}: {error or 'unbekannt'}")
 
     def note(self, text: str) -> None:

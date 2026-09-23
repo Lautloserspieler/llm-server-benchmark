@@ -17,6 +17,7 @@ from .bootstrap import bootstrap_config
 from .compare import compare_summaries
 from .config import apply_duration_preset, load_config, save_example, validate_config
 from .doctor import doctor
+from .i18n import _
 from .progress import make_reporter
 from .runner import run_suite
 
@@ -119,15 +120,22 @@ def _auto_install_llama_cpp_unix(root: Path) -> bool:
 
 def run_setup_wizard(allow_system_search: bool = False) -> int:
     from llmbench.download import download_models, verify_suite
-    from llmbench.utils import console, print_err, print_msg, print_panel
+    from llmbench.utils import ask_yes_no, console, print_err, print_msg, print_panel
     from rich.prompt import Prompt
 
-    lang_val = Prompt.ask(
-        "[cyan]Which language do you want to use? / Welche Sprache möchtest du nutzen? (de/en)[/cyan]",
-        choices=["de", "en"],
-        default="de"
-    )
-    from llmbench.i18n import set_language, _
+    from llmbench.i18n import detect_language, language_preselected, save_language, set_language
+
+    # setup.bat/setup.sh fragen die Sprache bereits ganz am Anfang; nur bei
+    # direktem Aufruf von `llmbench setup` wird hier noch gefragt.
+    if language_preselected():
+        lang_val = detect_language()
+    else:
+        lang_val = Prompt.ask(
+            "[cyan]Which language do you want to use? / Welche Sprache möchtest du nutzen? (de/en)[/cyan]",
+            choices=["de", "en"],
+            default="de"
+        )
+        save_language(lang_val)
     set_language(lang_val)
 
     print_panel(
@@ -143,76 +151,71 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     ext = ".exe" if platform.system() == "Windows" else ""
 
     if not result["llama_binaries_found"]:
-        print_err(f"llama.cpp wurde unter {llama_dir} nicht gefunden.")
+        print_err(_("llama.cpp wurde unter {path} nicht gefunden.").format(path=llama_dir))
         if platform.system() == "Windows":
             if not _auto_install_llama_cpp_windows(root):
-                print_err("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte.")
+                print_err(_("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte."))
                 return 1
             result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
             llama_dir = result["llama_dir"]
             if not result["llama_binaries_found"]:
                 print_err(
-                    "Das automatische Setup wurde beendet, aber llama-bench.exe oder "
-                    "llama-server.exe fehlen weiterhin unter tools\\llama.cpp."
+                    _("Das automatische Setup wurde beendet, aber {files} fehlen weiterhin unter {path}.").format(
+                        files="llama-bench.exe / llama-server.exe", path="tools\\llama.cpp"
+                    )
                 )
                 return 1
-            print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
+            print_msg(_("llama.cpp automatisch installiert: {path}").format(path=llama_dir), style="green")
         elif _auto_install_llama_cpp_unix(root):
             result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
             llama_dir = result["llama_dir"]
             if not result["llama_binaries_found"]:
                 print_err(
-                    "Das automatische Setup wurde beendet, aber llama-bench oder "
-                    "llama-server fehlen weiterhin unter tools/llama.cpp."
+                    _("Das automatische Setup wurde beendet, aber {files} fehlen weiterhin unter {path}.").format(
+                        files="llama-bench / llama-server", path="tools/llama.cpp"
+                    )
                 )
                 return 1
-            print_msg(f"llama.cpp automatisch installiert: {llama_dir}", style="green")
+            print_msg(_("llama.cpp automatisch installiert: {path}").format(path=llama_dir), style="green")
         else:
-            val = Prompt.ask("[cyan]Pfad zum llama.cpp-Ordner (Enter zum Abbrechen)[/cyan]")
+            val = Prompt.ask("[cyan]" + _("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen)") + "[/cyan]")
             if not val:
-                print_msg("Einrichtung abgebrochen.", style="red")
+                print_msg(_("Einrichtung abgebrochen."), style="red")
                 return 1
             llama_dir = val
             if not (
                 (Path(llama_dir) / f"llama-bench{ext}").exists()
                 and (Path(llama_dir) / f"llama-server{ext}").exists()
             ):
-                print_err("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen.")
+                print_err(_("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen."))
                 return 1
     else:
-        print_msg(f"llama.cpp gefunden: {llama_dir}", style="green")
+        print_msg(_("llama.cpp gefunden: {path}").format(path=llama_dir), style="green")
 
     models_dir = result.get("models_dir") or str(root / "models")
     complete, missing = verify_suite(models_dir, "all")
     if not complete:
-        console.print(
-            "\n[bold yellow]Die V2-Standard-Suite ist noch nicht vollstaendig.[/bold yellow]"
-        )
-        console.print("Fehlend/unvollstaendig: " + ", ".join(missing))
-        dl_ask = Prompt.ask(
-            "[cyan]Fehlende Standard-Modelle automatisch von HuggingFace laden?[/cyan]",
-            choices=["j", "n"],
-            default="j",
-        )
-        if dl_ask.lower() == "j":
+        console.print("\n[bold yellow]" + _("Die Standard-Suite ist noch nicht vollstaendig.") + "[/bold yellow]")
+        console.print(_("Fehlend/unvollstaendig: {names}").format(names=", ".join(missing)))
+        if ask_yes_no(_("Fehlende Standard-Modelle automatisch von HuggingFace laden?"), default=True):
             try:
                 download_models(models_dir, "all")
             except Exception as exc:
-                print_err(f"Automatischer Modell-Download fehlgeschlagen: {exc}")
+                print_err(_("Automatischer Modell-Download fehlgeschlagen: {error}").format(error=exc))
                 return 1
         elif result.get("models_found", 0) == 0:
-            val = Prompt.ask("[cyan]Pfad zu einem eigenen Modellordner (Enter zum Abbrechen)[/cyan]")
+            val = Prompt.ask("[cyan]" + _("Pfad zu einem eigenen Modellordner (Enter zum Abbrechen)") + "[/cyan]")
             if not val:
-                print_err("Keine Modelle vorhanden. Einrichtung abgebrochen.")
+                print_err(_("Keine Modelle vorhanden. Einrichtung abgebrochen."))
                 return 1
             models_dir = val
     else:
-        print_msg("V2-Standard-Suite vollstaendig vorhanden.", style="green")
+        print_msg(_("Standard-Suite vollstaendig vorhanden."), style="green")
 
     import socket
 
     server_name = Prompt.ask(
-        "[cyan]Name dieses Servers fuer den Vergleich[/cyan]", default=socket.gethostname()
+        "[cyan]" + _("Name dieses Servers fuer den Vergleich") + "[/cyan]", default=socket.gethostname()
     )
     result = bootstrap_config(config_path, root, llama_dir, models_dir, allow_system_search)
 
@@ -224,11 +227,13 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
     )
 
     for warning in result.get("warnings", []):
-        console.print(f"[bold yellow]Hinweis:[/bold yellow] {warning}")
+        console.print(f"[bold yellow]{_('Hinweis:')}[/bold yellow] {warning}")
 
     print_panel(
-        f"Konfiguration gespeichert: {cfg_file}\nNächster Schritt: llmbench doctor --config benchmark.yaml",
-        title="Fertig",
+        _("Konfiguration gespeichert: {path}").format(path=cfg_file)
+        + "\n"
+        + _("Nächster Schritt: {command}").format(command="llmbench doctor --config benchmark.yaml"),
+        title=_("Fertig"),
     )
     return 0
 
@@ -347,10 +352,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     for name, help_text in (
-        ("stress-ttft", "TTFT-Latenz unter extremer Parallelitaet"),
-        ("stress-multitenant", "Zwei aktive llama-server-Instanzen gleichzeitig"),
-        ("stress-oom", "Progressiver KV-Cache/Kontext-OOM-Test"),
-        ("stress-quant", "Gleiche Modelle mit verschiedenen Quantisierungen vergleichen"),
+        ("stress-ttft", _("TTFT-Latenz unter extremer Parallelitaet")),
+        ("stress-multitenant", _("Zwei aktive llama-server-Instanzen gleichzeitig")),
+        ("stress-oom", _("Progressiver KV-Cache/Kontext-OOM-Test")),
+        ("stress-quant", _("Gleiche Modelle mit verschiedenen Quantisierungen vergleichen")),
     ):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--config", default="benchmark.yaml")
@@ -374,7 +379,7 @@ def _run_all_stress(config_path: str, out_dir: Path) -> dict[str, int]:
         try:
             return fn()
         except Exception as exc:
-            print_err(f"Stress-Test '{name}' fehlgeschlagen: {exc}")
+            print_err(_("Stress-Test '{name}' fehlgeschlagen: {error}").format(name=name, error=exc))
             return 1
 
     statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(config_path, stress_root / "ttft"))

@@ -226,5 +226,19 @@
   "{name} wird installiert (LLMBENCH_AUTO_INSTALL=1).": "Installing {name} (LLMBENCH_AUTO_INSTALL=1).",
   "braucht NVIDIA-GPU in Docker": "needs NVIDIA GPU in Docker",
   "vLLM braucht eine NVIDIA-GPU, die Docker an Container durchreicht (NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten.": "vLLM needs an NVIDIA GPU that Docker passes through to containers (NVIDIA driver + NVIDIA Container Toolkit) - not offered here.",
-  "{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.": "{name} is not installed - default backend reset to {default}."
+  "{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.": "{name} is not installed - default backend reset to {default}.",
+  "kein Exitcode": "no exit code",
+  "Absturz (Zugriffsverletzung)": "crash (access violation)",
+  "eine DLL fehlt": "a DLL is missing",
+  "die CPU kennt einen benoetigten Befehlssatz nicht (z. B. AVX)": "the CPU lacks a required instruction set (e.g. AVX)",
+  "vom Programm selbst abgebrochen": "aborted by the program itself",
+  "Exitcode {code} (0x{hex})": "exit code {code} (0x{hex})",
+  "Exitcode {code}": "exit code {code}",
+  "llama-server hat sich beim Start beendet ({reason}).": "llama-server exited during startup ({reason}).",
+  "Letzte Zeilen aus dem Server-Log:": "Last lines of the server log:",
+  "Vollstaendiges Log: {path}": "Full log: {path}",
+  "llama-server wurde nicht bereit: {error}": "llama-server did not become ready: {error}",
+  "Port {port} ist bereits belegt (laeuft noch ein anderer llama-server?).": "Port {port} is already in use (is another llama-server still running?).",
+  "Fremde Prozesse haben waehrend der Messung die GPU benutzt: {names}. GPU-, VRAM- und Leistungswerte sind dadurch verfaelscht.": "Foreign processes used the GPU during the measurement: {names}. GPU, VRAM and power values are skewed as a result.",
+  "Die GPU war bereits vor dem Testlauf ausgelastet ({percent} %), auch nach {seconds} s Wartezeit. Der Server war nicht im Ruhezustand.": "The GPU was already busy before the test ({percent} %), even after waiting {seconds} s. The server was not idle."
 }

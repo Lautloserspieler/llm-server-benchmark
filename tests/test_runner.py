@@ -198,7 +198,7 @@ class _RecordingBackend(BenchmarkBackend):
     def stop_server(self, _proc):
         raise AssertionError("Endpoint ist in diesem Test deaktiviert")
 
-    def wait_health(self, _base_url, _timeout_s, _headers=None):
+    def wait_health(self, _base_url, _timeout_s, _headers=None, proc=None):  # noqa: ARG002
         return 0.0
 
 

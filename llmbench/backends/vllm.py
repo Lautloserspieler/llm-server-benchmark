@@ -280,7 +280,13 @@ class VllmBackend(BenchmarkBackend):
         self.container_id = None
         self.target_pid = None
 
-    def wait_health(self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
+    def wait_health(
+        self,
+        base_url: str,
+        timeout_s: float,
+        headers: dict[str, str] | None = None,
+        proc: Any = None,  # noqa: ARG002 - Container-Status prueft start_server selbst
+    ) -> float:
         # vLLMs OpenAI-Server hat /health, ueber das veroeffentlichte Port
         # genauso erreichbar wie bei llama-server - deshalb unveraendert.
         return wait_health(base_url, timeout_s, headers)

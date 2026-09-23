@@ -231,7 +231,9 @@ def run_suite(
                     cfg["benchmark"],
                     model_dir / "llama-server-qg.log",
                 )
-                backend.wait_health(endpoint_cfg["base_url"], float(endpoint_cfg.get("startup_timeout_seconds", 300)))
+                backend.wait_health(
+                    endpoint_cfg["base_url"], float(endpoint_cfg.get("startup_timeout_seconds", 300)), proc=proc
+                )
                 passed, msg = asyncio.run(run_sanity_check(endpoint_cfg["base_url"], endpoint_cfg, quality_gate_cfg))
                 model_result["quality_gate"] = {"passed": passed, "message": msg}
                 if not passed:
@@ -392,6 +394,7 @@ def run_suite(
                     cold_start_s = backend.wait_health(
                         endpoint_cfg["base_url"],
                         float(endpoint_cfg.get("startup_timeout_seconds", 300)),
+                        proc=proc,
                     )
                 else:
                     command = None

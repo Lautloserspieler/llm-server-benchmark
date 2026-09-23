@@ -152,6 +152,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
                 base_url,
                 float(endpoint_cfg.get("startup_timeout_seconds", 300)),
                 auth_headers(endpoint_cfg),
+                proc,
             )
         except Exception as exc:
             result = {

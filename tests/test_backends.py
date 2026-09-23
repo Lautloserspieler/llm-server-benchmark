@@ -98,8 +98,16 @@ def test_stop_server_delegates_to_stop_llama_server(monkeypatch):
 
 
 def test_wait_health_delegates_to_wait_health(monkeypatch):
-    monkeypatch.setattr(
-        "llmbench.backends.llama_cpp.wait_health", lambda _base_url, _timeout_s, _headers=None: 1.23
-    )
+    seen = {}
+
+    def fake_wait_health(_base_url, _timeout_s, _headers=None, proc=None):
+        seen["proc"] = proc
+        return 1.23
+
+    monkeypatch.setattr("llmbench.backends.llama_cpp.wait_health", fake_wait_health)
     backend = LlamaCppBackend("llama-bench", "llama-server")
     assert backend.wait_health("http://x", 5.0) == 1.23
+    # Der Prozess muss durchgereicht werden, sonst bleibt ein Absturz 300 s unbemerkt.
+    marker = object()
+    backend.wait_health("http://x", 5.0, proc=marker)
+    assert seen["proc"] is marker

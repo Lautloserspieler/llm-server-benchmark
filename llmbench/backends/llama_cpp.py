@@ -223,5 +223,7 @@ class LlamaCppBackend(BenchmarkBackend):
         stop_llama_server(proc)
         _wait_for_vram_release(baseline_mib)
 
-    def wait_health(self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
-        return wait_health(base_url, timeout_s, headers)
+    def wait_health(
+        self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
+    ) -> float:
+        return wait_health(base_url, timeout_s, headers, proc)

@@ -94,7 +94,7 @@ class _FakeBackend:
         proc = SimpleNamespace(pid=self._next_pid)
         return proc, f"fake-cmd --port {endpoint_cfg['base_url']}"
 
-    def wait_health(self, base_url, _timeout_s, _headers=None):
+    def wait_health(self, base_url, _timeout_s, _headers=None, proc=None):  # noqa: ARG002
         if self._fail_health:
             raise TimeoutError(f"{base_url} wurde nicht bereit")
         return 0.05

@@ -10,7 +10,18 @@ from typing import Any
 
 import psutil
 
+from .i18n import _
 from .telemetry import get_telemetry_provider
+
+# Vor jedem Test kurz warten, bis die GPU vom vorigen Test zur Ruhe kommt -
+# sonst meldet die Baseline direkt nach einem GPU-Test faelschlich "ausgelastet".
+IDLE_GPU_UTIL_PERCENT = 10.0
+IDLE_WAIT_SECONDS = 15.0
+BUSY_BASELINE_UTIL_PERCENT = 15.0
+
+
+def _max_gpu_util(sample: dict[str, Any] | None) -> float:
+    return max((float(g.get("util_gpu_percent") or 0) for g in (sample or {}).get("gpus") or []), default=0.0)
 
 
 def _agg(items: list[dict[str, Any]], key: str) -> tuple[float | None, float | None]:
@@ -43,6 +54,7 @@ class ResourceMonitor:
     _seen_gpu_pids: set[int] = field(default_factory=set)
     _baseline: dict[str, Any] | None = None
     _max_samples: int = 100000  # Hard limit to prevent unbounded memory growth
+    idle_wait_seconds: float = IDLE_WAIT_SECONDS
 
     # ------------------------------------------------------------------ start
 
@@ -53,9 +65,18 @@ class ResourceMonitor:
         self._stop.clear()
         psutil.cpu_percent(interval=None)
         self._provider = get_telemetry_provider()
-        self._baseline = self._sample()
+        self._baseline = self._wait_for_idle_gpu()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def _wait_for_idle_gpu(self) -> dict[str, Any]:
+        """Baseline erst nehmen, wenn die GPU ruhig ist (hoechstens idle_wait_seconds)."""
+        sample = self._sample()
+        deadline = time.monotonic() + max(0.0, float(self.idle_wait_seconds))
+        while _max_gpu_util(sample) >= IDLE_GPU_UTIL_PERCENT and time.monotonic() < deadline:
+            time.sleep(1.0)
+            sample = self._sample()
+        return sample
 
     def latest(self) -> dict[str, Any] | None:
         """Juengstes Sample fuer die Live-Anzeige.
@@ -177,7 +198,7 @@ class ResourceMonitor:
             avg_util, max_util = _agg(items, "util_gpu_percent")
             avg_mem, max_mem = _agg(items, "memory_used_bytes")
             avg_power, max_power = _agg(items, "power_w")
-            _, max_temp = _agg(items, "temperature_c")
+            _avg_temp, max_temp = _agg(items, "temperature_c")
             total_mem = next(
                 (x.get("memory_total_bytes") for x in items if x.get("memory_total_bytes")), None
             )
@@ -200,16 +221,20 @@ class ResourceMonitor:
         if foreign:
             names = ", ".join(f"{p['name'] or '?'} (PID {p['pid']})" for p in foreign)
             warnings.append(
-                "Fremde Prozesse haben waehrend der Messung die GPU benutzt: "
-                f"{names}. GPU-, VRAM- und Leistungswerte sind dadurch verfaelscht."
+                _(
+                    "Fremde Prozesse haben waehrend der Messung die GPU benutzt: "
+                    "{names}. GPU-, VRAM- und Leistungswerte sind dadurch verfaelscht."
+                ).format(names=names)
             )
         if self._baseline:
             base_gpu = self._baseline.get("gpus") or []
-            busy = [g for g in base_gpu if (g.get("util_gpu_percent") or 0) > 15]
+            busy = [g for g in base_gpu if (g.get("util_gpu_percent") or 0) > BUSY_BASELINE_UTIL_PERCENT]
             if busy:
                 warnings.append(
-                    "Die GPU war bereits vor dem Testlauf ausgelastet "
-                    f"({busy[0].get('util_gpu_percent'):.0f} %). Der Server war nicht im Ruhezustand."
+                    _(
+                        "Die GPU war bereits vor dem Testlauf ausgelastet ({percent} %), auch nach {seconds} s "
+                        "Wartezeit. Der Server war nicht im Ruhezustand."
+                    ).format(percent=f"{busy[0].get('util_gpu_percent'):.0f}", seconds=f"{self.idle_wait_seconds:.0f}")
                 )
 
         return {

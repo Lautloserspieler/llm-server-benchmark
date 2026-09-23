@@ -319,3 +319,31 @@ def test_powershell_files_with_non_ascii_have_bom():
         if any(byte > 0x7F for byte in data) and not data.startswith(b"\xef\xbb\xbf"):
             bad.append(str(path.relative_to(ROOT)))
     assert not bad, "Nicht-ASCII ohne UTF-8-BOM: " + ", ".join(bad)
+
+
+@needs_pwsh
+@pytest.mark.skipif(sys.platform == "win32", reason="nutzt Shell-Skripte als Attrappe fuer .exe")
+@pytest.mark.parametrize(("server_exit", "expected_success"), [(0, "True"), (3, "False")])
+def test_llama_probe_also_starts_llama_server(tmp_path, server_exit, expected_success):
+    # llama-bench laeuft, llama-server stuerzt ab -> Build gilt als nicht lauffaehig (Fallback greift).
+    for name, body in (
+        ("llama-bench.exe", "echo 'Device 0: Fake GPU'; exit 0"),
+        ("llama-server.exe", f"echo 'server says hi'; exit {server_exit}"),
+    ):
+        exe = tmp_path / name
+        exe.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        exe.chmod(0o755)
+    script = tmp_path / "probe.ps1"
+    script.write_text(
+        _LLAMA_MODULES
+        + f"$p = Invoke-LlamaBenchProbe '{(tmp_path / 'llama-bench.exe').as_posix()}'\n"
+        "\"SUCCESS=$($p.Success)\"; \"EXIT=$($p.ExitCode)\"; $p.Output\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert f"SUCCESS={expected_success}" in proc.stdout
+    assert "server says hi" in proc.stdout
+    if server_exit:
+        assert f"EXIT={server_exit}" in proc.stdout
+        assert "llama-server:" in proc.stdout

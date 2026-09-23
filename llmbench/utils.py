@@ -225,6 +225,38 @@ def auth_headers(cfg: dict[str, Any]) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
+def format_exit_code(code: int | None) -> str:
+    """Exitcode lesbar machen - unter Windows sind Abstuerze NTSTATUS-Werte (z. B. -1073741819)."""
+    from .i18n import _
+
+    if code is None:
+        return _("kein Exitcode")
+    unsigned = code & 0xFFFFFFFF
+    meanings = {
+        0xC0000005: _("Absturz (Zugriffsverletzung)"),
+        0xC0000135: _("eine DLL fehlt"),
+        0xC0000139: _("eine DLL fehlt"),
+        0xC000001D: _("die CPU kennt einen benoetigten Befehlssatz nicht (z. B. AVX)"),
+        0xC0000409: _("vom Programm selbst abgebrochen"),
+    }
+    if unsigned in meanings:
+        return f"0x{unsigned:08X} – {meanings[unsigned]}"
+    if code < 0 or code > 255:
+        return _("Exitcode {code} (0x{hex})").format(code=code, hex=f"{unsigned:08X}")
+    return _("Exitcode {code}").format(code=code)
+
+
+def log_tail(path: str | Path | None, lines: int = 15) -> str:
+    """Letzte nicht-leere Zeilen einer Log-Datei (leer, wenn sie fehlt)."""
+    if not path:
+        return ""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join([line for line in text.splitlines() if line.strip()][-lines:])
+
+
 def modify_url_port(base_url: str, new_port: int) -> str:
     """Ersetzt den Port einer URL, IPv6-kompatibel."""
     from urllib.parse import urlparse, urlunparse

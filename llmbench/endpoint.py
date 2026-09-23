@@ -18,7 +18,16 @@ import httpx
 from .config import normalize_flash_attention
 from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
 from .monitor import ResourceMonitor, strip_samples
-from .utils import auth_headers, kill_process_tree, resolve_executable, utc_now_iso, write_json
+from .i18n import _
+from .utils import (
+    auth_headers,
+    format_exit_code,
+    kill_process_tree,
+    log_tail,
+    resolve_executable,
+    utc_now_iso,
+    write_json,
+)
 
 
 def percentile(values: list[float], p: float) -> float | None:
@@ -86,14 +95,52 @@ async def run_sanity_check(
     return True, f"Sanity check bestanden ({passed}/{len(tests)} Tests)."
 
 
+def _exited_code(proc: Any) -> int | None:
+    """Exitcode, falls der Prozess schon beendet ist - sonst None (auch fuer Attrappen ohne poll)."""
+    poll = getattr(proc, "poll", None)
+    if not callable(poll):
+        return None
+    try:
+        code = poll()
+    except Exception:
+        return None
+    return code if isinstance(code, int) else None
+
+
+def server_exit_message(proc: Any, code: int) -> str:
+    """Fehlermeldung mit dem echten Grund, statt nur "All connection attempts failed"."""
+    log_path = getattr(proc, "_llmbench_log_path", None)
+    log_file = getattr(proc, "_llmbench_log_file", None)
+    if log_file is not None:
+        with contextlib.suppress(Exception):
+            log_file.flush()
+    message = _("llama-server hat sich beim Start beendet ({reason}).").format(reason=format_exit_code(code))
+    tail = log_tail(log_path)
+    if tail:
+        message += "\n" + _("Letzte Zeilen aus dem Server-Log:") + "\n" + tail
+    if log_path:
+        message += "\n" + _("Vollstaendiges Log: {path}").format(path=log_path)
+    return message
+
+
 async def wait_health_async(
-    base_url: str, timeout_s: float, headers: dict[str, str] | None = None
+    base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
 ) -> float:
+    """Wartet, bis /health antwortet.
+
+    Mit ``proc`` wird bei jedem Versuch geprueft, ob der Server noch laeuft:
+    ein sofort abgestuerzter llama-server wird dann direkt mit Exitcode und
+    Log-Auszug gemeldet, statt erst nach ``timeout_s`` mit einem nichtssagenden
+    Verbindungsfehler.
+    """
     started = time.time()
     deadline = started + timeout_s
     last_error = ""
     async with httpx.AsyncClient() as client:
         while time.time() < deadline:
+            code = _exited_code(proc)
+            if code is not None:
+                raise RuntimeError(server_exit_message(proc, code))
             try:
                 r = await client.get(
                     base_url.rstrip("/") + "/health", timeout=5, headers=headers or {}
@@ -104,19 +151,35 @@ async def wait_health_async(
             except Exception as exc:
                 last_error = str(exc)
             await asyncio.sleep(1)
-    raise TimeoutError(f"llama-server wurde nicht bereit: {last_error}")
+    message = _("llama-server wurde nicht bereit: {error}").format(error=last_error)
+    log_path = getattr(proc, "_llmbench_log_path", None)
+    tail = log_tail(log_path)
+    if tail:
+        message += "\n" + _("Letzte Zeilen aus dem Server-Log:") + "\n" + tail
+    raise TimeoutError(message)
 
 
 def wait_health(
-    base_url: str, timeout_s: float, headers: dict[str, str] | None = None
+    base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
 ) -> float:
     """Synchronous wrapper using nested event loop compatibility."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(wait_health_async(base_url, timeout_s, headers))
+        return asyncio.run(wait_health_async(base_url, timeout_s, headers, proc))
 
-    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers))
+    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers, proc))
+
+
+def port_in_use(host: str, port: int) -> bool:
+    """True, wenn auf host:port schon etwas lauscht (z. B. ein haengengebliebener llama-server)."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
 
 
 def start_llama_server(
@@ -189,6 +252,11 @@ def start_llama_server(
     for item in endpoint_cfg.get("server_additional_args", []) or []:
         cmd.append(str(item))
 
+    if port_in_use(host, port):
+        raise RuntimeError(
+            _("Port {port} ist bereits belegt (laeuft noch ein anderer llama-server?).").format(port=port)
+        )
+
     log_f = open(log_path, "w", encoding="utf-8")  # noqa: SIM115
     try:
         proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT, text=True)
@@ -196,6 +264,7 @@ def start_llama_server(
         log_f.close()
         raise
     proc._llmbench_log_file = log_f  # type: ignore[attr-defined]
+    proc._llmbench_log_path = str(log_path)  # type: ignore[attr-defined]
     printable = list(cmd)
     if "--api-key" in printable:
         printable[printable.index("--api-key") + 1] = "***"

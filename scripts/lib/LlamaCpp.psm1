@@ -186,35 +186,54 @@ function Format-LlamaExitCode($ExitCode) {
     return (T 'core.exit_code' $ExitCode $hex)
 }
 
+function Invoke-ExeProbe([string]$Exe, [string]$Arguments) {
+    # Programm kurz starten und Exitcode + gesamte Ausgabe einsammeln.
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    $output = ''
+    $exitCode = 1
+    try {
+        $proc = Start-Process -FilePath $Exe -ArgumentList $Arguments `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $exitCode = $proc.ExitCode
+        $output = ((Get-Content $outFile -Raw -ErrorAction SilentlyContinue) + "`n" +
+                   (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)).Trim()
+    } catch {
+        $output = $_.Exception.Message
+    } finally {
+        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
 function Invoke-LlamaBenchProbe([string]$BenchExe) {
     if (-not (Test-Path $BenchExe)) {
         return [pscustomobject]@{ Success = $false; ExitCode = $null; Output = (T 'core.exe_missing' 'llama-bench.exe'); DeviceLine = $null }
     }
 
-    $outFile = [System.IO.Path]::GetTempFileName()
-    $errFile = [System.IO.Path]::GetTempFileName()
-    $probe = ''
-    $probeExit = 1
-    try {
-        $proc = Start-Process -FilePath $BenchExe -ArgumentList '--list-devices' `
-            -NoNewWindow -Wait -PassThru `
-            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-        $probeExit = $proc.ExitCode
-        $probe = ((Get-Content $outFile -Raw -ErrorAction SilentlyContinue) + "`n" +
-                  (Get-Content $errFile -Raw -ErrorAction SilentlyContinue)).Trim()
-    } catch {
-        $probe = $_.Exception.Message
-    } finally {
-        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    $bench = Invoke-ExeProbe $BenchExe '--list-devices'
+    $backendsLoaded = $bench.Output -match 'load_backend|ggml_cuda_init|Device \d+:'
+    $deviceLine = ($bench.Output -split "`r?`n" | Where-Object { $_ -match 'Device \d+:' } | Select-Object -First 1)
+    if (-not ($bench.ExitCode -eq 0 -or $backendsLoaded)) {
+        return [pscustomobject]@{ Success = $false; ExitCode = $bench.ExitCode; Output = "llama-bench: $($bench.Output)"; DeviceLine = $null }
     }
 
-    $backendsLoaded = $probe -match 'load_backend|ggml_cuda_init|Device \d+:'
-    $success = ($probeExit -eq 0 -or $backendsLoaded)
-    $deviceLine = ($probe -split "`r?`n" | Where-Object { $_ -match 'Device \d+:' } | Select-Object -First 1)
+    # Auch llama-server muss starten: Dauerlast-, Endpoint- und Stresstests brauchen
+    # ihn. Ein Build, dessen llama-server abstuerzt, loest ebenfalls den Fallback aus.
+    $serverExe = Join-Path (Split-Path -Parent $BenchExe) 'llama-server.exe'
+    if (-not (Test-Path $serverExe)) {
+        return [pscustomobject]@{ Success = $false; ExitCode = $null; Output = (T 'core.exe_missing' 'llama-server.exe'); DeviceLine = $null }
+    }
+    $server = Invoke-ExeProbe $serverExe '--version'
+    if ($server.ExitCode -ne 0) {
+        return [pscustomobject]@{ Success = $false; ExitCode = $server.ExitCode; Output = "llama-server: $($server.Output)"; DeviceLine = $null }
+    }
+
     return [pscustomobject]@{
-        Success = $success
-        ExitCode = $probeExit
-        Output = $probe
+        Success = $true
+        ExitCode = 0
+        Output = "llama-bench:`n$($bench.Output)`n`nllama-server --version:`n$($server.Output)"
         DeviceLine = $deviceLine
     }
 }

@@ -38,8 +38,14 @@ class BenchmarkBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def wait_health(self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None) -> float:
-        """Waits for the server to become healthy."""
+    def wait_health(
+        self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
+    ) -> float:
+        """Waits for the server to become healthy.
+
+        ``proc`` is the handle returned by ``start_server``; backends that can
+        detect a server that already exited should fail fast with its reason.
+        """
         ...
 
     # ------------------------------------------------------------- Lifecycle

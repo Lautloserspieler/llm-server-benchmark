@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Windows-Setup installiert fehlende Komponenten nach Rueckfrage
+
+- `setup.bat` erkennt fehlendes WSL2/Ubuntu, Docker Desktop und Python 3.10+,
+  fragt jeweils `[J/n]` und laedt/installiert die Komponente dann automatisch
+  (Docker Desktop ueber winget bzw. offiziellen Installer, Python ueber den
+  bestehenden SHA256-geprueften Bootstrap).
+- Docker Desktop wird bei Bedarf gestartet und ggf. auf Linux-Container
+  umgeschaltet; `setup.bat` wartet bis zu 5 Minuten, bis es bereit ist.
+- Braucht eine Installation einen Neustart, endet das Setup mit einer klaren
+  Meldung (Exitcode 3010) statt mit PowerShell-Stacktrace und faellt nicht
+  mehr faelschlich auf den Native-Modus zurueck.
+- `LLMBENCH_AUTO_INSTALL=1` installiert ohne Rueckfrage, `=0` nie.
+
 ## 1.6.0
 
 ### vLLM als zweites Backend (ueber Docker)

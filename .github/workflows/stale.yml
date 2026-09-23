@@ -1,0 +1,42 @@
+name: Stale Issues & PRs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-issue-stale: 45
+          days-before-issue-close: 14
+          stale-issue-label: stale
+          stale-issue-message: >
+            Dieses Issue wurde seit 45 Tagen nicht aktualisiert und als stale markiert.
+            Bitte kommentiere, falls es weiterhin relevant ist.
+          close-issue-message: >
+            Dieses Issue wurde wegen längerer Inaktivität automatisch geschlossen.
+            Es kann bei Bedarf wieder geöffnet werden.
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: stale
+          stale-pr-message: >
+            Dieser Pull Request wurde seit 30 Tagen nicht aktualisiert und als stale markiert.
+          close-pr-message: >
+            Dieser Pull Request wurde wegen längerer Inaktivität automatisch geschlossen.
+          exempt-issue-labels: pinned,security,in-progress,blocked
+          exempt-pr-labels: pinned,security,in-progress,blocked,dependencies
+          operations-per-run: 30

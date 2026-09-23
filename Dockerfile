@@ -43,7 +43,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LLMBENCH_LLAMA_CPP_COMMIT=${LLAMA_CPP_COMMIT} \
     LLMBENCH_CUDA_ARCHITECTURES=${LLMBENCH_CUDA_ARCHITECTURES} \
     LLMBENCH_LLAMA_DIR=/opt/llama.cpp
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# `apt-get upgrade` zieht Sicherheitsupdates nach, die im CUDA-Basisimage noch
+# fehlen (z. B. libssl3t64); der Trivy-Scan in CI blockt sonst HIGH-Findings.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
       ca-certificates libgomp1 python3 python3-venv \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
@@ -51,8 +55,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt/llmbench
 COPY pyproject.toml README.md LICENSE VERSION ./
 COPY llmbench ./llmbench
+# pip wird nach der Installation wieder entfernt: Zur Laufzeit braucht ihn
+# niemand, und pip bringt eigene, veraltete Kopien von msgpack/setuptools mit
+# (pip/_vendor), die der Sicherheitsscan als HIGH meldet.
 RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && /opt/venv/bin/pip install --no-cache-dir .
+    && /opt/venv/bin/pip install --no-cache-dir . \
+    && /opt/venv/bin/python -m pip uninstall -y pip wheel
 
 RUN mkdir -p /opt/llama.cpp /workspace/models /workspace/results /workspace/.cache/huggingface
 COPY --from=llama-build /src/llama.cpp/build/bin/llama-bench /opt/llama.cpp/llama-bench

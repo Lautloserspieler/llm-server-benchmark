@@ -250,7 +250,7 @@ def bootstrap_config(
     llama_dir: str | Path | None = None,
     models_dir: str | Path | None = None,
     allow_system_search: bool = False,
-    language: str = "de",
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Legt benchmark.yaml an oder ergaenzt sie und erkennt lokale GGUF-Modelle.
 
@@ -298,6 +298,15 @@ def bootstrap_config(
     cfg["project"].setdefault("name", "Firmenweiter LLM Server Benchmark")
     cfg["project"].setdefault("server_name", None)
     cfg["project"].setdefault("output_dir", "results")
+    # Ohne ausdrueckliche Sprache gilt die beim Start gewaehlte (LLMBENCH_LANG bzw.
+    # .runtime/language); sonst bleibt ein vorhandener Eintrag unangetastet.
+    # Frueher wurde hier bei jedem Start stumpf "de" eingetragen und damit eine
+    # im Setup gewaehlte Sprache wieder ueberschrieben.
+    if language is None:
+        from .i18n import detect_language, language_preselected
+
+        preselected = language_preselected(root)
+        language = detect_language(root) if preselected else (cfg["project"].get("language") or "de")
     cfg["project"]["language"] = language
     cfg["project"].setdefault("hash_models", True)
     cfg["project"].setdefault("hash_tools", True)

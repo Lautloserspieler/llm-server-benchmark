@@ -22,6 +22,8 @@ import subprocess
 from collections.abc import Callable
 from typing import Any
 
+from .i18n import _
+
 LogFn = Callable[[str], None]
 
 # Ein Pull kann bei vLLM-Images mehrere GB umfassen.
@@ -72,9 +74,11 @@ def _require_docker() -> str:
     exe = docker_exe()
     if not exe:
         raise RuntimeError(
-            "Docker wurde nicht gefunden. Die Backends vLLM/Ollama/TGI laufen ausschliesslich "
-            "als Container; installiere Docker (Linux) bzw. Docker Desktop (Windows/macOS) "
-            "und fuer GPU-Zugriff zusaetzlich das NVIDIA Container Toolkit."
+            _(
+                "Docker wurde nicht gefunden. Die Backends vLLM/Ollama/TGI laufen ausschliesslich "
+                "als Container; installiere Docker (Linux) bzw. Docker Desktop (Windows/macOS) "
+                "und fuer GPU-Zugriff zusaetzlich das NVIDIA Container Toolkit."
+            )
         )
     return exe
 
@@ -101,11 +105,17 @@ def _run(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"docker-Befehl hat das Zeitlimit ueberschritten: {' '.join(cmd)}") from exc
+        raise RuntimeError(
+            _("docker-Befehl hat das Zeitlimit ueberschritten: {cmd}").format(cmd=" ".join(cmd))
+        ) from exc
 
     if check and proc.returncode != 0:
         detail = ((proc.stderr or "") + (proc.stdout or "")).strip()[-2000:]
-        raise RuntimeError(f"docker-Befehl fehlgeschlagen ({proc.returncode}): {' '.join(cmd)}\n{detail}")
+        raise RuntimeError(
+            _("docker-Befehl fehlgeschlagen ({code}): {cmd}").format(code=proc.returncode, cmd=" ".join(cmd))
+            + "\n"
+            + detail
+        )
     return proc
 
 
@@ -123,7 +133,7 @@ def _run_tolerant(args: list[str], log: LogFn | None = None, timeout: float = DE
         return False
     if proc.returncode != 0:
         detail = ((proc.stderr or "") + (proc.stdout or "")).strip().splitlines()
-        log("   " + (detail[0] if detail else f"Rueckgabecode {proc.returncode}"))
+        log("   " + (detail[0] if detail else _("Rueckgabecode {code}").format(code=proc.returncode)))
         return False
     return True
 
@@ -134,9 +144,9 @@ def _run_tolerant(args: list[str], log: LogFn | None = None, timeout: float = DE
 def pull_image(image: str, log: LogFn | None = None) -> None:
     """Laedt ein Image herunter. Ein bereits vorhandenes Image wird aktualisiert."""
     log = log or _noop
-    log(f"Lade Docker-Image {image} ...")
+    log(_("Lade Docker-Image {image} ...").format(image=image))
     _run(["pull", image], log=log, timeout=PULL_TIMEOUT_SECONDS)
-    log(f"Docker-Image {image} ist vorhanden.")
+    log(_("Docker-Image {image} ist vorhanden.").format(image=image))
 
 
 def image_exists(image: str) -> bool:
@@ -190,7 +200,7 @@ def image_digest(image: str) -> str | None:
 def remove_image(image: str, log: LogFn | None = None) -> None:
     """Entfernt ein Image. Fehlt es bereits, ist das kein Fehler."""
     log = log or _noop
-    log(f"Entferne Docker-Image {image} ...")
+    log(_("Entferne Docker-Image {image} ...").format(image=image))
     _run_tolerant(["image", "rm", "-f", image], log=log, timeout=PULL_TIMEOUT_SECONDS)
 
 
@@ -256,14 +266,14 @@ def run_container(
     proc = _run(cmd, log=log, timeout=DEFAULT_TIMEOUT_SECONDS)
     container_id = (proc.stdout or "").strip().splitlines()
     container_id = container_id[-1] if container_id else name
-    log(f"Container {name} gestartet ({container_id[:12]}).")
+    log(_("Container {name} gestartet ({id}).").format(name=name, id=container_id[:12]))
     return container_id
 
 
 def stop_container(name_or_id: str, log: LogFn | None = None) -> None:
     """Stoppt und entfernt einen Container. Fehlt er, ist das kein Fehler."""
     log = log or _noop
-    log(f"Stoppe Container {name_or_id} ...")
+    log(_("Stoppe Container {name} ...").format(name=name_or_id))
     _run_tolerant(["stop", name_or_id], log=log)
     _run_tolerant(["rm", "-f", name_or_id], log=log)
 
@@ -325,7 +335,7 @@ def container_logs(name_or_id: str, tail: int | None = None) -> str:
 def remove_volume(name: str, log: LogFn | None = None) -> None:
     """Entfernt ein benanntes Volume. Fehlt es, ist das kein Fehler."""
     log = log or _noop
-    log(f"Entferne Docker-Volume {name} ...")
+    log(_("Entferne Docker-Volume {name} ...").format(name=name))
     _run_tolerant(["volume", "rm", "-f", name], log=log)
 
 

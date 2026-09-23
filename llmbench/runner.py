@@ -167,9 +167,16 @@ def run_suite(
         "config_fingerprint": config_fingerprint(cfg["benchmark"]),
         "tools": tools,
         "hardware": hardware,
+        "performance_mode": cfg.get("_performance_mode"),
         "warnings": [],
         "models": [],
     }
+
+    for step in (cfg.get("_performance_mode") or {}).get("steps", []):
+        if step["status"] in ("failed", "skipped"):
+            summary["warnings"].append(
+                f"Volle Leistung nicht gesetzt - {step['name']}: {step.get('detail') or step['status']}"
+            )
 
     build_ids: set[str] = set()
     reporter.run_started(server_name, count_tests(cfg, selected_model, hardware_target))

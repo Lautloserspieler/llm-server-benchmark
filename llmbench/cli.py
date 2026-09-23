@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import platform
 import subprocess
@@ -253,6 +254,61 @@ def _validate_config_path(config_path: str) -> bool:
     return False
 
 
+def _performance_mode(cfg: dict, disabled: bool = False) -> Any:
+    """Volle Leistung fuer die Dauer eines Laufs (siehe llmbench/performance.py)."""
+    from llmbench.performance import PerformanceMode, format_steps
+    from llmbench.utils import print_msg
+
+    perf_cfg = cfg.get("performance") or {}
+    if disabled or not perf_cfg.get("enabled", True):
+        return contextlib.nullcontext(None)
+
+    class _Announcing(PerformanceMode):
+        def apply(self) -> dict:
+            print_msg(_("Volle Leistung wird eingestellt (Energieplan, Turbo, Power-Limits)..."), style="blue")
+            report = super().apply()
+            for line in format_steps(self.steps):
+                print(f"  {line}")
+            if self.failed_steps() or any(s["status"] == "skipped" for s in self.steps):
+                print_msg(
+                    _("Nicht alles liess sich setzen. Fuer volle Leistung als root bzw. Administrator starten."),
+                    style="yellow",
+                )
+            cfg["_performance_mode"] = report
+            return report
+
+    return _Announcing(
+        cfg.get("_config_dir") or ".",
+        restore_on_exit=bool(perf_cfg.get("restore_after_run", False)),
+        use_sudo=bool(perf_cfg.get("use_sudo", True)),
+        log=lambda msg: print_msg(msg, style="yellow"),
+    )
+
+
+def _performance_command(args: argparse.Namespace) -> int:
+    from llmbench.hardware import collect_hardware
+    from llmbench.performance import STATE_FILE, restore_from_state
+
+    cfg = load_config(args.config)
+    root = Path(cfg.get("_config_dir") or ".")
+    if args.action == "off":
+        if restore_from_state(root, log=print):
+            print(_("Vorherige Leistungseinstellungen wurden wiederhergestellt."))
+        else:
+            print(_("Es gibt keine von llmbench geaenderten Leistungseinstellungen."))
+        return 0
+    if args.action == "on":
+        cfg.setdefault("performance", {}).update({"enabled": True, "restore_after_run": False})
+        with _performance_mode(cfg) as perf:
+            failed = perf.failed_steps()
+        print(_("Volle Leistung bleibt aktiv. Zuruecksetzen: llmbench performance off"))
+        return 1 if failed else 0
+    state = root / STATE_FILE
+    print(_("Von llmbench gesetzt: {state}").format(state=_("ja") if state.is_file() else _("nein")))
+    print(f"{_('Energieplan')}: {collect_hardware().get('power_scheme') or _('unbekannt')}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="llmbench", description="Reproduzierbarer LLM-Server-Benchmark")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -287,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--plain",
         action="store_true",
         help="Nur einfache Textausgabe (keine Live-Statuszeile, keine farbige Ergebnisuebersicht).",
+    )
+    run.add_argument(
+        "--no-performance-mode",
+        action="store_true",
+        help="Energieplan und Power-Limits nicht anfassen (performance.enabled: false).",
     )
     run.add_argument(
         "--stress",
@@ -360,6 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--config", default="benchmark.yaml")
         command.add_argument("--out", default=None)
+        command.add_argument("--no-performance-mode", action="store_true")
+
+    perf = sub.add_parser(
+        "performance",
+        help="Volle Leistung (Energieplan, Turbo, CPU/GPU-Power-Limits) ein-/ausschalten oder anzeigen",
+    )
+    perf.add_argument("action", choices=["on", "off", "status"])
+    perf.add_argument("--config", default="benchmark.yaml")
 
     return parser
 
@@ -433,6 +502,27 @@ def _uninstall_backend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_stress_command(args: argparse.Namespace) -> int:
+    output = args.out
+    if args.cmd == "stress-ttft":
+        from llmbench.stress.ttft import run_ttft_stress
+
+        return run_ttft_stress(args.config, output)
+    if args.cmd == "stress-multitenant":
+        from llmbench.stress.multitenant import run_multitenant
+
+        return asyncio.run(run_multitenant(args.config, output))
+    if args.cmd == "stress-oom":
+        from llmbench.stress.oom import run_oom_stress
+
+        return asyncio.run(run_oom_stress(args.config, output))
+    if args.cmd == "stress-quant":
+        from llmbench.stress.quant import run_quant_stress
+
+        return asyncio.run(run_quant_stress(args.config, output))
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -456,26 +546,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Modell-Download fehlgeschlagen: {exc}", file=sys.stderr)
             return 1
 
+    if args.cmd == "performance":
+        return _performance_command(args)
+
     if args.cmd.startswith("stress-"):
         if not _validate_config_path(args.config):
             return 2
-        output = args.out
-        if args.cmd == "stress-ttft":
-            from llmbench.stress.ttft import run_ttft_stress
-
-            return run_ttft_stress(args.config, output)
-        if args.cmd == "stress-multitenant":
-            from llmbench.stress.multitenant import run_multitenant
-
-            return asyncio.run(run_multitenant(args.config, output))
-        if args.cmd == "stress-oom":
-            from llmbench.stress.oom import run_oom_stress
-
-            return asyncio.run(run_oom_stress(args.config, output))
-        if args.cmd == "stress-quant":
-            from llmbench.stress.quant import run_quant_stress
-
-            return asyncio.run(run_quant_stress(args.config, output))
+        with _performance_mode(load_config(args.config), args.no_performance_mode):
+            return _run_stress_command(args)
 
     if args.cmd == "init":
         save_example(args.output)
@@ -538,24 +616,25 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return _print_doctor(data)
 
-        out = run_suite(
-            cfg,
-            selected_model=args.model,
-            skip_endpoint=args.skip_endpoint,
-            reporter=make_reporter(force_plain=args.plain),
-            hardware_target=args.hardware,
-            plain=args.plain,
-        )
-        print(f"\nBenchmark abgeschlossen: {out}")
-        pdf = out / "report.pdf"
-        if pdf.exists():
-            print(f"PDF-Bericht: {pdf}")
-        print(f"HTML-Bericht: {out / 'report.html'}")
-        print(f"CSV: {out / 'benchmarks.csv'}")
-        print(f"JSON: {out / 'summary.json'}")
-        if args.stress:
-            statuses = _run_all_stress(args.config, out)
-            print(f"Stress-Ergebnisse: {out / 'stress' / 'index.json'} ({statuses})")
+        with _performance_mode(cfg, args.no_performance_mode):
+            out = run_suite(
+                cfg,
+                selected_model=args.model,
+                skip_endpoint=args.skip_endpoint,
+                reporter=make_reporter(force_plain=args.plain),
+                hardware_target=args.hardware,
+                plain=args.plain,
+            )
+            print(f"\nBenchmark abgeschlossen: {out}")
+            pdf = out / "report.pdf"
+            if pdf.exists():
+                print(f"PDF-Bericht: {pdf}")
+            print(f"HTML-Bericht: {out / 'report.html'}")
+            print(f"CSV: {out / 'benchmarks.csv'}")
+            print(f"JSON: {out / 'summary.json'}")
+            if args.stress:
+                statuses = _run_all_stress(args.config, out)
+                print(f"Stress-Ergebnisse: {out / 'stress' / 'index.json'} ({statuses})")
         return 0
 
     if args.cmd == "compare":

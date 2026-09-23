@@ -96,6 +96,17 @@ stress:
   # bereits das Anlegen des KV-Caches oder erst der lange Request scheitert.
   oom_contexts: [4096, 8192, 16384, 32768, 65536, 96000, 130000]
 
+performance:
+  # Volle Leistung fuer CPU und GPU: Energieplan/Governor auf "performance",
+  # Turbo an, Power-Limits (NVIDIA, AMD, Intel RAPL) auf das Hardware-Maximum.
+  # Ohne root/Administrator wird gesetzt, was geht; der Rest steht im Ergebnis.
+  enabled: true
+  # false = volle Leistung bleibt auch nach dem Lauf aktiv.
+  # Zuruecksetzen: llmbench performance off
+  restore_after_run: false
+  # Linux: fehlende root-Rechte ueber sudo holen (fragt einmal nach dem Passwort).
+  use_sudo: true
+
 # Wird durch die automatische Modellerkennung ergaenzt. Gesplittete GGUFs
 # (00001-of-XXXXX bis XXXXX-of-XXXXX) erscheinen dabei als genau ein Modell.
 models:

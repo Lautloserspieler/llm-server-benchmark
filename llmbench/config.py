@@ -160,6 +160,14 @@ class SoakConfig(BaseModel):
         "Dauerlast thermisch geregelt werden."
     )
 
+class PerformanceConfig(BaseModel):
+    # Volle Leistung: Energiesparmodi und Power-Limits von CPU und GPU aus
+    # (siehe llmbench/performance.py). Standardmaessig immer an und auch nach
+    # dem Lauf aktiv; `llmbench performance off` stellt den alten Zustand her.
+    enabled: bool = True
+    restore_after_run: bool = False
+    use_sudo: bool = True
+
 class ProfileConfig(BaseModel):
     name: str
     gpu_layers: int
@@ -185,6 +193,7 @@ class RootConfig(BaseModel):
     benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     endpoint: EndpointConfig = Field(default_factory=EndpointConfig)
     soak: SoakConfig = Field(default_factory=SoakConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     models: list[ModelConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -289,6 +298,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
             "Dauerlast thermisch geregelt werden."
         ),
+    },
+    "performance": {
+        "enabled": True,
+        "restore_after_run": False,
+        "use_sudo": True,
     },
     "models": [],
 }

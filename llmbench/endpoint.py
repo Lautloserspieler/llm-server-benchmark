@@ -151,6 +151,11 @@ async def wait_health_async(
             except Exception as exc:
                 last_error = str(exc)
             await asyncio.sleep(1)
+    # Der letzte Versuch kann bis zu 5 s haengen - endete der Prozess in dieser
+    # Zeit, soll trotzdem sein Exitcode samt Log gemeldet werden.
+    code = _exited_code(proc)
+    if code is not None:
+        raise RuntimeError(server_exit_message(proc, code))
     message = _("llama-server wurde nicht bereit: {error}").format(error=last_error)
     log_path = getattr(proc, "_llmbench_log_path", None)
     tail = log_tail(log_path)

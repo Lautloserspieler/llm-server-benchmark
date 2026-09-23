@@ -44,6 +44,7 @@
 [run.hardware_question]="What should be tested?"
 [run.hardware_cpu]="CPU only"
 [run.hardware_gpu]="GPU only"
+[run.hardware_gpu_overload]="GPU only (RAM overload allowed)"
 [run.hardware_both]="CPU and GPU (incl. sustained load test)"
 [run.stress_question]="Run additional stress tests (TTFT/multi-tenant/OOM/quant)?"
 [run.selection]="Duration: %s · Hardware: %s · Stress tests: %s"

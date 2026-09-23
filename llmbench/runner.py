@@ -23,7 +23,7 @@ from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, u
 
 BENCH_KINDS = ("prompt", "generation", "long_context")
 SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
-HARDWARE_TARGETS = ("cpu", "gpu", "both")
+HARDWARE_TARGETS = ("cpu", "gpu", "gpu_overload", "both")
 
 
 def filter_profiles_by_hardware(profiles: list[dict[str, Any]], hardware_target: str) -> list[dict[str, Any]]:
@@ -31,8 +31,12 @@ def filter_profiles_by_hardware(profiles: list[dict[str, Any]], hardware_target:
     (auch Hybrid-Profile mit teilweisem Offload)."""
     if hardware_target == "cpu":
         return [p for p in profiles if int(p.get("gpu_layers", -1)) == 0]
-    if hardware_target == "gpu":
-        return [p for p in profiles if int(p.get("gpu_layers", -1)) != 0]
+    if hardware_target in ("gpu", "gpu_overload"):
+        filtered = [p for p in profiles if int(p.get("gpu_layers", -1)) != 0]
+        if hardware_target == "gpu_overload":
+            for p in filtered:
+                p["allow_oversized_gpu"] = True
+        return filtered
     return list(profiles)
 
 

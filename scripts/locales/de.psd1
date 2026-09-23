@@ -1,4 +1,4 @@
-﻿# Deutsche Texte der Windows-Skripte (Referenzsprache). Neue Schluessel auch in en.psd1 eintragen.
+# Deutsche Texte der Windows-Skripte (Referenzsprache). Neue Schluessel auch in en.psd1 eintragen.
 @{
     'ui.yes_key' = 'j'
     'ui.yes' = 'ja'
@@ -85,6 +85,7 @@
     'run.hardware_question' = 'Womit soll getestet werden?'
     'run.hardware_cpu' = 'nur CPU'
     'run.hardware_gpu' = 'nur GPU'
+    'run.hardware_gpu_overload' = 'nur GPU (RAM-Overload erlaubt)'
     'run.hardware_both' = 'CPU und GPU (inkl. Dauerlast-Test)'
     'run.stress_question' = 'Zusätzliche Stresstests (TTFT/Multi-Tenant/OOM/Quant) starten?'
     'run.selection' = 'Dauer: {0} · Hardware: {1} · Stresstests: {2}'

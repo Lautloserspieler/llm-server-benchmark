@@ -1,4 +1,4 @@
-﻿# Gemeinsame Terminal-Oberflaeche und Sprachsystem fuer alle Windows-Skripte.
+# Gemeinsame Terminal-Oberflaeche und Sprachsystem fuer alle Windows-Skripte.
 #
 # Texte stehen nicht in den Skripten, sondern in scripts\locales\<lang>.psd1
 # und werden mit `T <schluessel> arg1 arg2` geholt. Die Sprache wird einmal
@@ -174,8 +174,8 @@ function Read-BenchmarkOptions {
     Write-UiSection (T 'run.title')
     $d = Read-UiChoice (T 'run.duration_question') @((T 'run.duration_short'), (T 'run.duration_medium'), (T 'run.duration_long')) 2
     $duration = @('short', 'medium', 'long')[$d - 1]
-    $h = Read-UiChoice (T 'run.hardware_question') @((T 'run.hardware_cpu'), (T 'run.hardware_gpu'), (T 'run.hardware_both')) 3
-    $hardware = @('cpu', 'gpu', 'both')[$h - 1]
+    $h = Read-UiChoice (T 'run.hardware_question') @((T 'run.hardware_cpu'), (T 'run.hardware_gpu'), (T 'run.hardware_gpu_overload'), (T 'run.hardware_both')) 4
+    $hardware = @('cpu', 'gpu', 'gpu_overload', 'both')[$h - 1]
     $stress = $false
     if (-not $NoStress) {
         Write-Host ''

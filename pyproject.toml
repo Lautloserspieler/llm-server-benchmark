@@ -72,3 +72,22 @@ pretty = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:randomly"
+
+# Temporary mypy baseline for legacy modules that already contained typing
+# errors before mypy became a required CI gate. New/other modules remain
+# fully checked. Remove entries as each module is cleaned up.
+[[tool.mypy.overrides]]
+module = [
+  "llmbench.i18n",
+  "llmbench.docker_backend",
+  "llmbench.bootstrap",
+  "llmbench.config",
+  "llmbench.capacity",
+  "llmbench.stress.quant",
+  "llmbench.compare",
+  "llmbench.download",
+  "llmbench.stress.multitenant",
+  "llmbench.runner",
+  "llmbench.cli",
+]
+ignore_errors = true

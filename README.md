@@ -37,10 +37,10 @@ On NVIDIA systems the project uses NVIDIA tooling directly instead of treating t
 - temperature and power draw
 - compute-process detection to flag foreign GPU load
 - tokens/s and power-efficiency reporting
-- Windows: NVIDIA systems use the matching CUDA-enabled llama.cpp path
+- Windows: NVIDIA systems use the matching CUDA-enabled llama.cpp build. Every build is start-tested before use; if it crashes (e.g. `0xC0000005`) setup automatically tries the next one — matching CUDA version, older CUDA major (e.g. `cuda-12.4`), Vulkan, CPU — and warns if the result is not CUDA. GPUs below compute capability 7.5 skip CUDA 13 builds. Probe output goes to `.runtime/llama-probe.log`.
 - Linux: when an NVIDIA GPU and `nvcc` are available, `llmbench` automatically builds llama.cpp with `GGML_CUDA=ON` before considering Vulkan/CPU fallbacks
 
-The Linux backend can be controlled explicitly:
+The backend can be controlled explicitly (Linux and Windows; in PowerShell use `$env:LLMBENCH_LLAMACPP_BUILD_BACKEND = "vulkan"`):
 
 ```bash
 export LLMBENCH_LLAMACPP_BUILD_BACKEND=auto    # default: prefer CUDA on NVIDIA

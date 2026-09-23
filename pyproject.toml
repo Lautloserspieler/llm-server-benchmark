@@ -21,7 +21,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "pypdf>=4.0"]
+dev = [
+  "build>=1.2",
+  "mypy>=1.11",
+  "pip-audit>=2.9",
+  "pypdf>=4.0",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6"
+]
 
 [project.scripts]
 llmbench = "llmbench.cli:main"
@@ -37,10 +45,9 @@ target-version = "py310"
 select = ["E", "F", "W", "B", "ARG", "SIM", "UP"]
 ignore = ["E501"]
 
-# Die V2-Dateien stammen aus dem gestern entwickelten Feature-Branch. Die hier
-# ignorierten Treffer sind rein kosmetisch (Whitespace, unnoetiges f, ungenutzte
-# Kompatibilitaetsargumente) und blockieren nicht mehr die funktionalen Tests.
-# Echte Fehler wie undefinierte Namen bleiben weiterhin CI-fehlerhaft.
+# Legacy V2 code still contains a small number of style/dead-code findings.
+# Keep these narrowly scoped until the affected modules are cleaned up.
+# Undefined names and other correctness errors remain CI-fatal.
 [tool.ruff.lint.per-file-ignores]
 "llmbench/cli.py" = ["F541"]
 "llmbench/download.py" = ["F401", "F811", "ARG002", "W293"]
@@ -48,6 +55,19 @@ ignore = ["E501"]
 "llmbench/stress/oom.py" = ["F401", "F541", "W293"]
 "llmbench/stress/quant.py" = ["F401", "F541", "F841", "W293"]
 "tests/test_monitor.py" = ["W293"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["llmbench"]
+ignore_missing_imports = true
+follow_imports = "silent"
+allow_untyped_defs = true
+allow_incomplete_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+pretty = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,191 +1,344 @@
 # LLM Server Benchmark
 
-**Reproducible benchmarking for local LLM inference on NVIDIA CUDA systems and other llama.cpp-capable hardware.**
+**Reproducible benchmarking for local LLM inference across llama.cpp and containerized server backends.**
 
 [![Tests](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/tests.yml/badge.svg)](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/tests.yml)
+[![Security](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/security.yml/badge.svg)](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/security.yml)
+[![Docker](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/docker-image.yml/badge.svg)](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/docker-image.yml)
+[![OpenSSF Scorecard](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/scorecard.yml/badge.svg)](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/scorecard.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-LLM benchmark numbers are often hard to reproduce because the GPU, driver, backend, llama.cpp build, model files, quantization, benchmark settings and power state differ between machines. **LLM Server Benchmark** records those conditions together with the performance result so that two systems can be compared under verifiable conditions.
+LLM benchmark results are often reduced to a single number such as **84 tok/s**. That number is useful only when the surrounding conditions are known.
 
-See the [release and demo checklist](docs/RELEASE_CHECKLIST.md) for final validation and presentation guidance.
+**LLM Server Benchmark** records the hardware, driver, backend, model files, quantization, benchmark settings, execution environment and telemetry together with the performance result. The goal is to make local LLM server comparisons **repeatable, inspectable and defensible**.
 
-## Why this project
+---
 
-A result should be more than `84 tok/s`.
+## Highlights
 
-A useful result should answer:
+- Reproducible local LLM benchmarks instead of isolated tokens/s numbers
+- Native **llama.cpp** benchmarking
+- Containerized **vLLM** backend support
+- NVIDIA GPU telemetry through NVML
+- AMD GPU telemetry through `rocm-smi`
+- CPU-only, GPU and hybrid benchmark profiles
+- Prompt-processing and text-generation throughput
+- Long-context benchmarks with populated KV cache
+- Endpoint/load testing with TTFT and concurrency measurements
+- Stress, soak, OOM, multi-tenant and quantization tests
+- HTML, PDF, CSV and JSON reports
+- Model, binary and configuration fingerprints
+- Cross-machine comparison with strict reproducibility validation
+- Windows, Linux and macOS launchers
+- Docker image with SBOM, provenance and vulnerability scanning
+- CI across Python 3.10–3.14 on Windows and Linux
 
-- Which exact GPU and driver produced it?
-- Was the NVIDIA CUDA backend actually used?
-- Which llama.cpp build was tested?
-- Which exact GGUF files and quantization were used?
-- Were the benchmark settings identical?
+---
+
+## Why this project exists
+
+A useful benchmark result should answer more than:
+
+> How many tokens per second did the model generate?
+
+It should also answer:
+
+- Which exact CPU and GPU produced the result?
+- Which driver and GPU runtime were active?
+- Was CUDA, ROCm, Vulkan, Metal or CPU execution actually used?
+- Which backend and backend build were tested?
+- Which exact model files and quantization were used?
+- Were both machines using identical benchmark settings?
 - How much VRAM, power and temperature did the run reach?
-- Was another process using the GPU during the measurement?
-- How does throughput change with context length or concurrent users?
+- Was another process consuming GPU resources?
+- How did performance change under long context or concurrent requests?
+- Can somebody else reproduce the same measurement?
 
-`llmbench` captures that information and keeps the raw evidence next to the final HTML/PDF/CSV/JSON reports.
+`llmbench` stores that evidence next to the benchmark output.
 
-## NVIDIA / CUDA integration
+---
 
-On NVIDIA systems the project uses NVIDIA tooling directly instead of treating the GPU as an anonymous accelerator.
+## Support matrix
 
-- GPU discovery through `nvidia-smi`
-- GPU name, driver version, VRAM, compute capability, VBIOS and power limit
-- NVML telemetry through `nvidia-ml-py`
-- GPU utilization and VRAM usage over time
-- temperature and power draw
-- compute-process detection to flag foreign GPU load
-- tokens/s and power-efficiency reporting
-- Windows: NVIDIA systems use the matching CUDA-enabled llama.cpp build. Every build is start-tested before use; if it crashes (e.g. `0xC0000005`) setup automatically tries the next one — matching CUDA version, older CUDA major (e.g. `cuda-12.4`), Vulkan, CPU — and warns if the result is not CUDA. GPUs below compute capability 7.5 skip CUDA 13 builds. Probe output goes to `.runtime/llama-probe.log`.
-- Linux: when an NVIDIA GPU and `nvcc` are available, `llmbench` automatically builds llama.cpp with `GGML_CUDA=ON` before considering Vulkan/CPU fallbacks
+### Inference backends
 
-The backend can be controlled explicitly (Linux and Windows; in PowerShell use `$env:LLMBENCH_LLAMACPP_BUILD_BACKEND = "vulkan"`):
+| Backend | Status | Execution | Notes |
+| --- | --- | --- | --- |
+| **llama.cpp** | ✅ Supported | Native | Reference backend using `llama-bench` and `llama-server` |
+| **vLLM** | ✅ Supported | Docker | OpenAI-compatible serving backend |
+| **TGI** | 📋 Planned | Docker | Planned container backend |
+| **Ollama** | 📋 Planned | Docker | Planned native-API backend |
 
-```bash
-export LLMBENCH_LLAMACPP_BUILD_BACKEND=auto    # default: prefer CUDA on NVIDIA
-export LLMBENCH_LLAMACPP_BUILD_BACKEND=cuda    # require CUDA
-export LLMBENCH_LLAMACPP_BUILD_BACKEND=vulkan
-export LLMBENCH_LLAMACPP_BUILD_BACKEND=cpu
-```
+### GPU telemetry
 
-Set `LLMBENCH_LLAMACPP_SOURCE_BUILD=0` only if automatic source builds should be disabled.
+| Platform | Status | Telemetry source |
+| --- | --- | --- |
+| **NVIDIA** | ✅ Supported | NVML / `nvidia-ml-py`, `nvidia-smi` |
+| **AMD** | ✅ Supported | `rocm-smi --json` |
+| **Intel GPU** | 📋 Planned | `xpu-smi` |
+| **Apple Silicon** | ✅ Benchmark execution | Platform llama.cpp build; telemetry is more limited |
 
-## What it measures
+See [ROADMAP.md](ROADMAP.md) for the current development plan.
+
+---
+
+## What llmbench measures
 
 ### Core inference
 
-- Prompt processing / input tokens per second
-- Text generation / output tokens per second
-- Long-context performance with a genuinely populated KV cache
-- CPU-only, full-GPU and hybrid profiles
+- prompt processing / input tokens per second
+- text generation / output tokens per second
+- long-context performance
+- CPU-only, GPU and hybrid execution profiles
+- repeated runs for variance measurement
 
 ### Interactive serving
 
-- System TPS
-- Tokens/s per request
+- system throughput
+- tokens/s per request
 - TTFT P50 / P95
-- Success rate
-- multiple concurrency levels
+- request success rate
+- configurable concurrency levels
+- endpoint/server behavior under load
 
 ### Stress and capacity
 
 - short and long soak tests
-- throttling indicators
+- thermal throttling indicators
 - TTFT stress
 - multi-tenant / two-model load
-- KV-cache and context-limit tests
-- quantization comparison for multiple quants of the same base model
+- KV-cache and context-limit/OOM testing
+- quantization comparisons for the same base model
 
 ### Hardware telemetry
 
-- CPU and RAM utilization
+- CPU utilization
+- RAM utilization
 - GPU utilization
 - VRAM usage
-- NVIDIA power draw
 - GPU temperature
-- background/foreign GPU-process warnings
-- Linux CPU governor / power-profile capture
+- NVIDIA power draw
+- background/foreign GPU-process detection
+- Linux CPU governor and power-profile capture
 
-## Reproducibility
-
-Every run records provenance that can be checked before two servers are compared.
-
-| Evidence | Purpose |
-| --- | --- |
-| `config_fingerprint` | Hash of result-relevant benchmark settings |
-| `config` | Full configuration used for the run |
-| `tools.llama_bench.binary.sha256` | Exact llama-bench binary |
-| `tools.llama_cpp_build_ids` | llama.cpp build identity |
-| `llmbench_version` | Benchmark framework version |
-| `models[].model.sha256` | Exact model or combined hash of all GGUF shards |
-| hardware metadata | CPU, RAM, GPU, driver and execution environment |
-
-`llmbench compare --strict` returns exit code `1` when runs were produced under incompatible conditions.
+---
 
 ## Quick start
 
 ### Windows
 
+The easiest Windows path is:
+
 ```text
 1. Clone or download the repository
-2. Run setup.bat 
+2. Run setup.bat
 3. Run START_BENCHMARK.bat
-4. Let setup verify/install dependencies and models
+4. Let the setup verify/install required components
 5. Select benchmark duration and hardware mode
 ```
 
-The very first step of `setup.bat` / `setup.sh` is choosing the language (Deutsch/English). The choice is saved in `.runtime/language` and used everywhere afterwards: installer scripts, Python CLI, reports and the Docker container. Set `LLMBENCH_LANG=de|en` to skip the question.
+The setup detects missing components such as Python, WSL2, Docker Desktop and GPU prerequisites. Installations that modify the system always require confirmation unless automatic installation has explicitly been enabled.
 
-`setup.bat` detects missing components (WSL2/Ubuntu, Docker Desktop, Python 3.10+), asks before each one and then downloads and installs it automatically. Before setting up Docker GPU mode it checks for an NVIDIA card and a recent enough driver (580+, required by the CUDA 13 image); if it is missing or too old you get a clear message and the option to open NVIDIA's driver page — drivers are never installed silently. If an installation needs a Windows restart (e.g. freshly enabled WSL features), setup offers to continue automatically after the next sign-in and to restart right away.
+Language can be selected during setup or forced with:
 
-At the end of the native setup you can pick optional container backends (currently vLLM): a table shows their status and download size, each download is confirmed individually, and you choose the default backend for benchmarks. Set `LLMBENCH_AUTO_INSTALL=1` to install without asking, or `LLMBENCH_AUTO_INSTALL=0` to never install anything automatically.
+```powershell
+$env:LLMBENCH_LANG = "de"
+# or
+$env:LLMBENCH_LANG = "en"
+```
 
 ### Linux
 
 ```bash
 git clone https://github.com/Lautloserspieler/llm-server-benchmark.git
 cd llm-server-benchmark
+
 chmod +x setup.sh START_BENCHMARK.sh
 ./setup.sh
 ./START_BENCHMARK.sh
 ```
 
-`setup.sh` asks before installing anything it needs (Python via apt, Docker Engine, NVIDIA Container Toolkit); `LLMBENCH_AUTO_INSTALL=1/0` works the same as on Windows. It runs on the Bash 3.2 that ships with macOS.
+For native NVIDIA CUDA builds, install a working NVIDIA driver and CUDA Toolkit so that `nvcc` is available.
 
-On an NVIDIA Linux workstation, install a working NVIDIA driver and CUDA Toolkit (`nvcc`) to get the automatic native CUDA source-build path.
+### macOS
 
-You can also install/verify llama.cpp directly:
+```bash
+git clone https://github.com/Lautloserspieler/llm-server-benchmark.git
+cd llm-server-benchmark
+
+chmod +x setup.sh START_BENCHMARK.sh
+./setup.sh
+./START_BENCHMARK.sh
+```
+
+Apple Silicon acceleration is provided by the platform llama.cpp build.
+
+---
+
+## Manual Python installation
+
+For development or manual CLI usage:
+
+```bash
+git clone https://github.com/Lautloserspieler/llm-server-benchmark.git
+cd llm-server-benchmark
+
+python -m venv .venv
+```
+
+Activate the environment:
+
+**Windows**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**Linux/macOS**
+
+```bash
+source .venv/bin/activate
+```
+
+Install the project:
+
+```bash
+python -m pip install --upgrade pip
+pip install -e .
+```
+
+Verify the installation:
+
+```bash
+llmbench --version
+llmbench --help
+```
+
+---
+
+## Typical workflow
+
+A normal benchmark workflow looks like this:
+
+```bash
+# 1. Check configuration, tools, hardware and model paths
+llmbench doctor --config benchmark.yaml
+
+# 2. Detect local tools and models
+llmbench bootstrap \
+  --config benchmark.yaml \
+  --root . \
+  --llama-dir tools/llama.cpp \
+  --models-dir models
+
+# 3. Run a benchmark
+llmbench run --config benchmark.yaml --hardware gpu --duration medium
+
+# 4. Optionally include the stress suite
+llmbench run --config benchmark.yaml --hardware gpu --duration medium --stress
+
+# 5. Compare two systems
+llmbench compare \
+  "results/ServerA_..." \
+  "results/ServerB_..." \
+  --out comparison
+
+# 6. Reject comparisons with incompatible benchmark conditions
+llmbench compare \
+  "results/ServerA_..." \
+  "results/ServerB_..." \
+  --strict
+```
+
+---
+
+## Benchmark configuration
+
+Start from the supplied example:
+
+```bash
+cp benchmark.example.yaml benchmark.yaml
+```
+
+Important sections include:
+
+```yaml
+project:
+  name: "LLM Server Benchmark"
+  output_dir: "results"
+
+tools:
+  backend: "llama_cpp"
+
+benchmark:
+  repetitions: 5
+  batch_size: 2048
+  ubatch_size: 512
+  flash_attention: auto
+  prompt_tokens: [512, 4096, 8192]
+  generation_tokens: [128, 512]
+  context_depths: [0, 8192, 32768, 65536, 130000]
+
+endpoint:
+  enabled: false
+  concurrency: [1, 2, 4, 8]
+
+models:
+  - name: "Example-Model"
+    path: "models/example.gguf"
+    profiles:
+      - name: "Full-GPU"
+        gpu_layers: -1
+      - name: "CPU-Only"
+        gpu_layers: 0
+```
+
+See [benchmark.example.yaml](benchmark.example.yaml) for the full configuration.
+
+---
+
+## Hardware modes
+
+```bash
+llmbench run --hardware cpu
+llmbench run --hardware gpu
+llmbench run --hardware both
+```
+
+You can also select a single model:
+
+```bash
+llmbench run --config benchmark.yaml --model "Qwen3-8B"
+```
+
+And choose a duration preset:
+
+```bash
+llmbench run --duration short
+llmbench run --duration medium
+llmbench run --duration long
+```
+
+---
+
+## llama.cpp setup
+
+Install or verify llama.cpp directly:
 
 ```bash
 llmbench install-llama-cpp --root .
 ```
 
-### macOS
+For reproducible machine-to-machine comparisons, pin the llama.cpp revision in:
 
-```bash
-./setup.sh
-./START_BENCHMARK.sh
+```text
+llama-cpp-version.txt
 ```
 
-The normal macOS llama.cpp package is used; Apple Silicon acceleration is provided by the platform build.
-
-## Standard model suite
-
-The default V2 suite manages Q4_K_M variants of:
-
-- Qwen3-8B
-- DeepSeek-R1-Distill-Qwen-7B
-- Qwen3.8-27B
-- Qwen2.5-72B-Instruct
-- Mixtral-8x22B-Instruct
-
-The complete suite is large. Free disk space is checked before downloads and the tool warns when capacity is likely insufficient.
-
-```bash
-llmbench download --suite small
-llmbench download --suite mid
-llmbench download --suite heavy
-llmbench download --suite all
-llmbench download --suite all --verify-only
-```
-
-Large split GGUF sets are treated as one logical model. A partial shard set is not accepted as a complete benchmark model, and the model fingerprint covers every shard.
-
-## Pinning llama.cpp
-
-For fair machine-to-machine comparisons, do not silently benchmark different llama.cpp revisions.
-
-Put a release/build identifier into `llama-cpp-version.txt`, for example:
+Example:
 
 ```text
 b10456
-```
-
-Windows:
-
-```powershell
-.\START_BENCHMARK.bat -LlamaCppTag b10456
 ```
 
 Linux/macOS:
@@ -194,36 +347,108 @@ Linux/macOS:
 llmbench install-llama-cpp --root . --tag b10456
 ```
 
-`LLMBENCH_LLAMACPP_TAG` can also be used. The build actually used is recorded in the result data and checked by `llmbench compare`.
+Windows PowerShell:
 
-## Running benchmarks
+```powershell
+$env:LLMBENCH_LLAMACPP_TAG = "b10456"
+```
+
+The actual build identity is recorded in the result metadata.
+
+---
+
+## NVIDIA / CUDA behavior
+
+On NVIDIA systems, llmbench integrates with NVIDIA tooling instead of treating the GPU as an anonymous accelerator.
+
+Collected information includes:
+
+- GPU model
+- driver version
+- VRAM
+- compute capability
+- VBIOS
+- power limit
+- utilization
+- temperature
+- power draw
+- compute processes
+
+On Linux, llmbench can build llama.cpp automatically with `GGML_CUDA=ON` when `nvcc` is available.
+
+Backend selection can be controlled explicitly:
 
 ```bash
-# Validate tools, models, hardware and configuration
-llmbench doctor --config benchmark.yaml
-
-# Refresh detected tools/models
-llmbench bootstrap --config benchmark.yaml --root . --llama-dir tools/llama.cpp --models-dir models
-
-# Hardware modes
-llmbench run --hardware cpu
-llmbench run --hardware gpu
-llmbench run --hardware both
-
-# Duration presets
-llmbench run --config benchmark.yaml --duration short
-llmbench run --config benchmark.yaml --duration medium
-llmbench run --config benchmark.yaml --duration long
-
-# One model
-llmbench run --config benchmark.yaml --model "Qwen3-8B"
-
-# Normal run plus stress suite
-llmbench run --config benchmark.yaml --stress
-
-# Plain output for logs/automation
-llmbench run --config benchmark.yaml --plain
+export LLMBENCH_LLAMACPP_BUILD_BACKEND=auto
+export LLMBENCH_LLAMACPP_BUILD_BACKEND=cuda
+export LLMBENCH_LLAMACPP_BUILD_BACKEND=vulkan
+export LLMBENCH_LLAMACPP_BUILD_BACKEND=cpu
 ```
+
+On PowerShell:
+
+```powershell
+$env:LLMBENCH_LLAMACPP_BUILD_BACKEND = "cuda"
+```
+
+---
+
+## vLLM backend
+
+vLLM runs through Docker rather than as a native llmbench Python dependency.
+
+Install:
+
+```bash
+llmbench install-backend --backend vllm
+```
+
+Remove:
+
+```bash
+llmbench uninstall-backend --backend vllm
+```
+
+Select it in the benchmark configuration:
+
+```yaml
+tools:
+  backend: "vllm"
+  vllm_image: "vllm/vllm-openai:latest"
+```
+
+A vLLM profile can then define options such as tensor parallelism and GPU memory utilization.
+
+---
+
+## Standard model suite
+
+The bundled model-suite management includes Q4_K_M variants of models such as:
+
+- Qwen3-8B
+- DeepSeek-R1-Distill-Qwen-7B
+- Qwen3.8-27B
+- Qwen2.5-72B-Instruct
+- Mixtral-8x22B-Instruct
+
+Download suites:
+
+```bash
+llmbench download --suite small
+llmbench download --suite mid
+llmbench download --suite heavy
+llmbench download --suite all
+```
+
+Verify an existing suite without downloading:
+
+```bash
+llmbench download --suite all --verify-only
+```
+
+Split GGUF files are treated as one logical model. Partial shard sets are rejected as incomplete.
+
+---
 
 ## Stress commands
 
@@ -234,11 +459,37 @@ llmbench stress-oom --config benchmark.yaml
 llmbench stress-quant --config benchmark.yaml
 ```
 
-`stress-quant` intentionally compares only different quantizations of the **same base model**.
+`stress-quant` compares different quantizations only when they belong to the same base model.
+
+---
+
+## Reproducibility
+
+Every run records the information required to validate whether two benchmark results are actually comparable.
+
+| Evidence | Purpose |
+| --- | --- |
+| `config_fingerprint` | Hash of result-relevant benchmark settings |
+| `config` | Full configuration used for the run |
+| `tools.llama_bench.binary.sha256` | Hash of the exact llama-bench binary |
+| `tools.llama_cpp_build_ids` | llama.cpp build identity |
+| `llmbench_version` | Benchmark framework version |
+| `models[].model.sha256` | Exact model or combined GGUF shard fingerprint |
+| hardware metadata | CPU, RAM, GPU, driver and execution environment |
+
+When reproducibility matters, use:
+
+```bash
+llmbench compare run-a run-b --strict
+```
+
+The command exits with status code `1` when incompatible conditions are detected.
+
+---
 
 ## Result structure
 
-A normal run produces a self-contained result directory similar to:
+A run produces a self-contained result directory similar to:
 
 ```text
 results/
@@ -249,14 +500,17 @@ results/
     benchmarks.csv
     report.pdf
     report.html
+
     MODEL/
       PROFILE/
         raw_prompt.json
         raw_generation.json
         raw_long_context.json
+
       endpoint/
         endpoint_load.json
         llama-server.log
+
     stress/
       index.json
       ttft/
@@ -265,44 +519,141 @@ results/
       quant/
 ```
 
-Raw files keep exact commands, stdout/stderr and telemetry samples. `summary.json` stays focused on aggregate values for tooling and comparisons.
+The raw files preserve commands, stdout/stderr and telemetry. `summary.json` contains the aggregated data used for reports and comparisons.
 
-## Compare machines
+---
 
-```bash
-llmbench compare "results/ServerA_..." "results/ServerB_..." --out comparison
-llmbench compare "results/ServerA_..." "results/ServerB_..." --strict
-```
+## Reports
 
-Use the same llama.cpp build, exact model files, quantization, benchmark configuration and comparable power settings on every machine.
+llmbench generates several output formats so results can be inspected by both humans and automation:
 
-## Linux performance-state warning
+- **HTML** — interactive/readable report
+- **PDF** — portable benchmark report
+- **CSV** — tabular analysis
+- **JSON** — full machine-readable result data
+- **Terminal output** — quick local overview
 
-`llmbench` records the CPU governor and, where available, the active `power-profiles-daemon` profile. `llmbench doctor` warns when the machine is not in a performance-oriented state.
+---
 
-Typical commands:
+## Docker image
 
-```bash
-sudo powerprofilesctl set performance
-sudo cpupower frequency-set -g performance
-```
+The project includes a CUDA-enabled Docker image containing llmbench and the pinned llama.cpp runtime.
 
-Use the command appropriate for the system; not every distribution uses both mechanisms.
+The CI pipeline:
 
-## Tests and CI
+- builds the image
+- smoke-tests it without requiring a GPU
+- verifies the included llama.cpp binaries
+- scans HIGH and CRITICAL vulnerabilities with Trivy
+- publishes SBOM metadata
+- publishes build provenance
+- pushes approved builds to GHCR
+
+See [docs/DOCKER.md](docs/DOCKER.md) for usage details.
+
+---
+
+## Development
+
+Install development dependencies:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q
-ruff check .
 ```
 
-GitHub Actions runs the test suite on Ubuntu and Windows with Python 3.10 and 3.12. Linux shell/Docker launchers and Windows PowerShell launchers are also syntax-checked.
+Run the main local checks:
+
+```bash
+ruff check .
+mypy llmbench
+pytest -q
+```
+
+Coverage:
+
+```bash
+pytest --cov=llmbench --cov-report=term-missing
+```
+
+Build the Python package:
+
+```bash
+python -m build
+```
+
+The GitHub Actions CI currently validates the project on:
+
+- Ubuntu
+- Windows
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
+- Python 3.14
+
+Additional CI checks include CodeQL, dependency review, `pip-audit`, packaging tests, coverage, Docker smoke tests and container vulnerability scanning.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+---
+
+## Security
+
+Please do **not** publish suspected vulnerabilities as normal public issues.
+
+See [SECURITY.md](SECURITY.md) for responsible-disclosure instructions.
+
+The repository also uses:
+
+- CodeQL
+- GitHub Dependency Review
+- `pip-audit`
+- Trivy container scanning
+- OpenSSF Scorecard
+- Dependabot
+- SHA-pinned GitHub Actions
+
+---
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, architecture and contribution rules |
+| [ROADMAP.md](ROADMAP.md) | Backend, telemetry and feature roadmap |
+| [CHANGELOG.md](CHANGELOG.md) | Released changes |
+| [docs/DOCKER.md](docs/DOCKER.md) | Docker usage |
+| [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | Release validation checklist |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+
+---
 
 ## Project scope
 
-This project is **not an official MLPerf submission runner**. It is an independent open-source benchmarking framework for reproducible local LLM/server comparisons built around llama.cpp.
+This project is **not an official MLPerf submission runner**.
+
+It is an independent open-source framework focused on reproducible benchmarking of local LLM inference servers and hardware.
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+Good contribution areas include:
+
+- new benchmark backends
+- additional telemetry providers
+- test coverage
+- platform compatibility
+- report improvements
+- reproducibility checks
+- documentation
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+
+---
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+Released under the [MIT License](LICENSE).

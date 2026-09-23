@@ -31,6 +31,9 @@ BACKEND_DOWNLOAD_GIB: dict[str, int] = {
     "vllm": 10,
 }
 
+# Backends, deren Container immer mit --gpus starten (NVIDIA-only).
+NVIDIA_ONLY_BACKENDS = frozenset({"vllm"})
+
 BACKEND_LABELS: dict[str, str] = {
     "llama_cpp": "llama.cpp",
     "vllm": "vLLM",
@@ -58,7 +61,11 @@ def _confirm_install(name: str) -> bool:
     return ask_yes_no(question, default=False)
 
 
-def _status_table(root: Path, docker_ok: bool) -> Table:
+def _usable(name: str, docker_ok: bool, gpu_ok: bool) -> bool:
+    return docker_ok and (gpu_ok or name not in NVIDIA_ONLY_BACKENDS)
+
+
+def _status_table(root: Path, docker_ok: bool, gpu_ok: bool) -> Table:
     table = Table(box=box.ROUNDED, border_style="cyan", header_style="bold cyan")
     table.add_column(_("Backend"))
     table.add_column(_("Status"))
@@ -67,10 +74,12 @@ def _status_table(root: Path, docker_ok: bool) -> Table:
     for name in backend_setup.SUPPORTED_BACKENDS:
         if backend_setup.is_installed(name, root):
             state = "[green]" + _("installiert") + "[/green]"
-        elif docker_ok:
-            state = _("nicht installiert")
-        else:
+        elif not docker_ok:
             state = "[yellow]" + _("braucht Docker") + "[/yellow]"
+        elif not _usable(name, docker_ok, gpu_ok):
+            state = "[yellow]" + _("braucht NVIDIA-GPU in Docker") + "[/yellow]"
+        else:
+            state = _("nicht installiert")
         table.add_row(_label(name), state, f"~{BACKEND_DOWNLOAD_GIB.get(name, '?')} GB")
     return table
 
@@ -106,7 +115,8 @@ def select_backends(root: Path | str, config_path: Path | str) -> int:
 
     print_section(_("Backends"))
     docker_ok = docker_backend.docker_available()
-    console.print(_status_table(root, docker_ok))
+    gpu_ok = docker_ok and docker_backend.nvidia_runtime_available()
+    console.print(_status_table(root, docker_ok, gpu_ok))
 
     missing = [name for name in backend_setup.SUPPORTED_BACKENDS if not backend_setup.is_installed(name, root)]
     if missing and not docker_ok:
@@ -120,7 +130,16 @@ def select_backends(root: Path | str, config_path: Path | str) -> int:
 
     # Ein optionales Backend, das nicht installiert werden konnte, bricht das
     # Setup nicht ab - llama.cpp funktioniert trotzdem.
-    for name in missing if docker_ok else []:
+    if docker_ok and not gpu_ok and any(name in NVIDIA_ONLY_BACKENDS for name in missing):
+        print_msg(
+            _(
+                "vLLM braucht eine NVIDIA-GPU, die Docker an Container durchreicht "
+                "(NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten."
+            ),
+            style="yellow",
+        )
+
+    for name in [n for n in missing if _usable(n, docker_ok, gpu_ok)]:
         if not _confirm_install(name):
             continue
         try:
@@ -132,6 +151,17 @@ def select_backends(root: Path | str, config_path: Path | str) -> int:
     available = [DEFAULT_BACKEND] + [
         name for name in backend_setup.SUPPORTED_BACKENDS if backend_setup.is_installed(name, root)
     ]
+    # Ein eingetragenes, aber nicht (mehr) installiertes Backend wuerde beim
+    # naechsten Lauf scheitern oder das abgelehnte Image doch noch laden.
+    configured = (read_config_file(config_path).get("tools") or {}).get("backend")
+    if configured and configured not in available:
+        set_default_backend(config_path, DEFAULT_BACKEND)
+        print_msg(
+            _("{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.").format(
+                name=_label(configured), default=_label(DEFAULT_BACKEND)
+            ),
+            style="yellow",
+        )
     if len(available) > 1:
         _choose_default(config_path, available)
     return 0

@@ -131,6 +131,24 @@ def test_docker_setup_stops_early_without_suitable_nvidia_driver(tmp_path, stub,
     assert "Checking WSL" not in proc.stdout  # WSL-/Docker-Schritte wurden nie erreicht
 
 
+@needs_pwsh
+def test_resume_command_keeps_forced_mode(tmp_path):
+    # Ein erzwungener Docker-Modus darf nach dem Neustart nicht auf "auto" zurueckfallen.
+    script = tmp_path / "resume.ps1"
+    script.write_text(
+        f"Import-Module '{(ROOT / 'scripts' / 'lib' / 'UI.psm1').as_posix()}' -Force -DisableNameChecking\n"
+        "Initialize-LlmbenchUI\n"
+        "Get-ResumeCommand 'START_BENCHMARK.bat'\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en", {"LLMBENCH_EXECUTION_MODE": "docker"})
+    assert proc.returncode == 0, proc.stderr
+    command = proc.stdout.strip()
+    assert command.startswith('cmd.exe /c "set "LLMBENCH_EXECUTION_MODE=docker" && ')
+    assert 'set "LLMBENCH_LANG=en"' in command
+    assert command.endswith('START_BENCHMARK.bat""')
+
+
 @needs_bash
 @pytest.mark.parametrize(("lang", "expected"), [("de", "Wie lange soll der Test laufen?"), ("en", "How long should")])
 def test_bash_ui_menu_uses_chosen_language(tmp_path, lang, expected):

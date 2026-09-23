@@ -250,6 +250,23 @@ function Write-UiProgress([double]$Done, [double]$Total, [double]$Elapsed) {
 
 # --------------------------------------------------------------- Neustart
 
+function Get-ResumeCommand {
+    # Befehl fuer den einmaligen RunOnce-Eintrag nach dem Neustart.
+    param([string]$Launcher = 'setup.bat')
+    $launcherPath = Join-Path $script:Root $Launcher
+    # Einstellungen, die nur in dieser Sitzung gesetzt wurden (z. B. ein
+    # erzwungener Docker-Modus), muessen den Neustart ueberleben - sonst
+    # liefe die Fortsetzung im Auto-Modus und fiele ggf. auf nativ zurueck.
+    $prefix = ''
+    foreach ($name in 'LLMBENCH_EXECUTION_MODE', 'LLMBENCH_AUTO_INSTALL', 'LLMBENCH_LANG') {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if ($value -and $value -match '^[A-Za-z0-9_-]+$') { $prefix += 'set "{0}={1}" && ' -f $name, $value }
+    }
+    # cmd /c entfernt die aeusseren Anfuehrungszeichen; die inneren bleiben
+    # fuer Pfade mit Leerzeichen erhalten.
+    return ('cmd.exe /c "{0}cd /d "{1}" && "{2}""' -f $prefix, $script:Root, $launcherPath)
+}
+
 function Invoke-RebootFlow {
     # Einheitlicher Ablauf, wenn eine Installation einen Neustart braucht:
     # Hinweis zeigen, auf Wunsch das Starter-Skript einmalig nach der naechsten
@@ -262,10 +279,7 @@ function Invoke-RebootFlow {
     if (-not (Test-UiInteractive)) { return }
 
     if (Confirm-UiYesNo (T 'reboot.resume_question') -DefaultYes) {
-        $launcherPath = Join-Path $script:Root $Launcher
-        # cmd /c entfernt die aeusseren Anfuehrungszeichen; die inneren bleiben
-        # fuer Pfade mit Leerzeichen erhalten.
-        $command = 'cmd.exe /c "cd /d "{0}" && "{1}""' -f $script:Root, $launcherPath
+        $command = Get-ResumeCommand $Launcher
         try {
             $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
             if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
@@ -280,6 +294,6 @@ function Invoke-RebootFlow {
     }
 }
 
-Export-ModuleMember -Function T, Invoke-RebootFlow, Initialize-LlmbenchUI, Select-LlmbenchLanguage, Get-LlmbenchLanguage, Set-LlmbenchLanguage,
+Export-ModuleMember -Function T, Invoke-RebootFlow, Get-ResumeCommand, Initialize-LlmbenchUI, Select-LlmbenchLanguage, Get-LlmbenchLanguage, Set-LlmbenchLanguage,
     Write-UiHeader, Write-UiSection, Write-UiStep, Write-UiOk, Write-UiWarn, Write-UiFail, Write-UiInfo, Write-UiDone,
     Confirm-UiYesNo, Confirm-Install, Read-UiChoice, Read-BenchmarkOptions, Invoke-UiDownload, Test-UiInteractive

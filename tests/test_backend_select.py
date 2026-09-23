@@ -7,7 +7,7 @@ import yaml
 from llmbench import backend_select, backend_setup
 
 
-def _fake_env(monkeypatch, tmp_path, *, docker: bool, tty: bool, answer: bool = False):
+def _fake_env(monkeypatch, tmp_path, *, docker: bool, tty: bool, answer: bool = False, gpu: bool = True):
     installed: list[str] = []
 
     def fake_ensure(name, root, **_kwargs):
@@ -18,6 +18,7 @@ def _fake_env(monkeypatch, tmp_path, *, docker: bool, tty: bool, answer: bool = 
         return {"image": "x"}
 
     monkeypatch.setattr(backend_select.docker_backend, "docker_available", lambda: docker)
+    monkeypatch.setattr(backend_select.docker_backend, "nvidia_runtime_available", lambda: gpu)
     monkeypatch.setattr(backend_select.backend_setup, "ensure_backend", fake_ensure)
     monkeypatch.setattr(backend_select, "_interactive", lambda: tty)
     monkeypatch.setattr(backend_select, "ask_yes_no", lambda *_args, **_kwargs: answer)
@@ -59,3 +60,40 @@ def test_auto_install_env_controls_questions(monkeypatch, tmp_path):
     monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
     assert installed == ["vllm"]
+
+
+def test_vllm_is_not_offered_without_nvidia_gpu_in_docker(monkeypatch, tmp_path):
+    # vLLM startet immer mit --gpus; auf CPU-/AMD-Hosts waere der Download nutzlos.
+    installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True, gpu=False)
+    monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")
+    backend_select.select_backends(tmp_path, "benchmark.yaml")
+    assert installed == []
+
+
+def test_configured_but_missing_backend_is_reset(monkeypatch, tmp_path):
+    # z. B. nach uninstall-backend: sonst wuerde der naechste Lauf das Image doch laden.
+    _fake_env(monkeypatch, tmp_path, docker=False, tty=False)
+    (tmp_path / "benchmark.yaml").write_text("tools:\n  backend: vllm\n", encoding="utf-8")
+    backend_select.select_backends(tmp_path, "benchmark.yaml")
+    cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
+    assert cfg["tools"]["backend"] == "llama_cpp"
+
+
+def test_nvidia_runtime_detection(monkeypatch):
+    import subprocess
+    import types
+
+    from llmbench import docker_backend
+
+    monkeypatch.setattr(docker_backend, "docker_available", lambda: True)
+    monkeypatch.setattr(docker_backend.sys, "platform", "linux")
+
+    # Ohne Host-Treiber (kein nvidia-smi) gibt es keine GPU im Container.
+    monkeypatch.setattr(docker_backend.shutil, "which", lambda _name: None)
+    assert docker_backend.nvidia_runtime_available() is False
+
+    monkeypatch.setattr(docker_backend.shutil, "which", lambda name: f"/usr/bin/{name}")
+    for runtimes, expected in (('{"nvidia":{},"runc":{}}', True), ('{"runc":{}}', False)):
+        result = types.SimpleNamespace(returncode=0, stdout=runtimes)
+        monkeypatch.setattr(subprocess, "run", lambda *_a, _r=result, **_k: _r)
+        assert docker_backend.nvidia_runtime_available() is expected

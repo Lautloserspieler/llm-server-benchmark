@@ -223,5 +223,8 @@
   "{name} installieren? (ca. {gib} GB Download)": "Install {name}? (approx. {gib} GB download)",
   "{name} ist installiert.": "{name} is installed.",
   "{name} konnte nicht installiert werden: {error}": "{name} could not be installed: {error}",
-  "{name} wird installiert (LLMBENCH_AUTO_INSTALL=1).": "Installing {name} (LLMBENCH_AUTO_INSTALL=1)."
+  "{name} wird installiert (LLMBENCH_AUTO_INSTALL=1).": "Installing {name} (LLMBENCH_AUTO_INSTALL=1).",
+  "braucht NVIDIA-GPU in Docker": "needs NVIDIA GPU in Docker",
+  "vLLM braucht eine NVIDIA-GPU, die Docker an Container durchreicht (NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten.": "vLLM needs an NVIDIA GPU that Docker passes through to containers (NVIDIA driver + NVIDIA Container Toolkit) - not offered here.",
+  "{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.": "{name} is not installed - default backend reset to {default}."
 }

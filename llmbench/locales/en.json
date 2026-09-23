@@ -240,5 +240,6 @@
   "llama-server wurde nicht bereit: {error}": "llama-server did not become ready: {error}",
   "Port {port} ist bereits belegt (laeuft noch ein anderer llama-server?).": "Port {port} is already in use (is another llama-server still running?).",
   "Fremde Prozesse haben waehrend der Messung die GPU benutzt: {names}. GPU-, VRAM- und Leistungswerte sind dadurch verfaelscht.": "Foreign processes used the GPU during the measurement: {names}. GPU, VRAM and power values are skewed as a result.",
-  "Die GPU war bereits vor dem Testlauf ausgelastet ({percent} %), auch nach {seconds} s Wartezeit. Der Server war nicht im Ruhezustand.": "The GPU was already busy before the test ({percent} %), even after waiting {seconds} s. The server was not idle."
+  "Die GPU war bereits vor dem Testlauf ausgelastet ({percent} %), auch nach {seconds} s Wartezeit. Der Server war nicht im Ruhezustand.": "The GPU was already busy before the test ({percent} %), even after waiting {seconds} s. The server was not idle.",
+  "Dieser llama.cpp-Build lehnt das Laden ohne mmap ab. Der Test laeuft deshalb mit mmap; CPU-Werte sind nicht direkt mit Laeufen ohne mmap vergleichbar.": "This llama.cpp build rejects loading without mmap, so the test runs with mmap; CPU results are not directly comparable to runs without mmap."
 }

@@ -307,7 +307,8 @@ def run_suite(
                     if result.get("status") == "failed" and result.get("error_detail"):
                         reporter.note(f"Backend-Fehlerausgabe:\n{result['error_detail']}")
                     build_ids.update(build_ids_from_rows(result))
-                    for warn in (result.get("telemetry") or {}).get("warnings", []):
+                    for warn in [*(result.get("warnings") or []),
+                                 *(result.get("telemetry") or {}).get("warnings", [])]:
                         summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
                         reporter.note(warn)
                     profile_result["benchmarks"][kind] = result

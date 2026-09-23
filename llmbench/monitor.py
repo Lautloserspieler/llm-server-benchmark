@@ -173,9 +173,15 @@ class ResourceMonitor:
             "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe",
             "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe",
             "windowsterminal.exe", "docker desktop.exe", "widgetboard.exe",
-            "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe"
+            "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe",
+            "system", "system idle process", "registry", "csrss.exe", "winlogon.exe",
+            "fontdrvhost.exe",
         }
         for pid in foreign:
+            # PID 0/4 sind unter Windows Leerlauf- und Kernel-Prozess ("System");
+            # nvidia-smi fuehrt sie als GPU-Nutzer, sie verfaelschen aber nichts.
+            if pid in (0, 4):
+                continue
             name = None
             with contextlib.suppress(Exception):
                 name = psutil.Process(pid).name()

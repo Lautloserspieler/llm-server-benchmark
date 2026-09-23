@@ -25,6 +25,8 @@ needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh nicht installiert")
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash nicht verfuegbar")
 # POSIX-Exitcodes sind 8 Bit breit: 3010 ("Neustart noetig") kommt dort als 194 an.
 REBOOT_EXIT = 3010 if sys.platform == "win32" else 3010 % 256
+# Attrappe fuer einen ausreichend neuen NVIDIA-Treiber.
+DRIVER_OK = "function nvidia-smi { '590.44' }\n"
 
 
 def _run(cmd: list[str], lang: str, extra_env: dict[str, str] | None = None):
@@ -71,6 +73,7 @@ def test_docker_setup_reports_reboot_in_chosen_language(tmp_path, lang, expected
     script = tmp_path / "reboot.ps1"
     script.write_text(
         f"$env:ProgramFiles = '{tmp_path.as_posix()}'\n"
+        f"{DRIVER_OK}"
         "function wsl { }\n"
         "function Get-WindowsOptionalFeature { throw 'n/a' }\n"
         f"& '{(ROOT / 'scripts' / 'DOCKER_BENCHMARK.ps1').as_posix()}' -Action Setup\n"
@@ -87,6 +90,7 @@ def test_docker_setup_declined_install_fails_cleanly(tmp_path):
     script = tmp_path / "declined.ps1"
     script.write_text(
         f"$env:ProgramFiles = '{tmp_path.as_posix()}'\n"
+        f"{DRIVER_OK}"
         "function wsl { }\n"
         "function Get-WindowsOptionalFeature { throw 'n/a' }\n"
         f"& '{(ROOT / 'scripts' / 'DOCKER_BENCHMARK.ps1').as_posix()}' -Action Setup\n"
@@ -98,6 +102,51 @@ def test_docker_setup_declined_install_fails_cleanly(tmp_path):
     assert "installation was declined" in proc.stdout
     # Kein PowerShell-Stacktrace mehr fuer den Nutzer.
     assert "CategoryInfo" not in proc.stdout + proc.stderr
+
+
+@needs_pwsh
+@pytest.mark.parametrize(
+    ("stub", "expected"),
+    [
+        # Keine NVIDIA-Karte: gar nicht erst WSL/Docker installieren.
+        ("function Get-CimInstance { @() }\n", "No NVIDIA graphics card found"),
+        # Karte da, Treiber zu alt: Hinweis mit benoetigter Version.
+        ("function nvidia-smi { '552.12' }\n", "552.12 is too old"),
+    ],
+)
+def test_docker_setup_stops_early_without_suitable_nvidia_driver(tmp_path, stub, expected):
+    script = tmp_path / "driver.ps1"
+    script.write_text(
+        f"$env:ProgramFiles = '{tmp_path.as_posix()}'\n"
+        f"$env:SystemRoot = '{tmp_path.as_posix()}'\n"
+        + stub
+        + "function wsl { throw 'WSL darf nicht angefasst werden' }\n"
+        f"& '{(ROOT / 'scripts' / 'DOCKER_BENCHMARK.ps1').as_posix()}' -Action Setup\n"
+        "exit $LASTEXITCODE\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en", {"LLMBENCH_AUTO_INSTALL": "1"})
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert expected in proc.stdout
+    assert "Checking WSL" not in proc.stdout  # WSL-/Docker-Schritte wurden nie erreicht
+
+
+@needs_pwsh
+def test_resume_command_keeps_forced_mode(tmp_path):
+    # Ein erzwungener Docker-Modus darf nach dem Neustart nicht auf "auto" zurueckfallen.
+    script = tmp_path / "resume.ps1"
+    script.write_text(
+        f"Import-Module '{(ROOT / 'scripts' / 'lib' / 'UI.psm1').as_posix()}' -Force -DisableNameChecking\n"
+        "Initialize-LlmbenchUI\n"
+        "Get-ResumeCommand 'START_BENCHMARK.bat'\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en", {"LLMBENCH_EXECUTION_MODE": "docker"})
+    assert proc.returncode == 0, proc.stderr
+    command = proc.stdout.strip()
+    assert command.startswith('cmd.exe /c "set "LLMBENCH_EXECUTION_MODE=docker" && ')
+    assert 'set "LLMBENCH_LANG=en"' in command
+    assert command.endswith('START_BENCHMARK.bat""')
 
 
 @needs_bash

@@ -31,10 +31,6 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments, [string]$ErrorKey) {
     if ($LASTEXITCODE -ne 0) { throw (T $ErrorKey $LASTEXITCODE) }
 }
 
-function Write-RebootNotice {
-    Write-UiDone (T 'setup.reboot_title') @((T 'setup.reboot_hint'))
-}
-
 $mode = if ($env:LLMBENCH_EXECUTION_MODE) { $env:LLMBENCH_EXECUTION_MODE.ToLowerInvariant() } else { 'auto' }
 if (@('auto', 'docker', 'native') -notcontains $mode) {
     Write-UiFail (T 'setup.invalid_mode')
@@ -53,7 +49,7 @@ try {
             exit 0
         }
         if ($rc -eq $RebootExitCode) {
-            Write-RebootNotice
+            Invoke-RebootFlow 'setup.bat'
             exit $RebootExitCode
         }
         if ($mode -eq 'docker') { throw (T 'setup.docker_forced_failed') }
@@ -87,6 +83,9 @@ try {
 
     Write-UiSection (T 'setup.section_config')
     Invoke-Checked $venvPython @('-m', 'llmbench', 'setup') 'setup.step_failed'
+
+    # Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
+    Invoke-Checked $venvPython @('-m', 'llmbench.backend_select', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
 
     Write-UiDone (T 'setup.done_native') @((T 'setup.done_hint'))
     exit 0

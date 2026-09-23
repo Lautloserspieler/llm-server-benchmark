@@ -50,8 +50,9 @@ eine einheitliche, schöne Terminal-Oberfläche.
 1. **Sprachsystem + Terminal-UI** ✅ *umgesetzt (unveröffentlicht)* — Sprachwahl ganz am Anfang,
    übersetzte Installer-Skripte (PowerShell/Bash), gemeinsame UI-Helfer, Test für
    Übersetzungsvollständigkeit.
-2. **Setup/Installer fertigstellen** — NVIDIA-Treiberprüfung unter Windows, nach Neustart
-   automatisch weitermachen, Backend-Auswahl im Setup, Tests der Installer in CI.
+2. **Setup/Installer fertigstellen** ✅ *umgesetzt (unveröffentlicht)* — NVIDIA-Treiberprüfung
+   unter Windows, nach Neustart automatisch weitermachen, Backend-Auswahl im Setup, Tests der
+   Installer in CI.
 3. **Stresstests für alle Backends** — TTFT/Multi-Tenant/OOM/Quant sind heute fest an
    llama.cpp gebunden; künftig über `get_backend()`, nicht unterstützte Tests werden mit
    Begründung übersprungen.

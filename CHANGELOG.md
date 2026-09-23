@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Setup: NVIDIA-Treiberpruefung, Neustart-Fortsetzung, Backend-Auswahl
+
+- Windows: Vor dem Docker-GPU-Setup wird geprueft, ob eine NVIDIA-Karte und ein
+  ausreichend neuer Treiber (ab 580, noetig fuer das CUDA-13-Image) vorhanden
+  sind. Fehlt er oder ist er zu alt, gibt es eine klare Meldung und das Angebot,
+  die offizielle NVIDIA-Treiberseite zu oeffnen - Treiber werden nie still
+  installiert. WSL/Docker werden dann gar nicht erst installiert; der
+  Auto-Modus macht nativ weiter.
+- Braucht eine Installation einen Neustart, bietet das Setup an, nach der
+  naechsten Anmeldung automatisch weiterzumachen (einmaliger RunOnce-Eintrag)
+  und Windows direkt neu zu starten. Gilt jetzt auch fuer `START_BENCHMARK.bat`.
+- Neue Backend-Auswahl im Setup (`python -m llmbench.backend_select`, Windows
+  und Linux): Tabelle mit Status und Download-Groesse, Rueckfrage vor jedem
+  Image-Download, anschliessend Wahl des Standard-Backends (`tools.backend`).
+  Ohne Docker wird nichts versucht; ein fehlgeschlagenes optionales Backend
+  bricht das Setup nicht ab.
+
 ### Sprachsystem ueberall + einheitliche Terminal-Oberflaeche
 
 - Die Sprache (Deutsch/English) wird jetzt **ganz am Anfang** von

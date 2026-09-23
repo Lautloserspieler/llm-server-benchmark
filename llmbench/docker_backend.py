@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -68,6 +69,34 @@ def docker_available() -> bool:
     except Exception:
         return False
     return proc.returncode == 0
+
+
+def nvidia_runtime_available() -> bool:
+    """True, wenn Container eine NVIDIA-GPU bekommen koennen.
+
+    Ein laufender Docker-Daemon allein reicht fuer GPU-Backends (vLLM startet
+    immer mit ``--gpus``) nicht: der Host braucht einen NVIDIA-Treiber, und unter
+    Linux muss Docker die NVIDIA-Runtime kennen (nvidia-container-toolkit).
+    Docker Desktop (Windows/macOS) reicht die GPU ueber WSL2 selbst durch.
+    """
+    if not shutil.which("nvidia-smi") or not docker_available():
+        return False
+    if sys.platform != "linux":
+        return True
+    exe = docker_exe()
+    try:
+        proc = subprocess.run(
+            [exe or "docker", "info", "--format", "{{json .Runtimes}}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0 and "nvidia" in (proc.stdout or "").lower()
 
 
 def _require_docker() -> str:

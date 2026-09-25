@@ -16,7 +16,7 @@ import httpx
 from .monitor import ResourceMonitor, strip_samples
 from .utils import ensure_dir, utc_now_iso, write_json
 
-_REQUEST_TIMEOUT_SECONDS = 120.0
+_REQUEST_TIMEOUT_SECONDS = 300.0
 _TICK_INTERVAL_SECONDS = 2.0
 
 
@@ -36,7 +36,7 @@ async def _one_completion(client: httpx.AsyncClient, base_url: str, cfg: dict[st
         r = await client.post(
             base_url.rstrip("/") + "/completion",
             json=payload,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
+            timeout=float(cfg.get("request_timeout_seconds", _REQUEST_TIMEOUT_SECONDS)),
         )
         r.raise_for_status()
         data = r.json()
@@ -106,15 +106,16 @@ async def _tick_loop(
 async def _drive_both(
     cpu_url: str,
     gpu_url: str,
-    soak_cfg: dict[str, Any],
+    cpu_cfg: dict[str, Any],
+    gpu_cfg: dict[str, Any],
     duration_seconds: float,
     monitor: ResourceMonitor,
     on_tick: Callable[[float, dict[str, Any] | None], None] | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     deadline = time.perf_counter() + duration_seconds
     cpu_results, gpu_results, _ = await asyncio.gather(
-        _drive_load(cpu_url, soak_cfg, duration_seconds),
-        _drive_load(gpu_url, soak_cfg, duration_seconds),
+        _drive_load(cpu_url, cpu_cfg, duration_seconds),
+        _drive_load(gpu_url, gpu_cfg, duration_seconds),
         _tick_loop(deadline, monitor, on_tick),
     )
     return cpu_results, gpu_results
@@ -205,23 +206,39 @@ def run_soak_test(
     started = time.perf_counter()
 
     cpu_proc = gpu_proc = None
-    load_cfg = {
+    common_load_cfg = {
         "prompt": soak_cfg.get("prompt"),
         "max_tokens": soak_cfg.get("max_tokens", 256),
         "temperature": soak_cfg.get("temperature", 0.0),
         "seed": soak_cfg.get("seed"),
-        "concurrency": soak_cfg.get("concurrency", 2),
+    }
+    default_timeout = float(soak_cfg.get("request_timeout_seconds", _REQUEST_TIMEOUT_SECONDS))
+    cpu_load_cfg = {
+        **common_load_cfg,
+        "concurrency": int(soak_cfg.get("cpu_concurrency", 1)),
+        "request_timeout_seconds": float(
+            soak_cfg.get("cpu_request_timeout_seconds", default_timeout)
+        ),
+    }
+    gpu_load_cfg = {
+        **common_load_cfg,
+        "concurrency": int(
+            soak_cfg.get("gpu_concurrency", soak_cfg.get("concurrency", 2))
+        ),
+        "request_timeout_seconds": float(
+            soak_cfg.get("gpu_request_timeout_seconds", default_timeout)
+        ),
     }
     try:
         cpu_endpoint_cfg = {
             "base_url": cpu_url,
             "context_size": soak_cfg.get("context_size", 8192),
-            "parallel_slots": soak_cfg.get("concurrency", 2),
+            "parallel_slots": cpu_load_cfg["concurrency"],
         }
         gpu_endpoint_cfg = {
             "base_url": gpu_url,
             "context_size": soak_cfg.get("context_size", 8192),
-            "parallel_slots": soak_cfg.get("concurrency", 2),
+            "parallel_slots": gpu_load_cfg["concurrency"],
         }
         cpu_proc, _cpu_cmd = backend.start_server(
             model_path,
@@ -252,7 +269,15 @@ def run_soak_test(
         monitor.start()
 
         cpu_results, gpu_results = asyncio.run(
-            _drive_both(cpu_url, gpu_url, load_cfg, float(duration_seconds), monitor, on_tick)
+            _drive_both(
+                cpu_url,
+                gpu_url,
+                cpu_load_cfg,
+                gpu_load_cfg,
+                float(duration_seconds),
+                monitor,
+                on_tick,
+            )
         )
         wall = time.perf_counter() - started
         telemetry = monitor.stop()
@@ -286,6 +311,12 @@ def run_soak_test(
         "requested_duration_seconds": duration_seconds,
         "cpu_profile": cpu_profile.get("name"),
         "gpu_profile": gpu_profile.get("name"),
+        "load_settings": {
+            "cpu_concurrency": cpu_load_cfg["concurrency"],
+            "gpu_concurrency": gpu_load_cfg["concurrency"],
+            "cpu_request_timeout_seconds": cpu_load_cfg["request_timeout_seconds"],
+            "gpu_request_timeout_seconds": gpu_load_cfg["request_timeout_seconds"],
+        },
         "cpu": cpu_summary,
         "gpu": gpu_summary,
         "throttling_suspected": bool(

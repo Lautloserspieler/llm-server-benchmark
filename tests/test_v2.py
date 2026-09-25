@@ -171,8 +171,9 @@ def test_multitenant_uses_two_backend_paths_and_separate_result_dirs(tmp_path: P
     async def fake_health(*_args, **_kwargs):
         return 0.1
 
-    async def fake_load(_base, _cfg, _interval, out_dir, target_pid=None):
+    async def fake_load(_base, _cfg, _interval, out_dir, target_pid=None, target_pids=None):
         calls["out_dirs"].append(Path(out_dir))
+        assert set(target_pids or []) == {1, 2}
         return {"status": "ok", "levels": [{"system_tps": float(target_pid or 1)}]}
 
     monkeypatch.setattr(module, "LlamaCppBackend", Backend)

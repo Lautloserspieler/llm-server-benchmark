@@ -190,6 +190,46 @@ def test_run_endpoint_load_reports_tokens_and_success(tmp_path: Path, monkeypatc
     assert (tmp_path / "endpoint_load.json").exists()
 
 
+def test_run_endpoint_load_registers_all_owned_server_pids(tmp_path: Path, monkeypatch):
+    transport = httpx.MockTransport(_sse_response_handler(tokens_per_request=1))
+
+    class _PatchedAsyncClient(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    seen = []
+
+    monkeypatch.setattr("llmbench.endpoint.httpx.AsyncClient", _PatchedAsyncClient)
+    monkeypatch.setattr("llmbench.endpoint.ResourceMonitor.start", lambda _self: None)
+    monkeypatch.setattr(
+        "llmbench.endpoint.ResourceMonitor.set_target_pids",
+        lambda _self, pids: seen.extend(pids),
+    )
+    monkeypatch.setattr("llmbench.endpoint.ResourceMonitor.stop", lambda _self: {"sample_count": 0})
+
+    cfg = {
+        "concurrency": [1],
+        "requests_per_level": 1,
+        "warmup_requests": 0,
+        "max_tokens": 1,
+        "prompt": "hello",
+        "temperature": 0.0,
+        "ignore_eos": True,
+        "seed": 42,
+    }
+    run_endpoint_load(
+        "http://testserver",
+        cfg,
+        0.5,
+        tmp_path,
+        target_pid=111,
+        target_pids=[111, 222],
+    )
+
+    assert seen == [111, 222]
+
+
 def test_run_endpoint_load_flags_short_responses_without_ignore_eos(tmp_path: Path, monkeypatch):
     transport = httpx.MockTransport(_sse_response_handler(tokens_per_request=2))
 

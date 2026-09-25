@@ -181,6 +181,12 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
                 interval,
                 load_dir1,
                 target_pid=proc1.pid if proc1 else None,
+                target_pids=[
+                    pid for pid in (
+                        proc1.pid if proc1 else None,
+                        proc2.pid if proc2 else None,
+                    ) if pid
+                ],
             ),
             _run_endpoint_load_async(
                 ep_cfg2["base_url"],
@@ -188,6 +194,12 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
                 interval,
                 load_dir2,
                 target_pid=proc2.pid if proc2 else None,
+                target_pids=[
+                    pid for pid in (
+                        proc1.pid if proc1 else None,
+                        proc2.pid if proc2 else None,
+                    ) if pid
+                ],
             ),
         )
 

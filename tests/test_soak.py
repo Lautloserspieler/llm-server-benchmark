@@ -155,6 +155,38 @@ def test_run_soak_test_drives_both_servers_and_reports_status_ok(tmp_path: Path,
     assert saved["telemetry"]["sample_count"] >= 0
 
 
+def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: Path, monkeypatch):
+    _patched_async_client(monkeypatch, httpx.MockTransport(_ok_response_handler))
+    backend = _FakeBackend()
+
+    result = run_soak_test(
+        backend, "model.gguf",
+        {"name": "CPU-Only", "gpu_layers": 0}, {"name": "Full-GPU", "gpu_layers": -1},
+        _soak_cfg(
+            concurrency=4,
+            cpu_concurrency=1,
+            gpu_concurrency=3,
+            cpu_request_timeout_seconds=420,
+            gpu_request_timeout_seconds=180,
+        ),
+        {"batch_size": 2048},
+        tmp_path,
+        duration_seconds=1,
+        label="split-load",
+    )
+
+    assert result["status"] == "ok"
+    assert result["load_settings"] == {
+        "cpu_concurrency": 1,
+        "gpu_concurrency": 3,
+        "cpu_request_timeout_seconds": 420.0,
+        "gpu_request_timeout_seconds": 180.0,
+    }
+    started = dict(backend.started)
+    assert started["CPU-Only"].endswith(":8090")
+    assert started["Full-GPU"].endswith(":8091")
+
+
 def test_run_soak_test_stops_servers_and_reports_failure_when_health_check_fails(tmp_path: Path, monkeypatch):
     _patched_async_client(monkeypatch, httpx.MockTransport(_ok_response_handler))
     backend = _FakeBackend(fail_health=True)

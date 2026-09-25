@@ -335,6 +335,7 @@ async def _run_endpoint_load_async(
     telemetry_interval: float,
     out_dir: Path,
     target_pid: int | None = None,
+    target_pids: list[int] | None = None,
 ) -> dict[str, Any]:
     levels = [int(x) for x in cfg["concurrency"]]
     warmup_n = int(cfg.get("warmup_requests", 0) or 0)
@@ -366,8 +367,11 @@ async def _run_endpoint_load_async(
 
     monitor = ResourceMonitor(telemetry_interval)
     monitor.start()
+    owned_pids = [pid for pid in (target_pids or []) if pid]
     if target_pid:
-        monitor.set_target_pid(target_pid)
+        owned_pids.append(target_pid)
+    if owned_pids:
+        monitor.set_target_pids(list(dict.fromkeys(owned_pids)))
 
     all_levels: list[dict[str, Any]] = []
     total_started = time.perf_counter()
@@ -439,13 +443,20 @@ def run_endpoint_load(
     telemetry_interval: float,
     out_dir: Path,
     target_pid: int | None = None,
+    target_pids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper to run the async load test."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid))
+        return asyncio.run(
+            _run_endpoint_load_async(
+                base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids
+            )
+        )
 
     return loop.run_until_complete(
-        _run_endpoint_load_async(base_url, cfg, telemetry_interval, out_dir, target_pid)
+        _run_endpoint_load_async(
+            base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids
+        )
     )

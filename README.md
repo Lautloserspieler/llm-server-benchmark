@@ -328,7 +328,7 @@ llmbench run --hardware both
 You can also select a single model:
 
 ```bash
-llmbench run --config benchmark.yaml --model "Qwen3-8B"
+llmbench run --config benchmark.yaml --model "Qwen3.5-9B"
 ```
 
 And choose a duration preset:
@@ -470,13 +470,21 @@ A vLLM profile can then define options such as tensor parallelism and GPU memory
 
 ## Standard model suite
 
-The bundled model-suite management includes Q4_K_M variants of models such as:
+The 2026 reference suite spans dense and MoE architectures across several size classes:
 
-- Qwen3-8B
-- DeepSeek-R1-Distill-Qwen-7B
-- Qwen3.8-27B
-- Qwen2.5-72B-Instruct
-- Mixtral-8x22B-Instruct
+| Suite | Model | Reference GGUF |
+| --- | --- | --- |
+| small | Qwen3.5-9B | Q4_K_M |
+| mid | Gemma-4-12B-IT | Q4_K_M |
+| mid | Qwen3.8-27B | Q4_K_M |
+| mid | Qwen3.5-35B-A3B | Q4_K_M |
+| heavy | Qwen3.5-122B-A10B | Q4_K_M |
+| heavy | Mistral-Small-4-119B-2603 | UD-Q4_K_M |
+| extreme | DeepSeek-V4-Flash-0731 | UD-Q4_K_XL |
+
+`all` intentionally means the six normal reference models from `small + mid + heavy`.
+The DeepSeek V4 model is kept in the separate `extreme` suite because its reference
+quant is roughly 145 GiB and should never be pulled automatically during setup.
 
 Download suites:
 
@@ -485,12 +493,14 @@ llmbench download --suite small
 llmbench download --suite mid
 llmbench download --suite heavy
 llmbench download --suite all
+llmbench download --suite extreme
 ```
 
 Verify an existing suite without downloading:
 
 ```bash
 llmbench download --suite all --verify-only
+llmbench download --suite extreme --verify-only
 ```
 
 Split GGUF files are treated as one logical model. Partial shard sets are rejected as incomplete.

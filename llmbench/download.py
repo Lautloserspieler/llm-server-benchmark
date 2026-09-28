@@ -35,42 +35,61 @@ class ModelConfig(TypedDict):
 
 MODELS: dict[str, dict[str, ModelConfig]] = {
     "small": {
-        "Qwen3-8B": {
-            "repo_id": "Qwen/Qwen3-8B-GGUF",
-            "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
-            "filename_hint": "qwen3-8b",
-            "estimated_gib": 6.0,
-        },
-        "R1-Distill-Qwen-7B": {
-            "repo_id": "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF",
-            "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
-            "filename_hint": "deepseek-r1-distill-qwen-7b",
+        "Qwen3.5-9B": {
+            "repo_id": "unsloth/Qwen3.5-9B-GGUF",
+            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+            "filename_hint": "qwen3.5-9b",
             "estimated_gib": 6.0,
         },
     },
     "mid": {
+        "Gemma-4-12B-IT": {
+            "repo_id": "unsloth/gemma-4-12b-it-GGUF",
+            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+            "filename_hint": "gemma-4-12b-it",
+            "estimated_gib": 7.0,
+        },
         "Qwen3.8-27B": {
             "repo_id": "bartowski/Qwen3.8-27B-GGUF",
-            "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
+            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
             "filename_hint": "qwen3.8-27b",
             "estimated_gib": 18.0,
         },
+        "Qwen3.5-35B-A3B": {
+            "repo_id": "unsloth/Qwen3.5-35B-A3B-GGUF",
+            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+            "filename_hint": "qwen3.5-35b-a3b",
+            "estimated_gib": 22.0,
+        },
     },
     "heavy": {
-        "Qwen2.5-72B-Instruct": {
-            "repo_id": "Qwen/Qwen2.5-72B-Instruct-GGUF",
-            "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
-            "filename_hint": "qwen2.5-72b-instruct",
-            "estimated_gib": 48.0,
+        "Qwen3.5-122B-A10B": {
+            "repo_id": "unsloth/Qwen3.5-122B-A10B-GGUF",
+            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+            "filename_hint": "qwen3.5-122b-a10b",
+            "estimated_gib": 72.0,
         },
-        "Mixtral-8x22B": {
-            "repo_id": "MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF",
-            "pattern": ["*q4_k_m*.gguf", "*Q4_K_M*.gguf", "*q4_K_M*.gguf"],
-            "filename_hint": "mixtral-8x22b",
-            "estimated_gib": 90.0,
+        "Mistral-Small-4-119B-2603": {
+            "repo_id": "unsloth/Mistral-Small-4-119B-2603-GGUF",
+            "pattern": ["*UD-Q4_K_M*.gguf", "*ud-q4_k_m*.gguf"],
+            "filename_hint": "mistral-small-4-119b-2603",
+            "estimated_gib": 69.0,
+        },
+    },
+    "extreme": {
+        "DeepSeek-V4-Flash-0731": {
+            "repo_id": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+            "pattern": ["*UD-Q4_K_XL*.gguf", "*ud-q4_k_xl*.gguf"],
+            "filename_hint": "deepseek-v4-flash-0731",
+            "estimated_gib": 145.0,
         },
     },
 }
+
+# "all" bleibt absichtlich die normale Standard-Suite. Das Extreme-Modell wird
+# nur explizit geladen, damit Setup/CI nicht versehentlich >100 GiB nachladen.
+STANDARD_SUITE_NAMES = ("small", "mid", "heavy")
+
 
 SELECTION_FILENAME = ".llmbench-model-selection.json"
 
@@ -261,18 +280,27 @@ class RichTqdm:
 def get_suite_models(suite: str) -> dict[str, ModelConfig]:
     target_models: dict[str, ModelConfig] = {}
     if suite == "all":
-        for category in MODELS.values():
-            target_models.update(category)
+        for name in STANDARD_SUITE_NAMES:
+            target_models.update(MODELS[name])
     elif suite in MODELS:
         target_models.update(MODELS[suite])
     else:
-        raise ValueError(f"Unbekannte Suite: {suite}. Erlaubt: small, mid, heavy, all.")
+        allowed = ", ".join((*STANDARD_SUITE_NAMES, "extreme", "all"))
+        raise ValueError(f"Unbekannte Suite: {suite}. Erlaubt: {allowed}.")
     return target_models
 
 
+def get_catalog_models() -> dict[str, ModelConfig]:
+    """Gesamter Katalog inklusive optionaler Extreme-Modelle."""
+    catalog: dict[str, ModelConfig] = {}
+    for category in MODELS.values():
+        catalog.update(category)
+    return catalog
+
+
 def get_models_by_name(model_names: Iterable[str]) -> dict[str, ModelConfig]:
-    """Loest eine explizite Modellauswahl gegen den Standardkatalog auf."""
-    catalog = get_suite_models("all")
+    """Loest eine explizite Modellauswahl gegen den gesamten Modellkatalog auf."""
+    catalog = get_catalog_models()
     requested = list(dict.fromkeys(str(name).strip() for name in model_names if str(name).strip()))
     unknown = [name for name in requested if name not in catalog]
     if unknown:

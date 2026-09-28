@@ -477,7 +477,7 @@ The 2026 reference suite spans dense and MoE architectures across several size c
 | small | Qwen3.5-9B | Q4_K_M |
 | mid | Gemma-4-12B-IT | Q4_K_M |
 | mid | Qwen3.8-27B | Q4_K_M |
-| mid | Qwen3.5-35B-A3B | Q4_K_M |
+| mid | GLM-4.7-Flash | Q4_K_M |
 | heavy | Qwen3.5-122B-A10B | Q4_K_M |
 | heavy | Mistral-Small-4-119B-2603 | UD-Q4_K_M |
 | extreme | DeepSeek-V4-Flash-0731 | UD-Q4_K_XL |

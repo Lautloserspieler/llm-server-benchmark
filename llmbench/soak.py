@@ -85,10 +85,7 @@ def _partition_soak_profiles(
 
         cpu_threads = max(1, min(total - 1, cpu_threads))
 
-        if raw_gpu not in (None, ""):
-            gpu_threads = int(raw_gpu)
-        else:
-            gpu_threads = total - cpu_threads
+        gpu_threads = int(raw_gpu) if raw_gpu not in (None, "") else total - cpu_threads
         gpu_threads = max(1, min(total - cpu_threads, gpu_threads))
 
     cpu_runtime["threads"] = cpu_threads

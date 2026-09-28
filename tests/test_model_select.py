@@ -24,7 +24,7 @@ def test_2026_standard_suite_and_extreme_are_separated() -> None:
         "Qwen3.5-9B",
         "Gemma-4-12B-IT",
         "Qwen3.8-27B",
-        "Qwen3.5-35B-A3B",
+        "GLM-4.7-Flash",
         "Qwen3.5-122B-A10B",
         "Mistral-Small-4-119B-2603",
     ]
@@ -54,6 +54,18 @@ def test_parse_selection_rejects_invalid_values() -> None:
         parse_selection("999", names)
     with pytest.raises(ValueError):
         parse_selection("foo", names)
+
+
+
+
+def test_saved_qwen35_selection_migrates_to_glm47(tmp_path: Path) -> None:
+    path = tmp_path / ".llmbench-model-selection.json"
+    path.write_text(
+        '{"version": 1, "models": ["Qwen3.5-9B", "Qwen3.5-35B-A3B"]}\n',
+        encoding="utf-8",
+    )
+
+    assert load_model_selection(tmp_path) == ["Qwen3.5-9B", "GLM-4.7-Flash"]
 
 
 def test_saved_selection_roundtrip(tmp_path: Path) -> None:

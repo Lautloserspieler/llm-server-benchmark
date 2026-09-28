@@ -55,11 +55,11 @@ MODELS: dict[str, dict[str, ModelConfig]] = {
             "filename_hint": "qwen3.8-27b",
             "estimated_gib": 18.0,
         },
-        "Qwen3.5-35B-A3B": {
-            "repo_id": "unsloth/Qwen3.5-35B-A3B-GGUF",
+        "GLM-4.7-Flash": {
+            "repo_id": "lmstudio-community/GLM-4.7-Flash-GGUF",
             "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "qwen3.5-35b-a3b",
-            "estimated_gib": 22.0,
+            "filename_hint": "glm-4.7-flash",
+            "estimated_gib": 19.0,
         },
     },
     "heavy": {
@@ -92,6 +92,13 @@ STANDARD_SUITE_NAMES = ("small", "mid", "heavy")
 
 
 SELECTION_FILENAME = ".llmbench-model-selection.json"
+
+# Gespeicherte Auswahlen aus der kurzen 2026-Qwen-Suite automatisch migrieren.
+# Die Datei des alten Modells bleibt unangetastet; nur die Standardauswahl
+# verweist ab jetzt auf den architektonisch unabhaengigen GLM-Slot.
+MODEL_SELECTION_ALIASES = {
+    "Qwen3.5-35B-A3B": "GLM-4.7-Flash",
+}
 
 
 class _AdaptivePercentColumn(ProgressColumn):
@@ -328,7 +335,11 @@ def load_model_selection(models_dir: str | Path) -> list[str] | None:
         names = data.get("models") if isinstance(data, dict) else None
         if not isinstance(names, list):
             return None
-        return list(get_models_by_name(str(name) for name in names))
+        migrated = [
+            MODEL_SELECTION_ALIASES.get(str(name), str(name))
+            for name in names
+        ]
+        return list(get_models_by_name(migrated))
     except (OSError, ValueError, json.JSONDecodeError, TypeError):
         return None
 

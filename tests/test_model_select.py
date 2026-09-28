@@ -5,12 +5,40 @@ from pathlib import Path
 import pytest
 
 from llmbench.download import (
+    get_catalog_models,
+    get_models_by_name,
     get_suite_models,
     load_model_selection,
     save_model_selection,
     verify_suite,
 )
 from llmbench.model_select import parse_selection
+
+
+def test_2026_standard_suite_and_extreme_are_separated() -> None:
+    standard = get_suite_models("all")
+    extreme = get_suite_models("extreme")
+    catalog = get_catalog_models()
+
+    assert list(standard) == [
+        "Qwen3.5-9B",
+        "Gemma-4-12B-IT",
+        "Qwen3.8-27B",
+        "Qwen3.5-35B-A3B",
+        "Qwen3.5-122B-A10B",
+        "Mistral-Small-4-119B-2603",
+    ]
+    assert list(extreme) == ["DeepSeek-V4-Flash-0731"]
+    assert "DeepSeek-V4-Flash-0731" not in standard
+    assert len(catalog) == 7
+
+
+def test_extreme_model_can_be_selected_explicitly() -> None:
+    selected = get_models_by_name(["DeepSeek-V4-Flash-0731"])
+    assert selected["DeepSeek-V4-Flash-0731"]["repo_id"] == (
+        "unsloth/DeepSeek-V4-Flash-0731-GGUF"
+    )
+    assert any("UD-Q4_K_XL" in pattern for pattern in selected["DeepSeek-V4-Flash-0731"]["pattern"])
 
 
 def test_parse_selection_supports_multiple_and_all() -> None:

@@ -12,6 +12,7 @@ from rich.table import Table
 from .download import (
     download_models,
     find_downloaded_model,
+    get_catalog_models,
     get_suite_models,
     load_model_selection,
     save_model_selection,
@@ -21,11 +22,20 @@ from .i18n import _
 from .utils import console
 
 
-def parse_selection(value: str, model_names: list[str]) -> list[str]:
-    """Parst '1,3,5', 'all/a' oder '0' in eine geordnete Modellauswahl."""
+def parse_selection(
+    value: str,
+    model_names: list[str],
+    all_selection_names: list[str] | None = None,
+) -> list[str]:
+    """Parst '1,3,5', 'all/a' oder '0' in eine geordnete Modellauswahl.
+
+    model_names enthaelt alle einzeln waehlbaren Modelle, inklusive Extreme.
+    all_selection_names kann die Bedeutung von A bewusst auf die normale
+    Standardsuite begrenzen.
+    """
     raw = value.strip().lower()
     if raw in {"a", "all", "alle"}:
-        return list(model_names)
+        return list(all_selection_names if all_selection_names is not None else model_names)
     if raw in {"0", "none", "keine", "skip"}:
         return []
 
@@ -57,8 +67,10 @@ def _default_selection(model_names: list[str], saved: list[str] | None) -> str:
 def prompt_model_selection(models_dir: str | Path) -> list[str]:
     models_root = Path(models_dir)
     models_root.mkdir(parents=True, exist_ok=True)
-    catalog = get_suite_models("all")
+    catalog = get_catalog_models()
     names = list(catalog)
+    standard_names = list(get_suite_models("all"))
+    extreme_names = set(get_suite_models("extreme"))
     saved = load_model_selection(models_root)
 
     console.print()
@@ -76,10 +88,15 @@ def prompt_model_selection(models_dir: str | Path) -> list[str]:
         else:
             state = _("ca. {gib} GiB Download").format(gib=f"{config['estimated_gib']:.0f}")
         mark = " [cyan]*[/cyan]" if saved is not None and name in saved else ""
-        table.add_row(str(index), name + mark, state)
+        extreme_mark = " [bold yellow][EXTREME][/bold yellow]" if name in extreme_names else ""
+        table.add_row(str(index), name + extreme_mark + mark, state)
 
-    total = sum(config["estimated_gib"] for config in catalog.values())
-    table.add_row("A", _("Alle Standardmodelle"), _("ca. {gib} GiB gesamt").format(gib=f"{total:.0f}"))
+    total = sum(catalog[name]["estimated_gib"] for name in standard_names)
+    table.add_row(
+        "A",
+        _("Alle Standardmodelle (ohne Extreme)"),
+        _("ca. {gib} GiB gesamt").format(gib=f"{total:.0f}"),
+    )
     table.add_row("0", _("Keine neuen Standardmodelle laden"), _("vorhandene/eigene Modelle verwenden"))
     console.print(table)
 
@@ -88,7 +105,7 @@ def prompt_model_selection(models_dir: str | Path) -> list[str]:
         prompt = _("Auswahl [Standard={default}]: ").format(default=default)
         raw = console.input(f"[magenta]\\[?][/magenta] {escape(prompt)}").strip() or default
         try:
-            selected = parse_selection(raw, names)
+            selected = parse_selection(raw, names, all_selection_names=standard_names)
         except ValueError as exc:
             console.print(f"[yellow]\\[!][/yellow] {escape(str(exc))}")
             continue

@@ -32,6 +32,15 @@
 
 ### Standard-Modellsuite auf 2026 aktualisiert
 
+- Die Setup-Terminal-UI zeigt jetzt auch DeepSeek-V4-Flash-0731 als
+  `[EXTREME]` an. Es kann gezielt ueber seine Modellnummer ausgewaehlt werden;
+  `A = Alle Standardmodelle` bleibt bewusst auf die sechs normalen
+  Referenzmodelle begrenzt und startet keinen Extreme-Download.
+- Quick Start, Installation und Modell-Suite in der DE/EN-Wiki beschreiben den
+  normalen Ablauf jetzt korrekt ueber `START_BENCHMARK.bat` bzw.
+  `START_BENCHMARK.sh` und die Terminal-UI fuer Dauer, Hardware und
+  zusaetzliche Stresstests. Direkte CLI-Befehle sind als fortgeschrittene
+  Nutzung eingeordnet.
 - Ersetzt die alte Referenzsuite durch aktuelle Modelle: Qwen3.5-9B,
   Gemma-4-12B-IT, Qwen3.8-27B, GLM-4.7-Flash,
   Qwen3.5-122B-A10B und Mistral-Small-4-119B-2603.
@@ -44,7 +53,8 @@
 - Verwendet die jeweils vorhandene 4-Bit-Referenzquantisierung:
   Q4_K_M fuer die meisten Modelle, UD-Q4_K_M fuer Mistral 119B und
   UD-Q4_K_XL fuer DeepSeek V4 Flash.
-- `llmbench download --suite extreme` und die CLI-Validierung wurden ergaenzt.
+- Die darunterliegende `extreme`-Suite und CLI-Validierung bleiben fuer
+  Automatisierung und fortgeschrittene/manuelle Nutzung verfuegbar.
 
 
 ### Benchmark-Haertung: Dauerlast, CPU-Timeouts und GPU-Overload

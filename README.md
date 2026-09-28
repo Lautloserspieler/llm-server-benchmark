@@ -482,26 +482,15 @@ The 2026 reference suite spans dense and MoE architectures across several size c
 | heavy | Mistral-Small-4-119B-2603 | UD-Q4_K_M |
 | extreme | DeepSeek-V4-Flash-0731 | UD-Q4_K_XL |
 
-`all` intentionally means the six normal reference models from `small + mid + heavy`.
-The DeepSeek V4 model is kept in the separate `extreme` suite because its reference
-quant is roughly 145 GiB and should never be pulled automatically during setup.
+Normal users choose models in the terminal UI during `setup.bat` / `setup.sh`.
+All seven entries are visible there, and DeepSeek V4 is clearly marked `[EXTREME]`.
 
-Download suites:
+Selecting **A / All standard models** intentionally selects only the six normal
+reference models from `small + mid + heavy`. Extreme must be selected explicitly
+by its model number, so a very large download is never started accidentally.
 
-```bash
-llmbench download --suite small
-llmbench download --suite mid
-llmbench download --suite heavy
-llmbench download --suite all
-llmbench download --suite extreme
-```
-
-Verify an existing suite without downloading:
-
-```bash
-llmbench download --suite all --verify-only
-llmbench download --suite extreme --verify-only
-```
+The underlying `llmbench download --suite ...` CLI remains available for automation
+and advanced/manual use, but it is not the normal setup path.
 
 Split GGUF files are treated as one logical model. Partial shard sets are rejected as incomplete.
 

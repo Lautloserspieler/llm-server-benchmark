@@ -228,6 +228,10 @@ class RichTqdm:
         if refresh:
             self.refresh()
 
+    def set_description_str(self, desc: str | None = None, refresh: bool = True) -> None:
+        """tqdm-Kompatibilitaet fuer aktuelle huggingface_hub/Xet-Downloads."""
+        self.set_description(desc, refresh=refresh)
+
     def set_postfix(self, **_kwargs: Any) -> None:
         return None
 
@@ -485,6 +489,23 @@ def download_models(
                     )
                 print_msg(f"[OK] {name} ist bereit: {found}", style="bold green")
             except Exception as exc:
+                # huggingface_hub/Xet kann erst nach einem vollstaendig
+                # rekonstruierten Download beim Aktualisieren der Progress-Bar
+                # scheitern. In diesem Fall darf ein bereits gueltiges lokales
+                # GGUF nicht als fehlgeschlagen gewertet werden.
+                recovered = find_downloaded_model(out_dir, config)
+                if recovered is not None:
+                    print_msg(
+                        f"[OK] {name} wurde vollstaendig geladen und lokal erkannt: {recovered}",
+                        style="bold green",
+                    )
+                    print_msg(
+                        f"Hinweis: Der Downloader meldete danach nur noch einen "
+                        f"Fortschritts-/Abschlussfehler: {exc}",
+                        style="yellow",
+                    )
+                    continue
+
                 message = f"{name}: {exc}"
                 failures.append(message)
                 print_err(f"Fehler beim Herunterladen von {message}")

@@ -52,6 +52,37 @@ def test_run_benchmark_skips_oversized_full_gpu_before_llama_bench(monkeypatch, 
     assert result["runtime_adjustments"][0]["effective"] is None
 
 
+def test_run_benchmark_marks_expected_overload_load_failure_as_capacity_skip(monkeypatch, tmp_path: Path):
+    def _capacity(_model_path, profile):
+        return None if profile.get("allow_oversized_gpu") else "model exceeds safe VRAM budget"
+
+    monkeypatch.setattr("llmbench.backends.llama_cpp.profile_vram_issue_for_path", _capacity)
+    monkeypatch.setattr(
+        "llmbench.backends.llama_cpp.run_llama_bench",
+        lambda *_args, **_kwargs: {
+            "status": "failed",
+            "error": "llama-bench endete mit Code 1",
+            "error_detail": "llama_bench: error: failed to load model",
+        },
+    )
+
+    backend = LlamaCppBackend("llama-bench", "llama-server")
+    result = backend.run_benchmark(
+        "huge.gguf",
+        {"name": "Full-GPU", "gpu_layers": -1, "allow_oversized_gpu": True},
+        "generation",
+        tmp_path,
+        {"repetitions": 1},
+    )
+
+    assert result["status"] == "skipped_capacity"
+    assert result["overload_attempted"] is True
+    assert result["overload_original_status"] == "failed"
+    assert result["runtime_adjustments"][-1]["effective"] == "attempted_oversized_gpu"
+    assert "VRAM" in result["error"]
+
+
+
 def test_start_server_delegates_to_start_llama_server(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         "llmbench.backends.llama_cpp.start_llama_server",

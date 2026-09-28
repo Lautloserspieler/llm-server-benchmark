@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Benchmark-Haertung: Dauerlast, CPU-Timeouts und GPU-Overload
+
+- Der kombinierte CPU/GPU-Dauerlasttest teilt die verfuegbaren CPU-Threads
+  standardmaessig 75/25 zwischen CPU-Only- und GPU-Server auf, um die in
+  Langlaeufen beobachtete Ueberbuchung und CPU-Request-Timeouts zu vermeiden.
+- CPU- und GPU-Benchmarks besitzen getrennte Zeitlimits; das Long-Preset erlaubt
+  fuer langsame CPU-only-Laeufe bis zu 14400 Sekunden.
+- `gpu_overload` bleibt ein ausdruecklicher Stresstest. Erwartete Lade-, OOM-
+  oder Timeout-Grenzen bei bewusst zu grossen Full-GPU-Modellen werden als
+  `skipped_capacity` statt als generischer Benchmarkfehler ausgewiesen.
+- `summary.json` speichert die Hardware-Auswahl; normale GPU- und
+  `gpu_overload`-Laeufe werden beim Vergleich als unterschiedliche Modi erkannt.
+- CI-Fix: Die neue Soak-Threadaufteilung erfuellt Ruff/SIM108.
+
+
 ### Immer volle Leistung: Energieplan und Power-Limits unter Linux und Windows
 
 - Neu: Vor jedem `llmbench run` und `llmbench stress-*` stellt llmbench die

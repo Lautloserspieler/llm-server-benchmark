@@ -4,6 +4,7 @@ from pathlib import Path
 
 from llmbench.llama_bench import (
     _base_args,
+    _benchmark_timeout_seconds,
     _drain,
     _extract_json,
     _rejected_progress,
@@ -53,6 +54,14 @@ def test_threads_auto_is_not_passed():
     assert "-t" not in args
     args = _base_args("llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1, "threads": 8})
     assert args[args.index("-t") + 1] == "8"
+
+
+def test_benchmark_timeout_uses_cpu_and_gpu_specific_limits():
+    cfg = dict(BENCH_CFG, timeout_seconds=3, cpu_timeout_seconds=120, gpu_timeout_seconds=15)
+    assert _benchmark_timeout_seconds(cfg, {"gpu_layers": 0}) == 120
+    assert _benchmark_timeout_seconds(cfg, {"gpu_layers": -1}) == 15
+    assert _benchmark_timeout_seconds(cfg, {"gpu_layers": 0, "timeout_seconds": 9}) == 9
+
 
 
 def test_hanging_bench_is_aborted_by_timeout(tmp_path: Path, monkeypatch):

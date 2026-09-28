@@ -31,6 +31,9 @@ benchmark:
   cache_type_v: f16
   resource_sample_interval: 0.5
   timeout_seconds: 3600
+  # CPU-only Laeufe duerfen deutlich laenger dauern als GPU-Laeufe.
+  cpu_timeout_seconds: 7200
+  gpu_timeout_seconds: 3600
   prompt_tokens: [512, 4096, 8192]
   generation_tokens: [128, 512]
   context_depths: [0, 8192, 32768, 65536, 130000]
@@ -79,6 +82,19 @@ soak:
   duration_long_seconds: 1800
   sample_interval_seconds: 2.0
   concurrency: 2
+  # CPU- und GPU-Last getrennt steuern. gpu_concurrency: null nutzt concurrency.
+  cpu_concurrency: 1
+  gpu_concurrency: null
+  request_timeout_seconds: 300
+  cpu_request_timeout_seconds: null
+  gpu_request_timeout_seconds: null
+  # Verhindert, dass CPU-only (z.B. 32 Threads) und GPU-Server (z.B. 16)
+  # gleichzeitig mehr CPU-Threads anfordern als vorhanden sind.
+  thread_partition_enabled: true
+  cpu_thread_fraction: 0.75
+  # Optional statt der automatischen 75/25-Aufteilung:
+  cpu_threads: null
+  gpu_threads: null
   max_tokens: 256
   temperature: 0.0
   seed: 42

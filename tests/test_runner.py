@@ -69,6 +69,14 @@ def test_filter_profiles_gpu_keeps_full_gpu_and_hybrid():
     assert [p["name"] for p in result] == ["Full-GPU", "Hybrid-30L"]
 
 
+def test_filter_profiles_gpu_overload_uses_copies_and_keeps_source_clean():
+    profiles = [{"name": "Full-GPU", "gpu_layers": -1}]
+    result = filter_profiles_by_hardware(profiles, "gpu_overload")
+    assert result[0]["allow_oversized_gpu"] is True
+    assert "allow_oversized_gpu" not in profiles[0]
+    assert result[0] is not profiles[0]
+
+
 def test_filter_profiles_handles_empty_list():
     assert filter_profiles_by_hardware([], "cpu") == []
 
@@ -257,6 +265,13 @@ def test_run_suite_calls_end_profile_even_when_a_benchmark_raises(suite_env, mon
     assert benchmarks["generation"]["status"] == "failed"
     # Die folgende Testart laeuft trotzdem weiter.
     assert benchmarks["long_context"]["status"] == "ok"
+
+
+def test_run_suite_records_hardware_target(suite_env, monkeypatch):
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
+    run_dir = run_suite(suite_env, plain=True, hardware_target="gpu")
+    assert _read_summary(run_dir)["hardware_target"] == "gpu"
+
 
 
 def test_run_suite_records_backend_in_summary(suite_env, monkeypatch):

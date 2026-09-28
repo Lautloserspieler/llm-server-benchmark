@@ -219,6 +219,58 @@ def _test_args(base: list[str], bench_cfg: dict[str, Any], test_kind: str) -> li
     return args
 
 
+def _benchmark_timeout_seconds(
+    bench_cfg: dict[str, Any],
+    profile: dict[str, Any],
+) -> float:
+    """Resolve a benchmark timeout without changing measurement semantics.
+
+    CPU-only inference on large models can be orders of magnitude slower than
+    GPU inference. A single global timeout caused valid long CPU runs to be
+    aborted while the machine was still making progress.
+    """
+    profile_timeout = profile.get("timeout_seconds")
+    if profile_timeout not in (None, ""):
+        return float(profile_timeout)
+
+    try:
+        is_cpu = int(profile.get("gpu_layers", -1)) == 0
+    except (TypeError, ValueError):
+        is_cpu = False
+
+    key = "cpu_timeout_seconds" if is_cpu else "gpu_timeout_seconds"
+    return float(bench_cfg.get(key, bench_cfg.get("timeout_seconds", 3600)))
+
+
+def _timeout_message(
+    test_kind: str,
+    profile: dict[str, Any],
+    timeout_s: float,
+) -> str:
+    try:
+        is_cpu = int(profile.get("gpu_layers", -1)) == 0
+    except (TypeError, ValueError):
+        is_cpu = False
+
+    if is_cpu:
+        return (
+            f"llama-bench wurde nach {timeout_s:.0f} s abgebrochen. "
+            "Der CPU-Lauf war noch nicht fertig; grosse Modelle, viele Wiederholungen "
+            "oder lange Generationen koennen deutlich laenger dauern. "
+            "benchmark.cpu_timeout_seconds erhoehen oder den Lauf kuerzen."
+        )
+    if test_kind == "long_context":
+        return (
+            f"llama-bench wurde nach {timeout_s:.0f} s abgebrochen. "
+            "Der Long-Context-Lauf hat das Zeitlimit erreicht; Kontexttiefe reduzieren "
+            "oder benchmark.gpu_timeout_seconds erhoehen."
+        )
+    return (
+        f"llama-bench wurde nach {timeout_s:.0f} s abgebrochen. "
+        "benchmark.gpu_timeout_seconds erhoehen, falls der Lauf absichtlich so lange dauert."
+    )
+
+
 def run_llama_bench(
     exe: str,
     model_path: str,
@@ -231,7 +283,7 @@ def run_llama_bench(
     exe = resolve_executable(exe)
     args = _test_args(_base_args(exe, model_path, bench_cfg, profile), bench_cfg, test_kind)
 
-    timeout_s = float(bench_cfg.get("timeout_seconds", 3600))
+    timeout_s = _benchmark_timeout_seconds(bench_cfg, profile)
     monitor = ResourceMonitor(float(bench_cfg.get("resource_sample_interval", 0.5)))
     # Erst der Monitor (wartet ggf. bis zu 15 s auf eine ruhige GPU), dann die
     # Zeitmessung - sonst zaehlt die Wartezeit zur Benchmark-Dauer.
@@ -287,11 +339,7 @@ def run_llama_bench(
         return {
             "kind": test_kind,
             "status": "timeout",
-            "error": (
-                f"llama-bench wurde nach {timeout_s:.0f} s abgebrochen. "
-                "Vermutlich passt die Kontexttiefe nicht in den Speicher "
-                "(benchmark.timeout_seconds anpassen oder context_depths kuerzen)."
-            ),
+            "error": _timeout_message(test_kind, profile, timeout_s),
             "duration_seconds": duration,
             "stderr_tail": (stderr or "")[-4000:],
             "telemetry": light,

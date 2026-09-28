@@ -2,6 +2,7 @@ import pytest
 
 from llmbench.config import (
     DEFAULT_CONFIG,
+    apply_duration_preset,
     config_fingerprint,
     deep_merge,
     normalize_flash_attention,
@@ -30,6 +31,25 @@ def test_deep_merge_does_not_share_nested_defaults():
     assert merged["benchmark"] is not DEFAULT_CONFIG["benchmark"]
     merged["benchmark"]["repetitions"] = 999
     assert DEFAULT_CONFIG["benchmark"]["repetitions"] == 5
+
+
+def test_duration_presets_scale_cpu_timeout_for_long_runs():
+    short = apply_duration_preset({"benchmark": dict(DEFAULT_CONFIG["benchmark"])}, "short")
+    medium = apply_duration_preset({"benchmark": dict(DEFAULT_CONFIG["benchmark"])}, "medium")
+    long = apply_duration_preset({"benchmark": dict(DEFAULT_CONFIG["benchmark"])}, "long")
+
+    assert short["benchmark"]["cpu_timeout_seconds"] == 3600
+    assert medium["benchmark"]["cpu_timeout_seconds"] == 7200
+    assert long["benchmark"]["cpu_timeout_seconds"] == 14400
+    assert long["benchmark"]["gpu_timeout_seconds"] == DEFAULT_CONFIG["benchmark"]["gpu_timeout_seconds"]
+
+
+def test_default_soak_thread_partition_is_enabled():
+    soak = DEFAULT_CONFIG["soak"]
+    assert soak["thread_partition_enabled"] is True
+    assert soak["cpu_thread_fraction"] == 0.75
+    assert soak["cpu_concurrency"] == 1
+
 
 
 def test_validation_accepts_valid_config():

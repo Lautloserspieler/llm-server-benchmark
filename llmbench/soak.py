@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import statistics
 import time
 import traceback
@@ -18,6 +19,83 @@ from .utils import ensure_dir, utc_now_iso, write_json
 
 _REQUEST_TIMEOUT_SECONDS = 300.0
 _TICK_INTERVAL_SECONDS = 2.0
+
+
+def _available_cpu_threads() -> int:
+    """Return CPUs available to this process, respecting affinity/cgroups."""
+    with contextlib.suppress(AttributeError, OSError):
+        affinity = os.sched_getaffinity(0)
+        if affinity:
+            return len(affinity)
+
+    with contextlib.suppress(Exception):
+        import psutil
+
+        affinity = psutil.Process().cpu_affinity()
+        if affinity:
+            return len(affinity)
+
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _optional_float(value: Any, fallback: float) -> float:
+    return fallback if value in (None, "") else float(value)
+
+
+def _partition_soak_profiles(
+    cpu_profile: dict[str, Any],
+    gpu_profile: dict[str, Any],
+    soak_cfg: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Give CPU and GPU servers a bounded CPU-thread budget.
+
+    Without this split a CPU-only llama-server can use all logical CPUs while
+    the GPU server starts another CPU threadpool. On a 32-thread host this was
+    observed as 32 + 16 runnable llama.cpp threads, reducing the CPU path from
+    normal double-digit tok/s to below 1 tok/s and causing request timeouts.
+    """
+    cpu_runtime = dict(cpu_profile)
+    gpu_runtime = dict(gpu_profile)
+    total = _available_cpu_threads()
+    enabled = bool(soak_cfg.get("thread_partition_enabled", True))
+
+    settings: dict[str, Any] = {
+        "thread_partition_enabled": enabled,
+        "available_cpu_threads": total,
+        "cpu_server_threads": cpu_runtime.get("threads"),
+        "gpu_server_threads": gpu_runtime.get("threads"),
+    }
+    if not enabled:
+        return cpu_runtime, gpu_runtime, settings
+
+    if total <= 1:
+        cpu_threads = gpu_threads = 1
+    else:
+        fraction = float(soak_cfg.get("cpu_thread_fraction", 0.75))
+        fraction = min(0.95, max(0.05, fraction))
+        raw_cpu = soak_cfg.get("cpu_threads")
+        raw_gpu = soak_cfg.get("gpu_threads")
+
+        if raw_cpu not in (None, ""):
+            cpu_threads = int(raw_cpu)
+        elif raw_gpu not in (None, ""):
+            cpu_threads = total - int(raw_gpu)
+        else:
+            cpu_threads = round(total * fraction)
+
+        cpu_threads = max(1, min(total - 1, cpu_threads))
+
+        if raw_gpu not in (None, ""):
+            gpu_threads = int(raw_gpu)
+        else:
+            gpu_threads = total - cpu_threads
+        gpu_threads = max(1, min(total - cpu_threads, gpu_threads))
+
+    cpu_runtime["threads"] = cpu_threads
+    gpu_runtime["threads"] = gpu_threads
+    settings["cpu_server_threads"] = cpu_threads
+    settings["gpu_server_threads"] = gpu_threads
+    return cpu_runtime, gpu_runtime, settings
 
 
 async def _one_completion(client: httpx.AsyncClient, base_url: str, cfg: dict[str, Any]) -> dict[str, Any]:
@@ -213,22 +291,25 @@ def run_soak_test(
         "seed": soak_cfg.get("seed"),
     }
     default_timeout = float(soak_cfg.get("request_timeout_seconds", _REQUEST_TIMEOUT_SECONDS))
+    cpu_timeout = _optional_float(soak_cfg.get("cpu_request_timeout_seconds"), default_timeout)
+    gpu_timeout = _optional_float(soak_cfg.get("gpu_request_timeout_seconds"), default_timeout)
+    gpu_concurrency_raw = soak_cfg.get("gpu_concurrency")
+    gpu_concurrency = int(
+        soak_cfg.get("concurrency", 2) if gpu_concurrency_raw in (None, "") else gpu_concurrency_raw
+    )
     cpu_load_cfg = {
         **common_load_cfg,
         "concurrency": int(soak_cfg.get("cpu_concurrency", 1)),
-        "request_timeout_seconds": float(
-            soak_cfg.get("cpu_request_timeout_seconds", default_timeout)
-        ),
+        "request_timeout_seconds": cpu_timeout,
     }
     gpu_load_cfg = {
         **common_load_cfg,
-        "concurrency": int(
-            soak_cfg.get("gpu_concurrency", soak_cfg.get("concurrency", 2))
-        ),
-        "request_timeout_seconds": float(
-            soak_cfg.get("gpu_request_timeout_seconds", default_timeout)
-        ),
+        "concurrency": gpu_concurrency,
+        "request_timeout_seconds": gpu_timeout,
     }
+    cpu_runtime_profile, gpu_runtime_profile, thread_settings = _partition_soak_profiles(
+        cpu_profile, gpu_profile, soak_cfg
+    )
     try:
         cpu_endpoint_cfg = {
             "base_url": cpu_url,
@@ -242,14 +323,14 @@ def run_soak_test(
         }
         cpu_proc, _cpu_cmd = backend.start_server(
             model_path,
-            cpu_profile,
+            cpu_runtime_profile,
             cpu_endpoint_cfg,
             bench_cfg,
             log_dir / "cpu-server.log",
         )
         gpu_proc, _gpu_cmd = backend.start_server(
             model_path,
-            gpu_profile,
+            gpu_runtime_profile,
             gpu_endpoint_cfg,
             bench_cfg,
             log_dir / "gpu-server.log",
@@ -316,6 +397,7 @@ def run_soak_test(
             "gpu_concurrency": gpu_load_cfg["concurrency"],
             "cpu_request_timeout_seconds": cpu_load_cfg["request_timeout_seconds"],
             "gpu_request_timeout_seconds": gpu_load_cfg["request_timeout_seconds"],
+            **thread_settings,
         },
         "cpu": cpu_summary,
         "gpu": gpu_summary,

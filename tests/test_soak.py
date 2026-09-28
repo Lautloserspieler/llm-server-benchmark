@@ -5,7 +5,12 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from llmbench.soak import _summarize_load, find_soak_profiles, run_soak_test
+from llmbench.soak import (
+    _partition_soak_profiles,
+    _summarize_load,
+    find_soak_profiles,
+    run_soak_test,
+)
 
 
 # --------------------------------------------------------------------------- find_soak_profiles
@@ -176,15 +181,47 @@ def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: 
     )
 
     assert result["status"] == "ok"
-    assert result["load_settings"] == {
-        "cpu_concurrency": 1,
-        "gpu_concurrency": 3,
-        "cpu_request_timeout_seconds": 420.0,
-        "gpu_request_timeout_seconds": 180.0,
-    }
+    settings = result["load_settings"]
+    assert settings["cpu_concurrency"] == 1
+    assert settings["gpu_concurrency"] == 3
+    assert settings["cpu_request_timeout_seconds"] == 420.0
+    assert settings["gpu_request_timeout_seconds"] == 180.0
+    assert settings["cpu_server_threads"] >= 1
+    assert settings["gpu_server_threads"] >= 1
     started = dict(backend.started)
     assert started["CPU-Only"].endswith(":8090")
     assert started["Full-GPU"].endswith(":8091")
+
+
+def test_partition_soak_profiles_uses_75_25_thread_budget_without_mutating(monkeypatch):
+    monkeypatch.setattr("llmbench.soak._available_cpu_threads", lambda: 32)
+    cpu = {"name": "CPU-Only", "gpu_layers": 0, "threads": "auto"}
+    gpu = {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"}
+
+    cpu_runtime, gpu_runtime, settings = _partition_soak_profiles(
+        cpu, gpu, {"thread_partition_enabled": True, "cpu_thread_fraction": 0.75}
+    )
+
+    assert cpu_runtime["threads"] == 24
+    assert gpu_runtime["threads"] == 8
+    assert settings["available_cpu_threads"] == 32
+    assert settings["cpu_server_threads"] == 24
+    assert settings["gpu_server_threads"] == 8
+    assert cpu["threads"] == "auto"
+    assert gpu["threads"] == "auto"
+
+
+def test_partition_soak_profiles_respects_explicit_budget_without_oversubscription(monkeypatch):
+    monkeypatch.setattr("llmbench.soak._available_cpu_threads", lambda: 16)
+    cpu_runtime, gpu_runtime, settings = _partition_soak_profiles(
+        {"name": "CPU", "gpu_layers": 0},
+        {"name": "GPU", "gpu_layers": -1},
+        {"thread_partition_enabled": True, "cpu_threads": 12, "gpu_threads": 10},
+    )
+
+    assert cpu_runtime["threads"] == 12
+    assert gpu_runtime["threads"] == 4
+    assert settings["cpu_server_threads"] + settings["gpu_server_threads"] == 16
 
 
 def test_run_soak_test_stops_servers_and_reports_failure_when_health_check_fails(tmp_path: Path, monkeypatch):

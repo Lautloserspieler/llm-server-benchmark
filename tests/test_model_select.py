@@ -48,6 +48,20 @@ def test_parse_selection_supports_multiple_and_all() -> None:
     assert parse_selection("0", names) == []
 
 
+def test_terminal_selection_lists_extreme_but_a_keeps_standard_suite() -> None:
+    catalog_names = list(get_catalog_models())
+    standard_names = list(get_suite_models("all"))
+
+    assert "DeepSeek-V4-Flash-0731" in catalog_names
+    assert "DeepSeek-V4-Flash-0731" not in standard_names
+    assert parse_selection("a", catalog_names, all_selection_names=standard_names) == standard_names
+
+    extreme_index = catalog_names.index("DeepSeek-V4-Flash-0731") + 1
+    assert parse_selection(str(extreme_index), catalog_names, all_selection_names=standard_names) == [
+        "DeepSeek-V4-Flash-0731"
+    ]
+
+
 def test_parse_selection_rejects_invalid_values() -> None:
     names = list(get_suite_models("all"))
     with pytest.raises(ValueError):

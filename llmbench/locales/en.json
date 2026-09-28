@@ -121,6 +121,7 @@
   "Ungueltige Auswahl: '{part}'. Bitte Nummern mit Komma trennen.": "Invalid choice: '{part}'. Please separate numbers with commas.",
   "Volume '{volume}' bleibt erhalten (heruntergeladene Modell-Gewichte). Mit --purge-models wird es ebenfalls entfernt.": "Volume '{volume}' is kept (downloaded model weights). Use --purge-models to remove it as well.",
   "Alle Standardmodelle": "All standard models",
+  "Alle Standardmodelle (ohne Extreme)": "All standard models (excluding Extreme)",
   "Alle ausgewaehlten Modelle sind bereits vorhanden.": "All selected models are already present.",
   "Alle ausgewaehlten Standardmodelle sind bereits vollstaendig vorhanden.": "All selected standard models are already complete.",
   "Ausgewaehlt: {names}": "Selected: {names}",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from llmbench.download import RichTqdm, _AdaptiveAmountColumn
+from llmbench.download import MODELS, RichTqdm, _AdaptiveAmountColumn, get_suite_models
 
 
 def _task_for(bar: RichTqdm):
@@ -51,3 +51,29 @@ def test_iterable_progress_advances_file_counter() -> None:
         assert task.total == 3
     finally:
         RichTqdm.close_all()
+
+
+def test_2026_model_manifest_uses_verified_repositories_and_quants() -> None:
+    assert MODELS["small"]["Qwen3.5-9B"]["repo_id"] == "unsloth/Qwen3.5-9B-GGUF"
+    assert MODELS["mid"]["Gemma-4-12B-IT"]["repo_id"] == "unsloth/gemma-4-12b-it-GGUF"
+    assert MODELS["mid"]["Qwen3.8-27B"]["repo_id"] == "bartowski/Qwen3.8-27B-GGUF"
+    assert MODELS["mid"]["Qwen3.5-35B-A3B"]["repo_id"] == "unsloth/Qwen3.5-35B-A3B-GGUF"
+    assert MODELS["heavy"]["Qwen3.5-122B-A10B"]["repo_id"] == (
+        "unsloth/Qwen3.5-122B-A10B-GGUF"
+    )
+    assert MODELS["heavy"]["Mistral-Small-4-119B-2603"]["repo_id"] == (
+        "unsloth/Mistral-Small-4-119B-2603-GGUF"
+    )
+    assert MODELS["extreme"]["DeepSeek-V4-Flash-0731"]["repo_id"] == (
+        "unsloth/DeepSeek-V4-Flash-0731-GGUF"
+    )
+
+    assert any(
+        "UD-Q4_K_M" in pattern
+        for pattern in MODELS["heavy"]["Mistral-Small-4-119B-2603"]["pattern"]
+    )
+    assert any(
+        "UD-Q4_K_XL" in pattern
+        for pattern in MODELS["extreme"]["DeepSeek-V4-Flash-0731"]["pattern"]
+    )
+    assert len(get_suite_models("all")) == 6

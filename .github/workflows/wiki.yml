@@ -47,8 +47,35 @@ jobs:
             exit 0
           fi
 
+          for source in "$GITHUB_WORKSPACE"/wiki/de/*.md; do
+            page="$(basename "$source")"
+            if [[ ! -f "$GITHUB_WORKSPACE/wiki/en/$page" ]]; then
+              echo "::error::Englische Wiki-Seite fehlt fuer de/$page"
+              exit 1
+            fi
+          done
+
+          for source in "$GITHUB_WORKSPACE"/wiki/en/*.md; do
+            page="$(basename "$source")"
+            if [[ ! -f "$GITHUB_WORKSPACE/wiki/de/$page" ]]; then
+              echo "::error::Deutsche Wiki-Seite fehlt fuer en/$page"
+              exit 1
+            fi
+          done
+
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -a "$GITHUB_WORKSPACE/wiki/." .
+
+          cp "$GITHUB_WORKSPACE/wiki/Home.md" Home.md
+          cp "$GITHUB_WORKSPACE/wiki/_Sidebar.md" _Sidebar.md
+          cp "$GITHUB_WORKSPACE/wiki/_Footer.md" _Footer.md
+
+          for source in "$GITHUB_WORKSPACE"/wiki/de/*.md; do
+            cp "$source" "DE-$(basename "$source")"
+          done
+
+          for source in "$GITHUB_WORKSPACE"/wiki/en/*.md; do
+            cp "$source" "EN-$(basename "$source")"
+          done
 
           git add -A
           if git diff --cached --quiet; then

@@ -27,17 +27,20 @@ HARDWARE_TARGETS = ("cpu", "gpu", "gpu_overload", "both")
 
 
 def filter_profiles_by_hardware(profiles: list[dict[str, Any]], hardware_target: str) -> list[dict[str, Any]]:
-    """Waehlt Profile nach `gpu_layers`: 0 gilt als CPU, alles andere als GPU
-    (auch Hybrid-Profile mit teilweisem Offload)."""
+    """Waehlt Profile nach `gpu_layers`: 0 gilt als CPU, alles andere als GPU.
+
+    Es werden Kopien zurueckgegeben. Insbesondere darf `gpu_overload` nicht die
+    geladene Benutzerkonfiguration dauerhaft mit `allow_oversized_gpu` veraendern.
+    """
     if hardware_target == "cpu":
-        return [p for p in profiles if int(p.get("gpu_layers", -1)) == 0]
+        return [dict(p) for p in profiles if int(p.get("gpu_layers", -1)) == 0]
     if hardware_target in ("gpu", "gpu_overload"):
-        filtered = [p for p in profiles if int(p.get("gpu_layers", -1)) != 0]
+        filtered = [dict(p) for p in profiles if int(p.get("gpu_layers", -1)) != 0]
         if hardware_target == "gpu_overload":
             for p in filtered:
                 p["allow_oversized_gpu"] = True
         return filtered
-    return list(profiles)
+    return [dict(p) for p in profiles]
 
 
 def _soak_profiles_for(model: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -161,6 +164,7 @@ def run_suite(
         # Tokens/s aus llama.cpp und vLLM sind nicht direkt vergleichbar;
         # compare.py lehnt einen solchen Vergleich anhand dieses Feldes ab.
         "backend": backend_name(cfg),
+        "hardware_target": hardware_target,
         "started_at": utc_now_iso(),
         "config_path": cfg.get("_config_path"),
         "config": public_config(cfg),
@@ -171,6 +175,13 @@ def run_suite(
         "warnings": [],
         "models": [],
     }
+
+    if hardware_target == "gpu_overload":
+        summary["warnings"].append(
+            "GPU-Overload-Modus aktiv: VRAM-Preflights werden fuer Full-GPU-Profile "
+            "bewusst uebergangen. Kapazitaetsbedingte Ladefehler werden als "
+            "skipped_capacity statt als Benchmarkfehler gewertet."
+        )
 
     for step in (cfg.get("_performance_mode") or {}).get("steps", []):
         if step["status"] in ("failed", "skipped"):

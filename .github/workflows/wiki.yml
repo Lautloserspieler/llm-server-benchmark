@@ -1,0 +1,60 @@
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-publish
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Sync wiki/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Publish Markdown pages to GitHub Wiki
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          WORK_DIR="$(mktemp -d)"
+          trap 'rm -rf "$WORK_DIR"' EXIT
+
+          cd "$WORK_DIR"
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+
+          if git fetch --depth=1 origin master; then
+            git checkout -q -B master FETCH_HEAD
+          else
+            echo "::warning::Wiki ist noch nicht initialisiert. Einmalig auf der GitHub-Wiki eine Home-Seite anlegen und danach diesen Workflow manuell starten."
+            exit 0
+          fi
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$GITHUB_WORKSPACE/wiki/." .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki ist bereits aktuell."
+            exit 0
+          fi
+
+          git commit -m "docs: sync wiki from ${GITHUB_SHA}"
+          git push origin HEAD:master

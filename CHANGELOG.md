@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### GitHub Wiki als Benutzerhandbuch
+
+- Neue versionierte Wiki-Quellen unter `wiki/` mit Installation, Quick Start,
+  Modell-Suite, Methodik, Telemetrie, Profilen, Backends, Ergebnisinterpretation,
+  Reports, Systemvergleich, Troubleshooting, FAQ, Entwicklung und Roadmap.
+- `_Sidebar.md` und `_Footer.md` sorgen fuer konsistente Navigation.
+- Neuer Workflow `Publish Wiki` synchronisiert die versionierten Markdown-Seiten
+  nach jedem Merge auf die GitHub-Wiki. Ein noch komplett leeres Wiki wird
+  absichtlich nur mit einem Hinweis quittiert; nach der einmaligen Home-Seite
+  kann der Workflow manuell gestartet werden und laeuft danach automatisch.
+- Die README verlinkt die Wiki als vollstaendiges Benutzerhandbuch.
+
+
 ### Hugging-Face-Download erkennt fertige GGUFs korrekt
 
 - Fix: Die Rich-tqdm-Bridge implementiert nun `set_description_str`, das aktuelle

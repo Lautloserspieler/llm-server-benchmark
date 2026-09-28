@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Hugging-Face-Download erkennt fertige GGUFs korrekt
+
+- Fix: Die Rich-tqdm-Bridge implementiert nun `set_description_str`, das aktuelle
+  `huggingface_hub` nach abgeschlossenen Xet-Downloads aufruft.
+- Ein bereits vollstaendig lokal vorhandenes GGUF wird nach einem spaeten
+  Progress-/Abschlussfehler erneut erkannt und nicht mehr faelschlich als
+  fehlgeschlagener Download gewertet.
+- Regressionstests bilden den beobachteten Fall nach: Datei fertig geschrieben,
+  anschliessend Progress-Callback-Fehler.
+
+
 ### Standard-Modellsuite auf 2026 aktualisiert
 
 - Ersetzt die alte Referenzsuite durch aktuelle Modelle: Qwen3.5-9B,

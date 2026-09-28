@@ -407,7 +407,15 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--output", default=None)
 
     dl = sub.add_parser("download", help="Standard-Modelle ueber HuggingFace verwalten")
-    dl.add_argument("--suite", choices=["small", "mid", "heavy", "all"], default="small")
+    dl.add_argument(
+        "--suite",
+        choices=["small", "mid", "heavy", "extreme", "all"],
+        default="small",
+        help=(
+            "Modellklasse laden. 'all' umfasst small+mid+heavy; "
+            "'extreme' ist bewusst separat und kann >100 GiB benoetigen."
+        ),
+    )
     dl.add_argument("--models-dir", default="models")
     dl.add_argument(
         "--verify-only",

@@ -70,8 +70,6 @@ def test_parse_selection_rejects_invalid_values() -> None:
         parse_selection("foo", names)
 
 
-
-
 def test_saved_qwen35_selection_migrates_to_glm47(tmp_path: Path) -> None:
     path = tmp_path / ".llmbench-model-selection.json"
     path.write_text(

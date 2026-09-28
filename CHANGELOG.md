@@ -2,17 +2,21 @@
 
 ## Unreleased
 
-### GitHub Wiki als Benutzerhandbuch
+### GitHub Wiki als zweisprachiges Benutzerhandbuch
 
-- Neue versionierte Wiki-Quellen unter `wiki/` mit Installation, Quick Start,
-  Modell-Suite, Methodik, Telemetrie, Profilen, Backends, Ergebnisinterpretation,
-  Reports, Systemvergleich, Troubleshooting, FAQ, Entwicklung und Roadmap.
-- `_Sidebar.md` und `_Footer.md` sorgen fuer konsistente Navigation.
-- Neuer Workflow `Publish Wiki` synchronisiert die versionierten Markdown-Seiten
-  nach jedem Merge auf die GitHub-Wiki. Ein noch komplett leeres Wiki wird
-  absichtlich nur mit einem Hinweis quittiert; nach der einmaligen Home-Seite
-  kann der Workflow manuell gestartet werden und laeuft danach automatisch.
-- Die README verlinkt die Wiki als vollstaendiges Benutzerhandbuch.
+- Die versionierten Wiki-Quellen liegen jetzt getrennt unter `wiki/de/` und
+  `wiki/en/`; alle Benutzerseiten sind vollstaendig auf Deutsch und Englisch
+  vorhanden.
+- `Home.md` dient als Sprachwahl. Jede Seite besitzt einen direkten Wechsel
+  zwischen der deutschen und englischen Gegenstelle.
+- `_Sidebar.md` und `_Footer.md` bieten Navigation fuer beide Sprachen.
+- Der Workflow `Publish Wiki` prueft, dass jede DE-Seite eine EN-Gegenstelle
+  besitzt, und veroeffentlicht die Quellen als flache `DE-*`- und `EN-*`-
+  Seiten in die GitHub-Wiki.
+- Ein noch komplett leeres Wiki wird absichtlich nur mit einem Hinweis
+  quittiert; nach der einmaligen Home-Seite kann der Workflow manuell gestartet
+  werden und synchronisiert danach automatisch bei Wiki-Aenderungen.
+- Die README verlinkt die Wiki als zweisprachiges Benutzerhandbuch.
 
 
 ### Hugging-Face-Download erkennt fertige GGUFs korrekt

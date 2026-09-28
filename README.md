@@ -676,7 +676,7 @@ The repository also uses:
 
 | Document | Purpose |
 | --- | --- |
-| [Wiki](https://github.com/Lautloserspieler/llm-server-benchmark/wiki) | Complete user guide, methodology, model suite, troubleshooting and result interpretation |
+| [Wiki](https://github.com/Lautloserspieler/llm-server-benchmark/wiki) | Bilingual German/English user guide, methodology, model suite, troubleshooting and result interpretation |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, architecture and contribution rules |
 | [ROADMAP.md](ROADMAP.md) | Backend, telemetry and feature roadmap |
 | [CHANGELOG.md](CHANGELOG.md) | Released changes |

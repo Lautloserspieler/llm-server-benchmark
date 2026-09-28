@@ -82,13 +82,44 @@ def _runtime_profile(profile: dict[str, Any]) -> tuple[dict[str, Any], list[dict
     return runtime, adjustments
 
 
-def _capacity_adjustment(profile: dict[str, Any], reason: str) -> dict[str, Any]:
+def _capacity_adjustment(
+    profile: dict[str, Any],
+    reason: str,
+    *,
+    attempted: bool = False,
+) -> dict[str, Any]:
     return {
         "type": "capacity_preflight",
         "requested": profile.get("gpu_layers", -1),
-        "effective": None,
+        "effective": "attempted_oversized_gpu" if attempted else None,
         "reason": reason,
     }
+
+
+def _strict_capacity_issue(model_path: str, profile: dict[str, Any]) -> str | None:
+    """Run the normal VRAM preflight even when overload mode bypasses it."""
+    strict_profile = dict(profile)
+    strict_profile.pop("allow_oversized_gpu", None)
+    return profile_vram_issue_for_path(model_path, strict_profile)
+
+
+def _looks_like_capacity_failure(result: dict[str, Any]) -> bool:
+    if result.get("status") == "timeout":
+        return True
+    text = " ".join(
+        str(result.get(key) or "")
+        for key in ("error", "error_detail", "stderr_tail")
+    ).lower()
+    markers = (
+        "failed to load model",
+        "out of memory",
+        "cuda out of memory",
+        "failed to allocate",
+        "allocation failed",
+        "insufficient memory",
+        "not enough memory",
+    )
+    return any(marker in text for marker in markers)
 
 
 def _nvidia_vram_used_mib() -> float | None:
@@ -170,6 +201,9 @@ class LlamaCppBackend(BenchmarkBackend):
                 "runtime_adjustments": [_capacity_adjustment(profile, capacity_issue)],
             }
 
+        strict_capacity_issue = _strict_capacity_issue(model_path, profile)
+        overload_attempt = bool(profile.get("allow_oversized_gpu") and strict_capacity_issue)
+
         runtime_profile, adjustments = _runtime_profile(profile)
         baseline_mib = _nvidia_vram_used_mib() if _is_gpu_profile(runtime_profile) else None
         try:
@@ -184,6 +218,33 @@ class LlamaCppBackend(BenchmarkBackend):
             )
         finally:
             _wait_for_vram_release(baseline_mib)
+
+        if overload_attempt and _looks_like_capacity_failure(result):
+            original_status = result.get("status")
+            result = dict(result)
+            result["status"] = "skipped_capacity"
+            result["overload_original_status"] = original_status
+            result["overload_attempted"] = True
+            result["error"] = (
+                "GPU-Overload wurde bewusst versucht, konnte das Modell aber nicht "
+                "innerhalb der verfuegbaren VRAM-/Unified-Memory-Grenzen laden oder "
+                "abschliessen. " + str(strict_capacity_issue)
+            )
+            adjustments.append(
+                _capacity_adjustment(profile, str(strict_capacity_issue), attempted=True)
+            )
+        elif overload_attempt:
+            result = dict(result)
+            result["overload_attempted"] = True
+            warnings = list(result.get("warnings") or [])
+            warnings.append(
+                "GPU-Overload-Modus aktiv: Das Modell ueberschreitet den konservativen "
+                "VRAM-Preflight, der erzwungene Versuch war jedoch erfolgreich."
+            )
+            result["warnings"] = warnings
+            adjustments.append(
+                _capacity_adjustment(profile, str(strict_capacity_issue), attempted=True)
+            )
 
         if adjustments:
             result = dict(result)

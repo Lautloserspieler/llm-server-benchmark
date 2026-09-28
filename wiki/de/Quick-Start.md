@@ -4,56 +4,81 @@
 
 # Quick Start
 
-## 1. Setup
+Der normale Benutzerweg läuft nach dem Setup vollständig über die **Terminal-UI**. Für einen normalen Benchmark musst du keine `llmbench run ...`-Befehle von Hand zusammenbauen.
 
-Windows:
+## 1. Setup einmalig ausführen
+
+### Windows
 
 ```powershell
 .\setup.bat
 ```
 
-Linux:
+### Linux
 
 ```bash
 ./setup.sh
 ```
 
-## 2. Benchmark starten
+Im Setup werden unter anderem Sprache, Modelle und verfügbare Backends eingerichtet.
 
-```bash
-llmbench run --config benchmark.yaml --duration short --hardware gpu
+## 2. Benchmark über den Starter öffnen
+
+Nach erfolgreichem Setup startest du künftig immer über den passenden Starter.
+
+### Windows
+
+```powershell
+.\START_BENCHMARK.bat
 ```
 
-## 3. Dauer wählen
-
-- `short`: Smoke-/Plausibilitätstest
-- `medium`: besserer Vergleich
-- `long`: Referenz- und Stabilitätslauf
+### Linux
 
 ```bash
-llmbench run --duration short
-llmbench run --duration medium
-llmbench run --duration long
+./START_BENCHMARK.sh
 ```
 
-## 4. Hardware-Modus
+Der Starter prüft die Installation, Modelle und Umgebung und öffnet anschließend die Terminal-UI.
 
-```bash
-llmbench run --hardware cpu
-llmbench run --hardware gpu
-llmbench run --hardware both
-llmbench run --hardware gpu_overload
-```
+## 3. Dauer in der Terminal-UI auswählen
 
-`gpu_overload` ignoriert den konservativen VRAM-Preflight bewusst und ist für Grenz-/Unified-Memory-Tests gedacht.
+Die UI fragt:
 
-## 5. Einzelnes Modell
+**Wie lange soll getestet werden?**
 
-```bash
-llmbench run --model "Qwen3.5-9B" --hardware gpu --duration medium
-```
+- **short** – schneller Check
+- **medium** – Standardwerte
+- **long** – präzisere Referenz- und Stabilitätsmessungen
+
+Du musst dafür keinen CLI-Parameter eingeben.
+
+## 4. Hardware in der Terminal-UI auswählen
+
+Danach fragt die UI, was getestet werden soll:
+
+- **CPU only**
+- **GPU only**
+- **GPU only – VRAM-Limit bewusst überschreiten / Unified Memory testen**
+- **CPU und GPU – inklusive Dauerlasttest**
+
+Der dritte Punkt entspricht dem `gpu_overload`-Modus, wird aber normal über das Menü ausgewählt.
+
+## 5. Zusätzliche Stress-Tests auswählen
+
+Die Terminal-UI fragt anschließend, ob zusätzliche Stress-Tests ausgeführt werden sollen.
+
+Dazu gehören je nach Backend und Konfiguration unter anderem:
+
+- TTFT
+- Multi-Tenant
+- OOM / Kapazitätsgrenzen
+- Quantisierungsvergleich
+
+Danach zeigt die UI deine Auswahl zusammengefasst an und startet den Benchmark.
 
 ## 6. Ergebnisdateien
+
+Ein Lauf erzeugt typischerweise:
 
 ```text
 results/
@@ -65,7 +90,15 @@ results/
     report.pdf
 ```
 
+Die wichtigsten Einstiege sind:
+
+- `report.html` für die visuelle Auswertung
+- `report.pdf` zum Teilen/Archivieren
+- `summary.json` für maschinelle Auswertung
+
 ## 7. Systeme vergleichen
+
+Der eigentliche Benchmark wird über die Starter und Terminal-UI ausgeführt. Für fortgeschrittene Auswertung steht zusätzlich die CLI zum Vergleichen vorhandener Runs zur Verfügung:
 
 ```bash
 llmbench compare results/system-a results/system-b --strict

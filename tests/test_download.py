@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from llmbench.download import MODELS, RichTqdm, _AdaptiveAmountColumn, get_suite_models
+from pathlib import Path
+
+from llmbench.download import (
+    MODELS,
+    RichTqdm,
+    _AdaptiveAmountColumn,
+    download_models,
+    find_downloaded_model,
+    get_suite_models,
+)
 
 
 def _task_for(bar: RichTqdm):
@@ -51,6 +60,34 @@ def test_iterable_progress_advances_file_counter() -> None:
         assert task.total == 3
     finally:
         RichTqdm.close_all()
+
+
+def test_set_description_str_is_tqdm_compatible() -> None:
+    bar = RichTqdm(total=1, desc="Downloading")
+    try:
+        bar.set_description_str("Download complete")
+        assert bar.desc == "Download complete"
+        assert _task_for(bar).description == "Download complete"
+    finally:
+        RichTqdm.close_all()
+
+
+def test_completed_model_is_recovered_after_progress_callback_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def _download_then_fail(**kwargs):
+        local_dir = Path(kwargs["local_dir"])
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "Qwen3.5-9B-Q4_K_M.gguf").write_bytes(b"GGUF")
+        raise AttributeError("'RichTqdm' object has no attribute 'set_description_str'")
+
+    monkeypatch.setattr("llmbench.download.snapshot_download", _download_then_fail)
+
+    download_models(tmp_path, "small")
+
+    found = find_downloaded_model(tmp_path, MODELS["small"]["Qwen3.5-9B"])
+    assert found is not None
+    assert found.name == "Qwen3.5-9B-Q4_K_M.gguf"
 
 
 def test_2026_model_manifest_uses_verified_repositories_and_quants() -> None:

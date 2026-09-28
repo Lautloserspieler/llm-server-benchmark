@@ -68,6 +68,8 @@ class BenchmarkConfig(BaseModel):
     cache_type_v: str = "f16"
     resource_sample_interval: float = 0.5
     timeout_seconds: float = Field(3600.0, gt=0)
+    cpu_timeout_seconds: float = Field(7200.0, gt=0)
+    gpu_timeout_seconds: float = Field(3600.0, gt=0)
     auto_tune: bool = False
     prompt_tokens: list[int] = Field(default_factory=lambda: [512, 4096, 8192])
     generation_tokens: list[int] = Field(default_factory=lambda: [128, 512])
@@ -147,6 +149,15 @@ class SoakConfig(BaseModel):
     duration_long_seconds: int = Field(1800, gt=0)
     sample_interval_seconds: float = 2.0
     concurrency: int = Field(2, ge=1)
+    cpu_concurrency: int = Field(1, ge=1)
+    gpu_concurrency: int | None = Field(default=None, ge=1)
+    request_timeout_seconds: float = Field(300.0, gt=0)
+    cpu_request_timeout_seconds: float | None = Field(default=None, gt=0)
+    gpu_request_timeout_seconds: float | None = Field(default=None, gt=0)
+    thread_partition_enabled: bool = True
+    cpu_thread_fraction: float = Field(0.75, gt=0.0, lt=1.0)
+    cpu_threads: int | None = Field(default=None, ge=1)
+    gpu_threads: int | None = Field(default=None, ge=1)
     max_tokens: int = 256
     temperature: float = 0.0
     seed: int = 42
@@ -248,6 +259,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cache_type_v": "f16",
         "resource_sample_interval": 0.5,
         "timeout_seconds": 3600,
+        "cpu_timeout_seconds": 7200,
+        "gpu_timeout_seconds": 3600,
         "prompt_tokens": [512, 4096, 8192],
         "generation_tokens": [128, 512],
         "context_depths": [0, 8192, 32768, 65536, 130000],
@@ -288,6 +301,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "duration_long_seconds": 1800,
         "sample_interval_seconds": 2.0,
         "concurrency": 2,
+        "cpu_concurrency": 1,
+        "gpu_concurrency": None,
+        "request_timeout_seconds": 300,
+        "cpu_request_timeout_seconds": None,
+        "gpu_request_timeout_seconds": None,
+        "thread_partition_enabled": True,
+        "cpu_thread_fraction": 0.75,
+        "cpu_threads": None,
+        "gpu_threads": None,
         "max_tokens": 256,
         "temperature": 0.0,
         "seed": 42,
@@ -352,18 +374,21 @@ def public_config(cfg: dict[str, Any]) -> dict[str, Any]:
 DURATION_PRESETS = {
     "short": {
         "repetitions": 2,
+        "cpu_timeout_seconds": 3600,
         "prompt_tokens": [512, 4096],
         "generation_tokens": [128],
         "context_depths": [0, 8192],
     },
     "medium": {
         "repetitions": 5,
+        "cpu_timeout_seconds": 7200,
         "prompt_tokens": [512, 4096, 8192],
         "generation_tokens": [128, 512],
         "context_depths": [0, 8192, 32768, 65536, 130000],
     },
     "long": {
         "repetitions": 10,
+        "cpu_timeout_seconds": 14400,
         "prompt_tokens": [512, 4096, 8192, 16384, 32768],
         "generation_tokens": [128, 512, 1024],
         "context_depths": [0, 8192, 32768, 65536, 131072, 262144],

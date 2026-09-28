@@ -16,8 +16,11 @@
 ### Standard-Modellsuite auf 2026 aktualisiert
 
 - Ersetzt die alte Referenzsuite durch aktuelle Modelle: Qwen3.5-9B,
-  Gemma-4-12B-IT, Qwen3.8-27B, Qwen3.5-35B-A3B,
+  Gemma-4-12B-IT, Qwen3.8-27B, GLM-4.7-Flash,
   Qwen3.5-122B-A10B und Mistral-Small-4-119B-2603.
+- GLM-4.7-Flash ersetzt Qwen3.5-35B-A3B im Mid-Slot, damit die Standardsuite
+  nicht zu stark auf einer einzigen Modellfamilie basiert. Alte gespeicherte
+  Auswahlen werden automatisch von Qwen3.5-35B-A3B auf GLM-4.7-Flash migriert.
 - DeepSeek-V4-Flash-0731 ist als separate `extreme`-Suite verfuegbar und
   absichtlich nicht Teil von `all`, damit Setup nicht ungefragt ein
   ca. 145-GiB-Modell herunterlaedt.

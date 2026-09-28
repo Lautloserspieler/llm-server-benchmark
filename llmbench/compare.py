@@ -96,6 +96,13 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
     # Inferenz-Server messen aber nicht dasselbe - unterschiedliche Batching-,
     # Sampling- und Prefill-Strategien machen die Tokens/s-Werte unvergleichbar.
     _mismatch(
+        "Hardware-Auswahl",
+        _collect(summaries, lambda s: s.get("hardware_target")),
+        "error",
+        "Die Laeufe verwenden unterschiedliche Hardware-Modi. Ein normaler GPU-Lauf "
+        "und ein gpu_overload-Lauf sind nicht direkt vergleichbar",
+    )
+    _mismatch(
         "Backend",
         _collect(summaries, lambda s: s.get("backend")),
         "error",

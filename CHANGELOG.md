@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Standard-Modellsuite auf 2026 aktualisiert
+
+- Ersetzt die alte Referenzsuite durch aktuelle Modelle: Qwen3.5-9B,
+  Gemma-4-12B-IT, Qwen3.8-27B, Qwen3.5-35B-A3B,
+  Qwen3.5-122B-A10B und Mistral-Small-4-119B-2603.
+- DeepSeek-V4-Flash-0731 ist als separate `extreme`-Suite verfuegbar und
+  absichtlich nicht Teil von `all`, damit Setup nicht ungefragt ein
+  ca. 145-GiB-Modell herunterlaedt.
+- Verwendet die jeweils vorhandene 4-Bit-Referenzquantisierung:
+  Q4_K_M fuer die meisten Modelle, UD-Q4_K_M fuer Mistral 119B und
+  UD-Q4_K_XL fuer DeepSeek V4 Flash.
+- `llmbench download --suite extreme` und die CLI-Validierung wurden ergaenzt.
+
+
 ### Benchmark-Haertung: Dauerlast, CPU-Timeouts und GPU-Overload
 
 - Der kombinierte CPU/GPU-Dauerlasttest teilt die verfuegbaren CPU-Threads

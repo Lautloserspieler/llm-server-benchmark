@@ -18,6 +18,7 @@ def make_summary(
     endpoint: dict | None = None,
     power: float | None = 200.0,
     soak: list[dict] | None = None,
+    hardware_target: str = "both",
 ) -> dict:
     if status == "ok":
         bench = {
@@ -46,6 +47,7 @@ def make_summary(
         "schema_version": 2,
         "llmbench_version": version,
         "server_name": server,
+        "hardware_target": hardware_target,
         "config_fingerprint": fingerprint,
         "tools": {"llama_cpp_build_ids": [build],
                   "llama_bench": {"binary": {"sha256": "aaaa"}}},
@@ -66,6 +68,15 @@ def test_different_benchmark_settings_are_an_error():
     issues = check_consistency([make_summary("A"), make_summary("B", fingerprint="zzz999")])
     errors = _levels(issues, "error")
     assert any(i["topic"] == "Benchmark-Konfiguration" for i in errors)
+
+
+def test_different_hardware_targets_are_an_error():
+    issues = check_consistency([
+        make_summary("A", hardware_target="gpu"),
+        make_summary("B", hardware_target="gpu_overload"),
+    ])
+    assert any(i["topic"] == "Hardware-Auswahl" for i in _levels(issues, "error"))
+
 
 
 def test_different_llama_cpp_build_is_an_error():

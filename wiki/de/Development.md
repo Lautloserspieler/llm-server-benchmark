@@ -1,3 +1,7 @@
+[Deutsch](DE-Development) | [English](EN-Development)
+
+---
+
 # Entwicklung
 
 Die Wiki ist das Benutzerhandbuch. Die kanonische Entwicklerdokumentation bleibt im Repository.
@@ -19,7 +23,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Lokale Checks
+## Checks
 
 ```bash
 ruff check .
@@ -27,32 +31,13 @@ mypy llmbench
 pytest -q
 ```
 
-## Architektur
-
-Zentrale Erweiterungspunkte:
+## Zentrale Erweiterungspunkte
 
 - `BenchmarkBackend`
 - `TelemetryProvider`
 
-Wichtige Module:
-
-- `runner.py`: Orchestrierung
-- `hardware.py`: Hardware-Erkennung
-- `telemetry.py`: Live-Telemetrie
-- `endpoint.py`: Serverlast/TTFT
-- `config.py`: Konfigurationsschema
-- `compare.py`: Vergleichbarkeit
-- `download.py`: Standardmodell-Katalog
-
-## Pull Requests
-
-Neue Funktionen sollten enthalten:
-
-- Tests
-- Changelog-Eintrag
-- Dokumentation, wenn Verhalten oder CLI betroffen ist
-- keine stillen Änderungen an der Vergleichssemantik
+Wichtige Module: `runner.py`, `hardware.py`, `telemetry.py`, `endpoint.py`, `config.py`, `compare.py`, `download.py`.
 
 ## Wiki-Quellen
 
-Die Wiki-Seiten liegen versioniert unter `wiki/` im Hauptrepository. Änderungen werden nach Merge automatisch in die GitHub-Wiki synchronisiert.
+Deutsch liegt unter `wiki/de/`, Englisch unter `wiki/en/`. Der Publish-Workflow veröffentlicht daraus flache `DE-*`- und `EN-*`-Seiten.

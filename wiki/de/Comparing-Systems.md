@@ -1,3 +1,7 @@
+[Deutsch](DE-Comparing-Systems) | [English](EN-Comparing-Systems)
+
+---
+
 # Systeme vergleichen
 
 ## Grundregel
@@ -9,8 +13,6 @@ Nur vergleichbare Bedingungen ergeben einen belastbaren Hardwarevergleich.
 ```bash
 llmbench compare results/server-a results/server-b --strict
 ```
-
-Der strikte Modus meldet inkompatible Bedingungen als Fehler.
 
 ## Wichtige Vergleichsmerkmale
 
@@ -26,15 +28,13 @@ Der strikte Modus meldet inkompatible Bedingungen als Fehler.
 
 ## GPU vs GPU Overload
 
-Ein normaler `gpu`-Lauf und ein `gpu_overload`-Lauf sind methodisch verschieden und werden deshalb nicht als direkt gleichwertige Runs behandelt.
+Ein normaler `gpu`-Lauf und ein `gpu_overload`-Lauf sind methodisch verschieden und nicht direkt gleichwertig.
 
 ## Betriebssystem
 
-Windows und Linux können unterschiedliche Treiber-, Scheduler-, Speicher- und Backendpfade nutzen. Ergebnisse können verglichen werden, aber die Plattformdifferenz muss sichtbar bleiben.
+Windows und Linux können unterschiedliche Treiber-, Scheduler-, Speicher- und Backendpfade nutzen. Die Plattformdifferenz muss sichtbar bleiben.
 
 ## Power-Limit
-
-Beispiel:
 
 ```text
 RTX 5090 @ 450 W
@@ -43,11 +43,9 @@ RTX 5090 @ 600 W
 
 Das sind nicht dieselben Testbedingungen.
 
-## Modellfamilien
+## Referenzlauf
 
-Ein allgemeines Hardwareurteil sollte nicht nur aus einer Modellfamilie abgeleitet werden. Die Standardsuite verteilt sich deshalb über mehrere Familien.
-
-## Empfehlung für Referenzläufe
+Empfohlen:
 
 1. gleicher Git-Stand
 2. gleiche Modell-Suite

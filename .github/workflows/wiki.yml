@@ -43,8 +43,8 @@ jobs:
           if git fetch --depth=1 origin master; then
             git checkout -q -B master FETCH_HEAD
           else
-            echo "::warning::Wiki konnte noch nicht geklont werden. Falls das Wiki leer ist, zuerst einmalig eine Home-Seite in der GitHub-Oberflaeche anlegen."
-            git checkout -q -b master
+            echo "::warning::Wiki ist noch nicht initialisiert. Einmalig auf der GitHub-Wiki eine Home-Seite anlegen und danach diesen Workflow manuell starten."
+            exit 0
           fi
 
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +

@@ -83,6 +83,13 @@ def test_main_install_llama_cpp_reports_failure(tmp_path: Path, capsys):
     assert "kein passendes Paket" in out.err
 
 
+def test_download_parser_accepts_extreme_suite():
+    args = build_parser().parse_args(["download", "--suite", "extreme"])
+    assert args.cmd == "download"
+    assert args.suite == "extreme"
+
+
+
 def test_build_parser_compare_requires_at_least_one_input():
     args = build_parser().parse_args(["compare", "results/A", "results/B", "--strict"])
     assert args.inputs == ["results/A", "results/B"]

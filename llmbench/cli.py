@@ -336,7 +336,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--hardware",
         choices=["cpu", "gpu", "gpu_overload", "both"],
         default="both",
-        help="Nur CPU-, nur GPU-Profile oder beides testen.",
+        help=(
+            "Hardware-Auswahl: cpu, gpu (mit VRAM-Preflight), gpu_overload "
+            "(Full-GPU trotz VRAM-Warnung erzwingen) oder both."
+        ),
     )
     run.add_argument("--skip-endpoint", action="store_true")
     run.add_argument(

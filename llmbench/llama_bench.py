@@ -11,7 +11,7 @@ from typing import IO, Any
 
 from .config import normalize_flash_attention
 from .i18n import _
-from .llama_flags import load_flags
+from .llama_flags import load_flags, no_op_offload_flags
 from .monitor import ResourceMonitor, strip_samples
 from .utils import csv_value, file_fingerprint, kill_process_tree, read_json, resolve_executable, run_capture, utc_now_iso, write_json
 
@@ -31,6 +31,81 @@ def _extract_json(stdout: str) -> list[dict[str, Any]]:
     if not isinstance(data, list):
         raise ValueError("Die JSON-Ausgabe von llama-bench ist keine Liste")
     return data
+
+
+def _extract_partial_json_rows(stdout: str) -> list[dict[str, Any]]:
+    """Rettet vollstaendige llama-bench-Zeilen aus einem abgebrochenen JSON-Array.
+
+    llama-bench schreibt erfolgreiche Teiltests bereits nach stdout. Scheitert
+    erst eine spaetere Long-Context-Stufe, fehlt dem JSON-Array nur noch sein
+    Abschluss. Ein Decoder pro Objekt kann die bis dahin vollstaendigen Zeilen
+    trotzdem sicher lesen.
+    """
+    text = stdout.strip()
+    if not text.startswith("["):
+        return []
+
+    decoder = json.JSONDecoder()
+    rows: list[dict[str, Any]] = []
+    index = 1
+    while index < len(text):
+        while index < len(text) and (text[index].isspace() or text[index] == ","):
+            index += 1
+        if index >= len(text) or text[index] == "]":
+            break
+        try:
+            value, index = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            break
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
+def _long_context_failure_metadata(
+    rows: list[dict[str, Any]],
+    bench_cfg: dict[str, Any],
+    stderr: str,
+) -> dict[str, Any]:
+    completed = sorted({int(row.get("n_depth") or 0) for row in rows})
+    requested = [int(value) for value in bench_cfg.get("context_depths", [])]
+    missing = [depth for depth in requested if depth not in completed]
+    failed_depth = missing[0] if missing else None
+
+    text = (stderr or "").lower()
+    capacity_markers = (
+        "failed to create context",
+        "out of memory",
+        "cuda out of memory",
+        "failed to allocate",
+        "allocation failed",
+        "insufficient memory",
+        "not enough memory",
+    )
+    capacity_limited = any(marker in text for marker in capacity_markers)
+
+    max_completed = max(completed) if completed else None
+    if failed_depth is not None:
+        message = (
+            "Long-Context-Test teilweise erfolgreich: Messwerte bis "
+            f"{max_completed if max_completed is not None else '?'} Tokens wurden gespeichert; "
+            f"Kontextstufe {failed_depth} konnte nicht erstellt werden."
+        )
+    else:
+        message = (
+            "Long-Context-Test teilweise erfolgreich: Bereits abgeschlossene Messwerte "
+            "wurden gespeichert, bevor llama-bench abgebrochen ist."
+        )
+    if capacity_limited:
+        message += " Die fehlende Stufe wird als Kapazitaetsgrenze behandelt."
+
+    return {
+        "completed_context_depths": completed,
+        "failed_context_depth": failed_depth,
+        "limit_status": "skipped_capacity" if capacity_limited else "failed",
+        "capacity_limited": capacity_limited,
+        "message": message,
+    }
 
 
 def probe_build(exe: str, with_hash: bool = True) -> dict[str, Any]:
@@ -119,11 +194,17 @@ def _base_args(
         "-ctv", str(bench_cfg.get("cache_type_v", "f16")),
         "-ngl", str(profile.get("gpu_layers", -1)),
     ]
+    is_cpu_only = str(profile.get("gpu_layers", -1)) == "0"
     args += load_flags(
         exe,
-        no_mmap=with_no_mmap and (bool(profile.get("no_mmap")) or str(profile.get("gpu_layers", -1)) == "0"),
+        no_mmap=with_no_mmap and (bool(profile.get("no_mmap")) or is_cpu_only),
         mlock=bool(profile.get("mlock")),
     )
+    if is_cpu_only:
+        # -ngl 0 allein reicht bei CUDA-Builds nicht zwingend: Host-Tensor-
+        # Operationen koennen weiterhin auf die GPU ausgelagert werden.
+        args.extend(["-dev", "none"])
+        args += no_op_offload_flags(exe, benchmark=True)
     if with_progress:
         args.append("--progress")
     threads = profile.get("threads", "auto")
@@ -133,7 +214,7 @@ def _base_args(
         args.extend(["-ncmoe", str(profile["cpu_moe_layers"])])
     if profile.get("no_kv_offload"):
         args.extend(["-nkvo", "1"])
-    if profile.get("device"):
+    if profile.get("device") and not is_cpu_only:
         args.extend(["-dev", str(profile["device"])])
     if profile.get("tensor_split"):
         args.extend(["-ts", str(profile["tensor_split"])])
@@ -346,6 +427,25 @@ def run_llama_bench(
         }
     if returncode != 0:
         err_detail = (stderr or "").strip()[-2000:]
+        if test_kind == "long_context":
+            partial_rows = _extract_partial_json_rows(stdout)
+            if partial_rows:
+                meta = _long_context_failure_metadata(partial_rows, bench_cfg, stderr)
+                return {
+                    "kind": test_kind,
+                    "status": "partial",
+                    "rows": partial_rows,
+                    "error": meta["message"],
+                    "error_detail": err_detail,
+                    "duration_seconds": duration,
+                    "stderr_tail": (stderr or "")[-4000:],
+                    "telemetry": light,
+                    "completed_context_depths": meta["completed_context_depths"],
+                    "failed_context_depth": meta["failed_context_depth"],
+                    "limit_status": meta["limit_status"],
+                    "capacity_limited": meta["capacity_limited"],
+                    "warnings": [meta["message"]],
+                }
         return {
             "kind": test_kind,
             "status": "failed",
@@ -380,7 +480,7 @@ def run_llama_bench(
 
 def flatten_bench_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    if result.get("status") != "ok":
+    if result.get("status") not in {"ok", "partial"}:
         return rows
     for row in result.get("rows", []):
         rows.append({

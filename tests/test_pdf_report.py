@@ -137,3 +137,35 @@ def test_pdf_survives_an_empty_run(tmp_path: Path):
     minimal = {"server_name": "leer", "models": [], "hardware": {}, "warnings": []}
     out = generate_run_pdf(minimal, tmp_path / "leer.pdf")
     assert out.exists()
+
+
+def test_pdf_keeps_partial_long_context_rows(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["profiles"][0]["benchmarks"]["long_context"] = {
+        "kind": "long_context",
+        "status": "partial",
+        "rows": [{
+            "n_prompt": 0,
+            "n_gen": 128,
+            "n_depth": 131072,
+            "avg_ts": 55.73,
+            "stddev_ts": 0.12,
+        }],
+        "error": "Kontextstufe 262144 konnte nicht erstellt werden.",
+        "telemetry": {},
+    }
+    text = _text(generate_run_pdf(summary, tmp_path / "partial.pdf"))
+    assert "55.73" in text
+    assert "262144" in text
+
+
+def test_pdf_labels_soak_capacity_limit(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [{
+        "label": "long",
+        "status": "skipped_capacity",
+        "error": "Full-GPU passt nicht in den erkannten VRAM.",
+    }]
+    text = _text(generate_run_pdf(summary, tmp_path / "capacity.pdf"))
+    assert "Kapazitaetsgrenze" in text
+    assert "VRAM" in text

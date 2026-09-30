@@ -42,12 +42,13 @@ def _extract_partial_json_rows(stdout: str) -> list[dict[str, Any]]:
     trotzdem sicher lesen.
     """
     text = stdout.strip()
-    if not text.startswith("["):
+    start = text.find("[")
+    if start < 0:
         return []
 
     decoder = json.JSONDecoder()
     rows: list[dict[str, Any]] = []
-    index = 1
+    index = start + 1
     while index < len(text):
         while index < len(text) and (text[index].isspace() or text[index] == ","):
             index += 1

@@ -39,10 +39,15 @@ Gesamtdurchsatz aller parallelen Requests. Mit mehr Parallelität kann System-TP
 
 ## Statuswerte
 
-- `ok`: erfolgreich
-- `skipped_capacity`: erwartete Hardware-/Speichergrenze
+- `ok`: vollständig erfolgreich
+- `partial`: bereits abgeschlossene Teilmessungen sind gültig, eine spätere Stufe konnte aber nicht beendet werden
+- `skipped_capacity`: erwartete Hardware-/Speichergrenze; kein allgemeiner Benchmarkfehler
 - `timeout`: Zeitlimit überschritten
 - `failed`: tatsächlicher Test-/Backendfehler
+
+### Teilweise Long-Context-Ergebnisse
+
+Scheitert beispielsweise erst eine 262K-Kontextstufe, bleiben bereits vollständig gemessene 0K-, 8K-, 32K-, 65K- oder 131K-Stufen erhalten. Der Bericht zeigt diese Werte als `partial` und speichert zusätzlich die nicht erreichte Kontextstufe. Bei einer erkannten Speicher-/Kontextgrenze wird sie als Kapazitätsgrenze dokumentiert.
 
 ## Effizienz
 

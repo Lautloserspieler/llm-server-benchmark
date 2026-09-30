@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -179,7 +180,7 @@ def test_long_context_failure_keeps_completed_rows_and_marks_capacity(monkeypatc
             "stddev_ts": 0.1,
         },
     ]
-    complete_json = __import__("json").dumps(rows, indent=2)
+    complete_json = json.dumps(rows, indent=2)
     truncated_json = complete_json[:-1]
 
     class FakeMonitor:

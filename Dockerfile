@@ -32,6 +32,7 @@ ARG CUDA_DEVEL_IMAGE
 ARG CUDA_RUNTIME_IMAGE
 ARG LLAMA_CPP_COMMIT
 ARG LLMBENCH_CUDA_ARCHITECTURES
+ARG SECURITY_REFRESH=manual
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:/opt/llama.cpp:${PATH} \
@@ -45,7 +46,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LLMBENCH_LLAMA_DIR=/opt/llama.cpp
 # `apt-get upgrade` zieht Sicherheitsupdates nach, die im CUDA-Basisimage noch
 # fehlen (z. B. libssl3t64); der Trivy-Scan in CI blockt sonst HIGH-Findings.
-RUN apt-get update \
+RUN echo "Ubuntu security refresh: ${SECURITY_REFRESH}" \
+    && apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
       ca-certificates libgomp1 python3 python3-venv \

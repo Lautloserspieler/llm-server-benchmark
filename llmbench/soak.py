@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from .capacity import CapacityLimitError
 from .monitor import ResourceMonitor, strip_samples
 from .utils import ensure_dir, utc_now_iso, write_json
 
@@ -359,8 +360,19 @@ def run_soak_test(
         )
         wall = time.perf_counter() - started
         telemetry = monitor.stop()
+    except CapacityLimitError as exc:
+        result = {
+            "kind": "soak",
+            "label": label,
+            "status": "skipped_capacity",
+            "error": str(exc),
+            "started_at": started_at,
+            "duration_seconds": time.perf_counter() - started,
+        }
+        write_json(log_dir / "raw_soak.json", result)
+        return result
     except Exception as exc:
-        return {
+        result = {
             "kind": "soak",
             "label": label,
             "status": "failed",
@@ -369,6 +381,8 @@ def run_soak_test(
             "started_at": started_at,
             "duration_seconds": time.perf_counter() - started,
         }
+        write_json(log_dir / "raw_soak.json", result)
+        return result
     finally:
         if gpu_proc is not None:
             backend.stop_server(gpu_proc)

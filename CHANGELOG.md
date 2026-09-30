@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Ubuntu-Referenzlauf: CPU-Isolation, Kapazitaetsstatus und Long-Context-Recovery
+
+- CPU-only llama.cpp-Profile erzwingen jetzt neben `gpu_layers: 0` auch
+  `device none`. Aktuelle Builds bekommen zusaetzlich deaktivierten
+  Operation-Offload, damit CUDA-Builds Prompt-Operationen nicht mehr
+  unbemerkt auf die GPU auslagern.
+- Erwartete VRAM-Grenzen beim kombinierten Soak-Test werden als
+  `skipped_capacity` statt als allgemeiner Fehler gespeichert. Das gilt
+  insbesondere fuer Full-GPU-Profile, deren Gewichte bereits im Preflight
+  nicht in den erkannten VRAM passen.
+- Bricht ein Long-Context-Lauf erst an einer spaeten Kontextstufe ab, bleiben
+  alle zuvor vollstaendig abgeschlossenen Prompt-/Generationspaare erhalten.
+  Der Lauf wird als `partial` gespeichert und dokumentiert die nicht erreichte
+  Kontextstufe sowie eine erkannte Kapazitaetsgrenze.
+- Terminal-, HTML-, PDF-, CSV- und Vergleichsausgaben verstehen die neuen
+  Teil-/Kapazitaetsstatus und zeigen valide Teilergebnisse weiterhin an.
+- Regressionstests bilden die im Ubuntu/RTX-5090-Referenzlauf beobachteten
+  Faelle nach: CPU-Prompt-Offload trotz `-ngl 0`, VRAM-Limit im Soak-Test
+  sowie Qwen3.8-27B mit erfolgreichen Messungen bis 131K und Abbruch bei 262K.
+
 ### GitHub Wiki als zweisprachiges Benutzerhandbuch
 
 - Die versionierten Wiki-Quellen liegen jetzt getrennt unter `wiki/de/` und

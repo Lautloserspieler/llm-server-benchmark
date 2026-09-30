@@ -67,7 +67,19 @@ def _long_context_failure_metadata(
     bench_cfg: dict[str, Any],
     stderr: str,
 ) -> dict[str, Any]:
-    completed = sorted({int(row.get("n_depth") or 0) for row in rows})
+    parts_by_depth: dict[int, set[str]] = {}
+    for row in rows:
+        depth = int(row.get("n_depth") or 0)
+        parts = parts_by_depth.setdefault(depth, set())
+        if int(row.get("n_prompt") or 0) > 0:
+            parts.add("prompt")
+        if int(row.get("n_gen") or 0) > 0:
+            parts.add("generation")
+    completed = sorted(
+        depth
+        for depth, parts in parts_by_depth.items()
+        if {"prompt", "generation"}.issubset(parts)
+    )
     requested = [int(value) for value in bench_cfg.get("context_depths", [])]
     missing = [depth for depth in requested if depth not in completed]
     failed_depth = missing[0] if missing else None

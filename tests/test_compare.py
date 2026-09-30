@@ -138,6 +138,50 @@ def test_failed_run_stays_visible_in_comparison(tmp_path: Path):
     assert statuses == {"A": "ok", "B": "timeout"}
 
 
+def test_partial_long_context_keeps_valid_rows_and_marks_missing_depth(tmp_path: Path):
+    full = make_summary("A")
+    partial = make_summary("B")
+
+    full_bench = {
+        "kind": "long_context",
+        "status": "ok",
+        "rows": [
+            {"n_prompt": 0, "n_gen": 128, "n_depth": 131072, "avg_ts": 56.0},
+            {"n_prompt": 0, "n_gen": 128, "n_depth": 262144, "avg_ts": 45.0},
+        ],
+        "telemetry": {},
+    }
+    partial_bench = {
+        "kind": "long_context",
+        "status": "partial",
+        "rows": [
+            {"n_prompt": 0, "n_gen": 128, "n_depth": 131072, "avg_ts": 55.0},
+        ],
+        "error": "Kontextstufe 262144 konnte nicht erstellt werden.",
+        "failed_context_depth": 262144,
+        "limit_status": "skipped_capacity",
+        "telemetry": {},
+    }
+    full["models"][0]["profiles"][0]["benchmarks"] = {"long_context": full_bench}
+    partial["models"][0]["profiles"][0]["benchmarks"] = {"long_context": partial_bench}
+
+    dirs = []
+    for name, summary in (("a", full), ("b", partial)):
+        path = tmp_path / name
+        path.mkdir()
+        (path / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        dirs.append(path)
+
+    report, _issues = compare_summaries(dirs, tmp_path / "out")
+    html = report.read_text(encoding="utf-8")
+    section = html.split("Benchmark-Vergleich")[1].split("<h2>")[0]
+
+    assert "pg0+128@d131072" in section or "tg128@d131072" in section
+    assert "55.00" in section
+    assert "262144" in section
+    assert "Teilweise" in section
+
+
 def test_comparison_contains_endpoint_and_efficiency(tmp_path: Path):
     endpoint = {
         "status": "ok",

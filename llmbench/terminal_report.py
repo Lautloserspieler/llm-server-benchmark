@@ -27,6 +27,8 @@ STATUS_STYLES = {
     "partial": "bold yellow",
     "skipped_capacity": "bold yellow",
 }
+
+
 def status_label(status: str | None) -> str:
     # Literale _()-Aufrufe, damit die Uebersetzungspruefung sie findet.
     labels = {

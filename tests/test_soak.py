@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from llmbench.capacity import CapacityLimitError
 from llmbench.soak import (
     _partition_soak_profiles,
     _summarize_load,
@@ -222,6 +223,31 @@ def test_partition_soak_profiles_respects_explicit_budget_without_oversubscripti
     assert cpu_runtime["threads"] == 12
     assert gpu_runtime["threads"] == 4
     assert settings["cpu_server_threads"] + settings["gpu_server_threads"] == 16
+
+
+def test_run_soak_test_marks_gpu_capacity_preflight_as_skipped(tmp_path: Path, monkeypatch):
+    _patched_async_client(monkeypatch, httpx.MockTransport(_ok_response_handler))
+
+    class _CapacityBackend(_FakeBackend):
+        def start_server(self, _model_path, profile, endpoint_cfg, _bench_cfg, _log_path):
+            if int(profile.get("gpu_layers", -1)) != 0:
+                raise CapacityLimitError("Full-GPU passt nicht in den erkannten VRAM.")
+            return super().start_server(_model_path, profile, endpoint_cfg, _bench_cfg, _log_path)
+
+    backend = _CapacityBackend()
+    result = run_soak_test(
+        backend, "huge.gguf",
+        {"name": "CPU-Only", "gpu_layers": 0},
+        {"name": "Full-GPU", "gpu_layers": -1},
+        _soak_cfg(), {"batch_size": 2048}, tmp_path,
+        duration_seconds=1, label="capacity",
+    )
+
+    assert result["status"] == "skipped_capacity"
+    assert "VRAM" in result["error"]
+    assert len(backend.stopped) == 1
+    saved = json.loads((tmp_path / "soak_capacity" / "raw_soak.json").read_text())
+    assert saved["status"] == "skipped_capacity"
 
 
 def test_run_soak_test_stops_servers_and_reports_failure_when_health_check_fails(tmp_path: Path, monkeypatch):

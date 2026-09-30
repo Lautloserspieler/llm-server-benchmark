@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from .capacity import CapacityLimitError
 from .monitor import ResourceMonitor, strip_samples
 from .utils import ensure_dir, utc_now_iso, write_json
 
@@ -307,6 +308,7 @@ def run_soak_test(
     cpu_runtime_profile, gpu_runtime_profile, thread_settings = _partition_soak_profiles(
         cpu_profile, gpu_profile, soak_cfg
     )
+    result: dict[str, Any]
     try:
         cpu_endpoint_cfg = {
             "base_url": cpu_url,
@@ -359,8 +361,19 @@ def run_soak_test(
         )
         wall = time.perf_counter() - started
         telemetry = monitor.stop()
+    except CapacityLimitError as exc:
+        result = {
+            "kind": "soak",
+            "label": label,
+            "status": "skipped_capacity",
+            "error": str(exc),
+            "started_at": started_at,
+            "duration_seconds": time.perf_counter() - started,
+        }
+        write_json(log_dir / "raw_soak.json", result)
+        return result
     except Exception as exc:
-        return {
+        result = {
             "kind": "soak",
             "label": label,
             "status": "failed",
@@ -369,6 +382,8 @@ def run_soak_test(
             "started_at": started_at,
             "duration_seconds": time.perf_counter() - started,
         }
+        write_json(log_dir / "raw_soak.json", result)
+        return result
     finally:
         if gpu_proc is not None:
             backend.stop_server(gpu_proc)
@@ -380,7 +395,7 @@ def run_soak_test(
     gpu_summary = _summarize_load(gpu_results, float(duration_seconds), drop_fraction)
     status, error = _soak_status(cpu_summary, gpu_summary)
 
-    result: dict[str, Any] = {
+    result = {
         "kind": "soak",
         "label": label,
         "status": status,

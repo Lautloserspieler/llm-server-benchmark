@@ -263,5 +263,7 @@
   "bereits aktiv": "already active",
   "ja": "yes",
   "nein": "no",
-  "root-Rechte fehlen.": "root rights missing."
+  "root-Rechte fehlen.": "root rights missing.",
+  "Teilweise": "Partial",
+  "Kapazitaetsgrenze": "Capacity limit"
 }

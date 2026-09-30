@@ -23,6 +23,27 @@ def supports_load_mode(exe: str) -> bool:
     return "--load-mode" in (proc.stdout or "") + (proc.stderr or "")
 
 
+@lru_cache(maxsize=16)
+def supports_no_op_offload(exe: str) -> bool:
+    """True, wenn der installierte llama.cpp-Build Operation-Offload abschalten kann."""
+    try:
+        proc = run_capture([exe, "--help"], timeout=15.0)
+    except Exception:
+        return False
+    return "--no-op-offload" in (proc.stdout or "") + (proc.stderr or "")
+
+
+def no_op_offload_flags(exe: str, *, benchmark: bool) -> list[str]:
+    """Schaltet Host-Tensor-Operation-Offload fuer echte CPU-only-Laeufe ab.
+
+    llama-bench verwendet fuer diese Option einen expliziten 0/1-Wert,
+    llama-server dagegen die boolesche Langform.
+    """
+    if not supports_no_op_offload(exe):
+        return []
+    return ["-nopo", "1"] if benchmark else ["--no-op-offload"]
+
+
 def load_flags(exe: str, no_mmap: bool, mlock: bool) -> list[str]:
     """Kommandozeilen-Optionen fuer "ohne mmap laden" und/oder "im RAM sperren"."""
     if not no_mmap and not mlock:

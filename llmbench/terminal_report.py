@@ -21,10 +21,23 @@ from .report import fms, fnum
 from .utils import human_bytes
 from .i18n import _
 
-STATUS_STYLES = {"ok": "bold green", "timeout": "bold yellow"}
+STATUS_STYLES = {
+    "ok": "bold green",
+    "timeout": "bold yellow",
+    "partial": "bold yellow",
+    "skipped_capacity": "bold yellow",
+}
+
+
 def status_label(status: str | None) -> str:
     # Literale _()-Aufrufe, damit die Uebersetzungspruefung sie findet.
-    labels = {"ok": _("OK"), "timeout": _("Zeitueberschreitung"), "failed": _("Fehler")}
+    labels = {
+        "ok": _("OK"),
+        "timeout": _("Zeitueberschreitung"),
+        "failed": _("Fehler"),
+        "partial": _("Teilweise"),
+        "skipped_capacity": _("Kapazitaetsgrenze"),
+    }
     return labels.get(str(status), str(status))
 
 
@@ -122,22 +135,29 @@ def _bench_table(profile: dict[str, Any]) -> Table:
     table.add_column(_("Gen."), justify="right")
     table.add_column(_("Depth"), justify="right")
     for kind, result in profile.get("benchmarks", {}).items():
-        if result.get("status") != "ok":
+        bench_rows = flatten_bench_rows(result)
+        if not bench_rows:
             table.add_row(
                 kind, _status_text(result.get("status")), str(result.get("error") or ""),
                 "", "", "", "", "",
             )
             continue
-        for row in flatten_bench_rows(result):
+        row_status = "partial" if result.get("status") == "partial" else "ok"
+        for row in bench_rows:
             table.add_row(
                 kind,
-                _status_text("ok"),
+                _status_text(row_status),
                 str(row.get("test")),
                 Text(fnum(row.get("avg_ts")), style="bold"),
                 fnum(row.get("stddev_ts")),
                 str(row.get("n_prompt") if row.get("n_prompt") is not None else "—"),
                 str(row.get("n_gen") if row.get("n_gen") is not None else "—"),
                 str(row.get("n_depth") if row.get("n_depth") is not None else "—"),
+            )
+        if result.get("status") == "partial" and result.get("error"):
+            table.add_row(
+                kind, _status_text("partial"), str(result["error"]),
+                "", "", "", "", "",
             )
     return table
 

@@ -487,14 +487,22 @@ def print_summary_table(summary: dict[str, Any]) -> None:
             for kind, result in profile.get("benchmarks", {}).items():
                 bench_rows = flatten_bench_rows(result)
                 if not bench_rows:
-                    label = _("Zeitueberschreitung") if result.get("status") == "timeout" else _("Fehler")
+                    labels = {
+                        "timeout": _("Zeitueberschreitung"),
+                        "skipped_capacity": _("Kapazitaetsgrenze"),
+                        "partial": _("Teilweise"),
+                    }
+                    label = labels.get(result.get("status"), _("Fehler"))
                     rows.append((model_name, str(profile.get("name")), kind, label, ""))
                     continue
                 for row in bench_rows:
+                    test_name = str(row.get("test"))
+                    if result.get("status") == "partial":
+                        test_name += f" ({_('Teilweise')})"
                     rows.append((
                         model_name,
                         str(profile.get("name")),
-                        str(row.get("test")),
+                        test_name,
                         f"{float(row.get('avg_ts') or 0):.2f}",
                         f"±{float(row.get('stddev_ts') or 0):.2f}",
                     ))

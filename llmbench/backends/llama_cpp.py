@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BenchmarkBackend
-from ..capacity import profile_vram_issue_for_path
+from ..capacity import CapacityLimitError, profile_vram_issue_for_path
 from ..endpoint import (
     start_llama_server,
     stop_llama_server,
@@ -261,7 +261,7 @@ class LlamaCppBackend(BenchmarkBackend):
     ) -> tuple[Any, str]:
         capacity_issue = profile_vram_issue_for_path(model_path, profile)
         if capacity_issue:
-            raise RuntimeError(capacity_issue)
+            raise CapacityLimitError(capacity_issue)
 
         runtime_profile, adjustments = _runtime_profile(profile)
         baseline_mib = _nvidia_vram_used_mib() if _is_gpu_profile(runtime_profile) else None

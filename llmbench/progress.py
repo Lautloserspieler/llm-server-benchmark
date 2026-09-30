@@ -98,14 +98,22 @@ class Reporter:
         self._durations.setdefault(self._current_kind, []).append(elapsed)
         self.finished_tests += 1
         self._clear()
-        if status == "ok":
+        if status in {"ok", "partial"} and rows:
+            prefix = _("Teilweise") + ": " if status == "partial" else ""
             for row in rows:
                 self._write_line(
-                    f"    {row.get('test', '?'):<22} {float(row.get('avg_ts') or 0):>10.2f} t/s"
+                    f"    {prefix}{row.get('test', '?'):<22} "
+                    f"{float(row.get('avg_ts') or 0):>10.2f} t/s"
                     f"   ±{float(row.get('stddev_ts') or 0):.2f}"
                 )
+            if status == "partial" and error:
+                self._write_line(f"    {_('Kapazitaetsgrenze')}: {error}")
         else:
-            label = _("Zeitueberschreitung") if status == "timeout" else _("Fehler")
+            labels = {
+                "timeout": _("Zeitueberschreitung"),
+                "skipped_capacity": _("Kapazitaetsgrenze"),
+            }
+            label = labels.get(status, _("Fehler"))
             self._write_line(f"    {label}: {error or 'unbekannt'}")
 
     def note(self, text: str) -> None:

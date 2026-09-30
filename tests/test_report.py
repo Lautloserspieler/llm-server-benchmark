@@ -120,3 +120,55 @@ def test_report_marks_failed_soak_run(tmp_path: Path):
     generate_run_html(summary, out)
     html = out.read_text(encoding="utf-8")
     assert "Server nicht erreichbar" in html
+
+
+def test_report_and_csv_keep_partial_long_context_rows(tmp_path: Path):
+    summary = _summary()
+    partial = {
+        "kind": "long_context",
+        "status": "partial",
+        "rows": [{
+            "n_prompt": 0,
+            "n_gen": 128,
+            "n_depth": 131072,
+            "avg_ts": 55.73,
+            "stddev_ts": 0.12,
+        }],
+        "error": (
+            "Long-Context-Test teilweise erfolgreich: Messwerte bis 131072 Tokens "
+            "wurden gespeichert; Kontextstufe 262144 konnte nicht erstellt werden."
+        ),
+        "failed_context_depth": 262144,
+        "limit_status": "skipped_capacity",
+        "telemetry": {},
+    }
+    summary["models"][0]["profiles"][0]["benchmarks"]["long_context"] = partial
+
+    html_path = tmp_path / "report.html"
+    generate_run_html(summary, html_path)
+    html = html_path.read_text(encoding="utf-8")
+    assert "55.73" in html
+    assert "Teilweise" in html
+    assert "262144" in html
+
+    csv_path = tmp_path / "benchmarks.csv"
+    _write_csv(csv_path, summary)
+    rows = list(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
+    long_rows = [row for row in rows if row["kind"] == "long_context"]
+    assert len(long_rows) == 1
+    assert long_rows[0]["status"] == "partial"
+    assert long_rows[0]["avg_ts"] == "55.73"
+
+
+def test_report_marks_soak_capacity_limit_without_calling_it_failure(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["soak"] = [{
+        "label": "long",
+        "status": "skipped_capacity",
+        "error": "Full-GPU passt nicht in den erkannten VRAM.",
+    }]
+    out = tmp_path / "report.html"
+    generate_run_html(summary, out)
+    html = out.read_text(encoding="utf-8")
+    assert "Kapazitaetsgrenze" in html
+    assert "VRAM" in html

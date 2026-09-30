@@ -227,6 +227,19 @@ def _records(summary: dict[str, Any]) -> list[dict[str, Any]]:
                         "n_prompt": row.get("n_prompt"), "n_gen": row.get("n_gen"),
                         "n_depth": row.get("n_depth"),
                     })
+                if result.get("status") == "partial":
+                    # Erfolgreiche Einzelzeilen bleiben vergleichbar. Gleichzeitig
+                    # merken wir uns die spaetere Grenze, damit ein anderer Server
+                    # mit einer zusaetzlichen Kontextstufe dort nicht "nicht getestet"
+                    # angezeigt bekommt.
+                    out.append({
+                        "server": _server(summary), "model": model_name,
+                        "profile": profile.get("name"), "kind": kind,
+                        "test": "(Grenze)", "status": "partial",
+                        "error": result.get("error"), "avg_ts": None, "stddev_ts": None,
+                        "n_prompt": None, "n_gen": None,
+                        "n_depth": result.get("failed_context_depth"),
+                    })
     return out
 
 
@@ -328,8 +341,13 @@ def _issues_html(issues: list[dict[str, str]]) -> str:
 
 
 def _status_cell(status: str | None, error: str | None = None) -> str:
-    label = _("Zeitueberschreitung") if status == "timeout" else _("Fehler")
-    cls = "status-timeout" if status == "timeout" else "status-failed"
+    labels = {
+        "timeout": _("Zeitueberschreitung"),
+        "partial": _("Teilweise"),
+        "skipped_capacity": _("Kapazitaetsgrenze"),
+    }
+    label = labels.get(str(status), _("Fehler"))
+    cls = "status-timeout" if status in {"timeout", "partial", "skipped_capacity"} else "status-failed"
     title = f" title='{esc(error)}'" if error else ""
     return f"<td class='num'><span class='{cls}'{title}>{label}</span></td>"
 

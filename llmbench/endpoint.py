@@ -19,7 +19,7 @@ from .config import normalize_flash_attention
 from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
 from .monitor import ResourceMonitor, strip_samples
 from .i18n import _
-from .llama_flags import load_flags
+from .llama_flags import load_flags, no_op_offload_flags
 from .utils import (
     auth_headers,
     format_exit_code,
@@ -214,11 +214,17 @@ def start_llama_server(
         "-ngl", server_ngl,
     ]
     # CPU-only: Modell muss vollstaendig in den RAM geladen werden.
+    is_cpu_only = str(gpu_layers) == "0"
     cmd += load_flags(
         exe,
-        no_mmap=bool(profile.get("no_mmap")) or str(gpu_layers) == "0",
+        no_mmap=bool(profile.get("no_mmap")) or is_cpu_only,
         mlock=bool(profile.get("mlock")),
     )
+    if is_cpu_only:
+        # Ein CUDA-Build darf bei CPU-only weder Layer noch Host-Tensor-
+        # Operationen auf einen Beschleuniger auslagern.
+        cmd.extend(["-dev", "none"])
+        cmd += no_op_offload_flags(exe, benchmark=False)
 
     if endpoint_cfg.get("fit"):
         cmd.append("--fit")
@@ -250,7 +256,7 @@ def start_llama_server(
         cmd.extend(["-t", str(threads)])
     if profile.get("cpu_moe_layers") is not None:
         cmd.extend(["-ncmoe", str(profile["cpu_moe_layers"])])
-    if profile.get("device"):
+    if profile.get("device") and not is_cpu_only:
         cmd.extend(["-dev", str(profile["device"])])
     if profile.get("tensor_split"):
         cmd.extend(["-ts", str(profile["tensor_split"])])

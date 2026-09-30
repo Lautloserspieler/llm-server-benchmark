@@ -12,6 +12,8 @@ gpu_layers: 0
 
 Useful for CPU comparisons, RAM bandwidth testing, and large models that do not fit in VRAM.
 
+For llama.cpp, llmbench now enforces an actual CPU-only device path for this profile. In addition to `gpu_layers: 0`, device selection is forced to `none`; on builds that support it, operation offload is disabled as well. This prevents a CUDA build from silently moving prompt operations to the GPU.
+
 ## Full-GPU
 
 ```yaml

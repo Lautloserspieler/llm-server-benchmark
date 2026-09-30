@@ -39,10 +39,15 @@ Total throughput across all parallel requests. Higher concurrency can increase s
 
 ## Status values
 
-- `ok`: successful
-- `skipped_capacity`: expected hardware or memory boundary
+- `ok`: fully successful
+- `partial`: completed sub-measurements remain valid, but a later stage could not finish
+- `skipped_capacity`: expected hardware or memory boundary; not a generic benchmark failure
 - `timeout`: configured time limit exceeded
 - `failed`: actual test or backend failure
+
+### Partial long-context results
+
+If, for example, only the 262K context stage fails, fully completed 0K, 8K, 32K, 65K, or 131K measurements are retained. Reports show those values as `partial` and also record the context stage that could not be reached. When the failure matches a memory/context limit, it is documented as a capacity boundary.
 
 ## Efficiency
 

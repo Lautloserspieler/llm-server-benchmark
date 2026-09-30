@@ -12,6 +12,8 @@ gpu_layers: 0
 
 Für CPU-Vergleiche, RAM-Bandbreite und große Modelle außerhalb des VRAM.
 
+Bei llama.cpp erzwingt llmbench für dieses Profil zusätzlich ein reines CPU-Gerät. Neben `gpu_layers: 0` wird die Geräteauswahl auf `none` gesetzt; bei Builds mit entsprechender Unterstützung wird außerdem Operation-Offload deaktiviert. Dadurch darf ein CUDA-Build nicht mehr unbemerkt Prompt-Operationen auf die GPU auslagern.
+
 ## Full-GPU
 
 ```yaml

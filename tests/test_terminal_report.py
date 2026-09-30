@@ -117,3 +117,36 @@ def test_terminal_report_marks_failed_model():
     summary["models"][0]["error"] = "Modell nicht gefunden"
     text = _render(summary)
     assert "Modell nicht gefunden" in text
+
+
+def test_terminal_report_keeps_partial_long_context_rows():
+    summary = _summary()
+    summary["models"][0]["profiles"][0]["benchmarks"]["long_context"] = {
+        "kind": "long_context",
+        "status": "partial",
+        "rows": [{
+            "n_prompt": 0,
+            "n_gen": 128,
+            "n_depth": 131072,
+            "avg_ts": 55.73,
+            "stddev_ts": 0.12,
+        }],
+        "error": "Kontextstufe 262144 konnte nicht erstellt werden.",
+        "telemetry": {},
+    }
+    text = _render(summary)
+    assert "55.73" in text
+    assert "Teilweise" in text
+    assert "262144" in text
+
+
+def test_terminal_report_labels_soak_capacity_limit():
+    summary = _summary()
+    summary["models"][0]["soak"] = [{
+        "label": "long",
+        "status": "skipped_capacity",
+        "error": "Full-GPU passt nicht in den erkannten VRAM.",
+    }]
+    text = _render(summary)
+    assert "Kapazitaetsgrenze" in text
+    assert "VRAM" in text

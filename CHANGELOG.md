@@ -21,6 +21,10 @@
 - Regressionstests bilden die im Ubuntu/RTX-5090-Referenzlauf beobachteten
   Faelle nach: CPU-Prompt-Offload trotz `-ngl 0`, VRAM-Limit im Soak-Test
   sowie Qwen3.8-27B mit erfolgreichen Messungen bis 131K und Abbruch bei 262K.
+- Docker-CI erzwingt fuer den Runtime-Security-Layer einen taeglich wechselnden
+  Cache-Key. Dadurch wird `apt-get upgrade` nicht mehr aus einem veralteten
+  BuildKit-Cache wiederverwendet, wenn Ubuntu inzwischen Security-Updates
+  bereitstellt; der teure llama.cpp-CUDA-Build bleibt weiterhin cachebar.
 
 ### GitHub Wiki als zweisprachiges Benutzerhandbuch
 

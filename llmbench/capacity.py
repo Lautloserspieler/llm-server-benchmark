@@ -22,6 +22,11 @@ MIB = 1024 * 1024
 DEFAULT_FULL_GPU_BUDGET_FRACTION = 0.90
 
 
+class CapacityLimitError(RuntimeError):
+    """Erwartete Hardware-/Speichergrenze statt allgemeinem Laufzeitfehler."""
+
+
+
 def total_gpu_vram_bytes(hardware: dict[str, Any]) -> int:
     """Summiert bekannten VRAM in Bytes.
 

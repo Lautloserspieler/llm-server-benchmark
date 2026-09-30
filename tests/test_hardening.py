@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from llmbench import llama_cpp_setup as lcs
+from llmbench import llama_bench, llama_cpp_setup as lcs
 from llmbench import soak, tuner
 from llmbench.backends import llama_cpp as backend_mod
 from llmbench.capacity import profile_vram_issue, total_gpu_vram_bytes
@@ -146,6 +146,95 @@ def test_soak_status_fails_when_any_load_path_has_zero_successes():
     )
     assert status == "ok"
     assert error is None
+
+
+def test_long_context_failure_keeps_completed_rows_and_marks_capacity(monkeypatch, tmp_path: Path):
+    rows = [
+        {
+            "n_prompt": 512,
+            "n_gen": 0,
+            "n_depth": 0,
+            "avg_ts": 3000.0,
+            "stddev_ts": 1.0,
+        },
+        {
+            "n_prompt": 0,
+            "n_gen": 128,
+            "n_depth": 0,
+            "avg_ts": 80.0,
+            "stddev_ts": 0.1,
+        },
+        {
+            "n_prompt": 512,
+            "n_gen": 0,
+            "n_depth": 131072,
+            "avg_ts": 1200.0,
+            "stddev_ts": 2.0,
+        },
+        {
+            "n_prompt": 0,
+            "n_gen": 128,
+            "n_depth": 131072,
+            "avg_ts": 55.0,
+            "stddev_ts": 0.1,
+        },
+    ]
+    complete_json = __import__("json").dumps(rows, indent=2)
+    truncated_json = complete_json[:-1]
+
+    class FakeMonitor:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            return {"sample_count": 0}
+
+        def latest(self):
+            return None
+
+        def set_target_pid(self, _pid):
+            pass
+
+    monkeypatch.setattr(llama_bench, "resolve_executable", lambda exe: exe)
+    monkeypatch.setattr(llama_bench, "load_flags", lambda *_a, **_k: [])
+    monkeypatch.setattr(llama_bench, "no_op_offload_flags", lambda *_a, **_k: [])
+    monkeypatch.setattr(llama_bench, "ResourceMonitor", FakeMonitor)
+    monkeypatch.setattr(
+        llama_bench,
+        "_execute",
+        lambda *_a, **_k: (
+            truncated_json,
+            "llama_bench: error: failed to create context with model 'model.gguf'",
+            1,
+            False,
+        ),
+    )
+
+    result = llama_bench.run_llama_bench(
+        "llama-bench",
+        "model.gguf",
+        {
+            "repetitions": 1,
+            "batch_size": 512,
+            "ubatch_size": 512,
+            "context_depths": [0, 131072, 262144],
+            "long_context_prompt_tokens": 512,
+            "long_context_generation_tokens": 128,
+        },
+        {"gpu_layers": -1},
+        "long_context",
+        tmp_path,
+    )
+
+    assert result["status"] == "partial"
+    assert result["limit_status"] == "skipped_capacity"
+    assert result["failed_context_depth"] == 262144
+    assert result["completed_context_depths"] == [0, 131072]
+    assert len(result["rows"]) == 4
+    assert len(llama_bench.flatten_bench_rows(result)) == 4
 
 
 def test_tuner_reads_top_level_gpu_telemetry_in_bytes():

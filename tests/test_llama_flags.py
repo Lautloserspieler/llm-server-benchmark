@@ -7,15 +7,20 @@ from llmbench import llama_flags
 from llmbench.endpoint import start_llama_server
 from llmbench.llama_bench import _base_args, _rejected_no_mmap
 
-NEW_HELP = "-lm,   --load-mode MODE   model loading mode (default: auto)"
+NEW_HELP = (
+    "-lm,   --load-mode MODE   model loading mode (default: auto)\n"
+    "-nopo, --no-op-offload <0|1>   disable host tensor operation offload"
+)
 OLD_HELP = "--no-mmap   do not memory-map model\n--mlock   force system to keep model in RAM"
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
     llama_flags.supports_load_mode.cache_clear()
+    llama_flags.supports_no_op_offload.cache_clear()
     yield
     llama_flags.supports_load_mode.cache_clear()
+    llama_flags.supports_no_op_offload.cache_clear()
 
 
 def _fake_help(monkeypatch, text: str) -> None:
@@ -71,6 +76,8 @@ def test_cpu_server_on_new_build_gets_load_mode_none(monkeypatch, tmp_path: Path
     cmd = captured["cmd"]
     assert "--no-mmap" not in cmd
     assert cmd[cmd.index("-lm") + 1] == "none"
+    assert cmd[cmd.index("-dev") + 1] == "none"
+    assert "--no-op-offload" in cmd
 
 
 def test_cpu_bench_on_new_build_gets_load_mode_none(monkeypatch):
@@ -78,6 +85,8 @@ def test_cpu_bench_on_new_build_gets_load_mode_none(monkeypatch):
     args = _base_args("llama-bench", "m.gguf", {"repetitions": 1, "batch_size": 512, "ubatch_size": 512}, {"gpu_layers": 0})
     assert "--no-mmap" not in args
     assert args[args.index("-lm") + 1] == "none"
+    assert args[args.index("-dev") + 1] == "none"
+    assert args[args.index("-nopo") + 1] == "1"
 
 
 def test_server_rejection_of_no_mmap_is_detected():

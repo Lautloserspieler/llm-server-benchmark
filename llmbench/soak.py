@@ -308,6 +308,7 @@ def run_soak_test(
     cpu_runtime_profile, gpu_runtime_profile, thread_settings = _partition_soak_profiles(
         cpu_profile, gpu_profile, soak_cfg
     )
+    result: dict[str, Any]
     try:
         cpu_endpoint_cfg = {
             "base_url": cpu_url,
@@ -394,7 +395,7 @@ def run_soak_test(
     gpu_summary = _summarize_load(gpu_results, float(duration_seconds), drop_fraction)
     status, error = _soak_status(cpu_summary, gpu_summary)
 
-    result: dict[str, Any] = {
+    result = {
         "kind": "soak",
         "label": label,
         "status": status,

@@ -57,8 +57,19 @@ def fms(seconds: Any) -> str:
 
 
 def status_cell(status: str | None) -> str:
-    cls = {"ok": "status-ok", "timeout": "status-timeout"}.get(str(status), "status-failed")
-    label = {"ok": _("OK"), "timeout": _("Zeitueberschreitung"), "failed": _("Fehler")}.get(str(status), str(status))
+    cls = {
+        "ok": "status-ok",
+        "timeout": "status-timeout",
+        "partial": "status-timeout",
+        "skipped_capacity": "status-timeout",
+    }.get(str(status), "status-failed")
+    label = {
+        "ok": _("OK"),
+        "timeout": _("Zeitueberschreitung"),
+        "failed": _("Fehler"),
+        "partial": _("Teilweise"),
+        "skipped_capacity": _("Kapazitaetsgrenze"),
+    }.get(str(status), str(status))
     return f"<span class='{cls}'>{esc(label)}</span>"
 
 
@@ -89,16 +100,18 @@ def _warnings_block(summary: dict[str, Any]) -> str:
 def _bench_table(profile: dict[str, Any]) -> str:
     rows_html: list[str] = []
     for kind, result in profile.get("benchmarks", {}).items():
-        if result.get("status") != "ok":
+        bench_rows = flatten_bench_rows(result)
+        if not bench_rows:
             rows_html.append(
                 f"<tr><td>{esc(kind)}</td><td>{status_cell(result.get('status'))}</td>"
                 f"<td colspan='6'>{esc(result.get('error'))}</td></tr>"
             )
             continue
-        for row in flatten_bench_rows(result):
+        row_status = "partial" if result.get("status") == "partial" else "ok"
+        for row in bench_rows:
             rows_html.append(
                 "<tr>"
-                f"<td>{esc(kind)}</td><td>{status_cell('ok')}</td>"
+                f"<td>{esc(kind)}</td><td>{status_cell(row_status)}</td>"
                 f"<td>{esc(row.get('test'))}</td>"
                 f"<td class='num'><strong>{fnum(row.get('avg_ts'))}</strong></td>"
                 f"<td class='num'>{fnum(row.get('stddev_ts'))}</td>"
@@ -106,6 +119,11 @@ def _bench_table(profile: dict[str, Any]) -> str:
                 f"<td class='num'>{esc(row.get('n_gen'))}</td>"
                 f"<td class='num'>{esc(row.get('n_depth'))}</td>"
                 "</tr>"
+            )
+        if result.get("status") == "partial" and result.get("error"):
+            rows_html.append(
+                f"<tr><td>{esc(kind)}</td><td>{status_cell('partial')}</td>"
+                f"<td colspan='6'>{esc(result.get('error'))}</td></tr>"
             )
     return (
         f"<div class='table-wrap'><table><thead><tr><th>{_('Bereich')}</th><th>{_('Status')}</th><th>{_('Test')}</th>"

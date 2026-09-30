@@ -44,11 +44,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LLMBENCH_LLAMA_CPP_COMMIT=${LLAMA_CPP_COMMIT} \
     LLMBENCH_CUDA_ARCHITECTURES=${LLMBENCH_CUDA_ARCHITECTURES} \
     LLMBENCH_LLAMA_DIR=/opt/llama.cpp
-# `apt-get upgrade` zieht Sicherheitsupdates nach, die im CUDA-Basisimage noch
-# fehlen (z. B. libssl3t64); der Trivy-Scan in CI blockt sonst HIGH-Findings.
-RUN echo "Ubuntu security refresh: ${SECURITY_REFRESH}" \
-    && apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates libgomp1 python3 python3-venv \
     && python3 -m venv /opt/venv \
@@ -69,6 +65,14 @@ COPY --from=llama-build /src/llama.cpp/build/bin/llama-bench /opt/llama.cpp/llam
 COPY --from=llama-build /src/llama.cpp/build/bin/llama-server /opt/llama.cpp/llama-server
 COPY docker/entrypoint.sh /usr/local/bin/llmbench-entrypoint
 RUN chmod 0755 /opt/llama.cpp/llama-bench /opt/llama.cpp/llama-server /usr/local/bin/llmbench-entrypoint
+
+# Sicherheitsupdates absichtlich als letzter veraenderlicher Runtime-Layer:
+# SECURITY_REFRESH wechselt in CI taeglich. So wird apt wirklich neu ausgefuehrt,
+# ohne den teuren llama.cpp-Build oder die Python-Installation zu entwerten.
+RUN echo "Ubuntu security refresh: ${SECURITY_REFRESH}" \
+    && apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.title="llm-server-benchmark" \
       org.opencontainers.image.description="Reproducible CUDA llama.cpp benchmark runtime" \

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -316,8 +317,7 @@ def test_oom_context_levels_migrate_legacy_default_but_preserve_custom_lists():
 
 
 
-@pytest.mark.asyncio
-async def test_quant_stress_without_matching_variants_is_skipped(monkeypatch, tmp_path: Path):
+def test_quant_stress_without_matching_variants_is_skipped(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         quant,
         "load_config",
@@ -329,7 +329,7 @@ async def test_quant_stress_without_matching_variants_is_skipped(monkeypatch, tm
     monkeypatch.setattr(quant, "discover_quant_groups", lambda *_args, **_kwargs: {})
 
     out_dir = tmp_path / "quant"
-    status = await quant.run_quant_stress("benchmark.yaml", out_dir)
+    status = asyncio.run(quant.run_quant_stress("benchmark.yaml", out_dir))
 
     assert status == 2
     result = json.loads((out_dir / "quant.json").read_text(encoding="utf-8"))

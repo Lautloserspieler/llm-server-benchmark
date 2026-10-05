@@ -13,6 +13,21 @@ from llmbench.i18n import _
 from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, print_section, write_json
 
 
+LEGACY_OOM_CONTEXTS = [4096, 8192, 16384, 32768, 65536, 96000, 130000]
+DEFAULT_OOM_CONTEXTS = [
+    4096,
+    8192,
+    16384,
+    32768,
+    65536,
+    98304,
+    131072,
+    196608,
+    262144,
+    393216,
+]
+
+
 def _prompt_for_target(target_tokens: int) -> str:
     # Absichtlich hochgradig wiederholbar: der Test misst Speichergrenzen, nicht
     # Modellqualitaet. Die echte Tokenzahl wird zusaetzlich ueber /tokenize gemessen.
@@ -82,9 +97,18 @@ def _context_levels(cfg: dict) -> list[int]:
     configured = stress_cfg.get("oom_contexts")
     if configured:
         levels = [int(value) for value in configured if int(value) >= 2048]
+        # Alte Setup-Konfigurationen enthielten exakt diese bis 130K reichende
+        # Standardleiter. Nur diesen unveraenderten Legacy-Default migrieren;
+        # bewusst angepasste Benutzerlisten bleiben exakt erhalten.
+        if levels == LEGACY_OOM_CONTEXTS:
+            levels = list(DEFAULT_OOM_CONTEXTS)
     else:
-        levels = [int(value) for value in cfg.get("benchmark", {}).get("context_depths", []) if int(value) >= 2048]
-        levels.extend([4096, 8192, 16384, 32768])
+        levels = [
+            int(value)
+            for value in cfg.get("benchmark", {}).get("context_depths", [])
+            if int(value) >= 2048
+        ]
+        levels.extend(DEFAULT_OOM_CONTEXTS)
     return sorted(set(levels))
 
 

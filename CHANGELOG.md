@@ -16,6 +16,14 @@
   alle zuvor vollstaendig abgeschlossenen Prompt-/Generationspaare erhalten.
   Der Lauf wird als `partial` gespeichert und dokumentiert die nicht erreichte
   Kontextstufe sowie eine erkannte Kapazitaetsgrenze.
+- Das gilt jetzt auch bei einem **Benchmark-Timeout**: vollstaendige Kontextstufen
+  aus dem bereits geschriebenen llama-bench-JSON werden gerettet, waehrend eine
+  nur halb abgeschlossene naechste Stufe verworfen wird. Der Grenzgrund bleibt
+  als `limit_status: timeout` sichtbar.
+- Die OOM-/Kontext-Stressleiter reicht im Standard jetzt bis 393216 Tokens
+  (384K). Alte, unveraenderte Standardlisten bis 130K werden automatisch auf
+  die neue Leiter migriert; explizit angepasste Benutzerlisten bleiben
+  unangetastet.
 - Terminal-, HTML-, PDF-, CSV- und Vergleichsausgaben verstehen die neuen
   Teil-/Kapazitaetsstatus und zeigen valide Teilergebnisse weiterhin an.
 - Regressionstests bilden die im Ubuntu/RTX-5090-Referenzlauf beobachteten

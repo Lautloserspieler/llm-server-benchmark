@@ -502,21 +502,19 @@ def run_llama_bench(
                     for row in partial_rows
                     if int(row.get("n_depth") or 0) in completed
                 ]
-                if not partial_rows:
-                    partial_rows = []
-                else:
+                if partial_rows:
                     return {
                         "kind": test_kind,
                         "status": "partial",
                         "rows": partial_rows,
-                    "error": meta["message"],
-                    "error_detail": err_detail,
-                    "duration_seconds": duration,
-                    "stderr_tail": (stderr or "")[-4000:],
-                    "telemetry": light,
-                    "completed_context_depths": meta["completed_context_depths"],
-                    "failed_context_depth": meta["failed_context_depth"],
-                    "limit_status": meta["limit_status"],
+                        "error": meta["message"],
+                        "error_detail": err_detail,
+                        "duration_seconds": duration,
+                        "stderr_tail": (stderr or "")[-4000:],
+                        "telemetry": light,
+                        "completed_context_depths": meta["completed_context_depths"],
+                        "failed_context_depth": meta["failed_context_depth"],
+                        "limit_status": meta["limit_status"],
                         "capacity_limited": meta["capacity_limited"],
                         "warnings": [meta["message"]],
                     }

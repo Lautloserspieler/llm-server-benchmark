@@ -8,7 +8,7 @@ from llmbench import llama_bench, llama_cpp_setup as lcs
 from llmbench import soak, tuner
 from llmbench.backends import llama_cpp as backend_mod
 from llmbench.capacity import profile_vram_issue, total_gpu_vram_bytes
-from llmbench.stress import multitenant, oom
+from llmbench.stress import multitenant, oom, quant
 
 GIB = 1024 ** 3
 
@@ -313,6 +313,29 @@ def test_oom_context_levels_migrate_legacy_default_but_preserve_custom_lists():
 
     custom = {"stress": {"oom_contexts": [4096, 32768, 65536]}}
     assert oom._context_levels(custom) == [4096, 32768, 65536]
+
+
+
+@pytest.mark.asyncio
+async def test_quant_stress_without_matching_variants_is_skipped(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        quant,
+        "load_config",
+        lambda _path: {
+            "_config_dir": str(tmp_path),
+            "project": {"output_dir": str(tmp_path / "results")},
+        },
+    )
+    monkeypatch.setattr(quant, "discover_quant_groups", lambda *_args, **_kwargs: {})
+
+    out_dir = tmp_path / "quant"
+    status = await quant.run_quant_stress("benchmark.yaml", out_dir)
+
+    assert status == 2
+    result = json.loads((out_dir / "quant.json").read_text(encoding="utf-8"))
+    assert result["status"] == "skipped"
+    assert result["reason"] == "no_matching_quantizations"
+    assert result["groups"] == []
 
 
 def test_tuner_reads_top_level_gpu_telemetry_in_bytes():

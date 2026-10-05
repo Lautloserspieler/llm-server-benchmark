@@ -47,7 +47,9 @@ Gesamtdurchsatz aller parallelen Requests. Mit mehr Parallelität kann System-TP
 
 ### Teilweise Long-Context-Ergebnisse
 
-Scheitert beispielsweise erst eine 262K-Kontextstufe, bleiben bereits vollständig gemessene 0K-, 8K-, 32K-, 65K- oder 131K-Stufen erhalten. Der Bericht zeigt diese Werte als `partial` und speichert zusätzlich die nicht erreichte Kontextstufe. Bei einer erkannten Speicher-/Kontextgrenze wird sie als Kapazitätsgrenze dokumentiert.
+Scheitert beispielsweise erst eine 262K-Kontextstufe, bleiben bereits vollständig gemessene 0K-, 8K-, 32K-, 65K- oder 131K-Stufen erhalten. Das gilt auch dann, wenn `llama-bench` erst durch das konfigurierte Zeitlimit beendet wird. Nur Kontextstufen mit vollständig abgeschlossener Prompt- **und** Generationsmessung werden übernommen; eine halb gemessene nächste Stufe wird verworfen. Der Bericht zeigt die gültigen Werte als `partial` und speichert zusätzlich die nicht erreichte Kontextstufe sowie den Grund (`timeout` oder Kapazitätsgrenze).
+
+Der OOM-/Kapazitätstest verwendet für unveränderte Standardkonfigurationen jetzt eine Leiter bis **393.216 Tokens (384K)** und stoppt beim ersten echten Fehler. Eigene benutzerdefinierte `oom_contexts`-Listen werden nicht verändert.
 
 ## Effizienz
 

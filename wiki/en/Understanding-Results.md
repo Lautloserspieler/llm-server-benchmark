@@ -42,6 +42,7 @@ Total throughput across all parallel requests. Higher concurrency can increase s
 - `ok`: fully successful
 - `partial`: completed sub-measurements remain valid, but a later stage could not finish
 - `skipped_capacity`: expected hardware or memory boundary; not a generic benchmark failure
+- `skipped`: an optional stress test is not applicable, for example because no second quantization of the same base model exists
 - `timeout`: configured time limit exceeded
 - `failed`: actual test or backend failure
 

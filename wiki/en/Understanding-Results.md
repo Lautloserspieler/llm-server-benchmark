@@ -47,7 +47,9 @@ Total throughput across all parallel requests. Higher concurrency can increase s
 
 ### Partial long-context results
 
-If, for example, only the 262K context stage fails, fully completed 0K, 8K, 32K, 65K, or 131K measurements are retained. Reports show those values as `partial` and also record the context stage that could not be reached. When the failure matches a memory/context limit, it is documented as a capacity boundary.
+If, for example, only the 262K context stage fails, fully completed 0K, 8K, 32K, 65K, or 131K measurements are retained. The same now applies when `llama-bench` is terminated by the configured timeout. Only context depths with both prompt-processing **and** generation measurements completed are retained; a half-finished next stage is discarded. Reports show the valid values as `partial` and record the missing context stage plus the limiting reason (`timeout` or capacity boundary).
+
+For unchanged standard configurations, the OOM/capacity stress ladder now extends to **393,216 tokens (384K)** and stops at the first real failure. Explicit custom `oom_contexts` lists remain untouched.
 
 ## Efficiency
 

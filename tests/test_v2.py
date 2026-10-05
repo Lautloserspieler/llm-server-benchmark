@@ -225,7 +225,7 @@ def test_oom_stress_initializes_backend_correctly_and_restarts_per_level(tmp_pat
     rc = asyncio.run(module.run_oom_stress(str(config), tmp_path / "oom"))
     assert rc == 0
     assert calls["backend"] == ("bench", "server")
-    assert calls["starts"] == calls["stops"] == 4  # defaults add 16k/32k as well
+    assert calls["starts"] == calls["stops"] == len(module.DEFAULT_OOM_CONTEXTS)
     data = json.loads((tmp_path / "oom" / "oom.json").read_text(encoding="utf-8"))
     assert data["max_stable_prompt_tokens"] == 32768
 

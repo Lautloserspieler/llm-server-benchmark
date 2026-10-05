@@ -42,6 +42,7 @@ Gesamtdurchsatz aller parallelen Requests. Mit mehr Parallelität kann System-TP
 - `ok`: vollständig erfolgreich
 - `partial`: bereits abgeschlossene Teilmessungen sind gültig, eine spätere Stufe konnte aber nicht beendet werden
 - `skipped_capacity`: erwartete Hardware-/Speichergrenze; kein allgemeiner Benchmarkfehler
+- `skipped`: optionaler Stresstest ist nicht anwendbar, z. B. weil kein zweites Quant desselben Basismodells vorhanden ist
 - `timeout`: Zeitlimit überschritten
 - `failed`: tatsächlicher Test-/Backendfehler
 

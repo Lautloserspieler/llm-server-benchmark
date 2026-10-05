@@ -67,6 +67,9 @@ def _long_context_failure_metadata(
     rows: list[dict[str, Any]],
     bench_cfg: dict[str, Any],
     stderr: str,
+    *,
+    timed_out: bool = False,
+    timeout_s: float | None = None,
 ) -> dict[str, Any]:
     parts_by_depth: dict[int, set[str]] = {}
     for row in rows:
@@ -98,24 +101,41 @@ def _long_context_failure_metadata(
     capacity_limited = any(marker in text for marker in capacity_markers)
 
     max_completed = max(completed) if completed else None
-    if failed_depth is not None:
-        message = (
-            "Long-Context-Test teilweise erfolgreich: Messwerte bis "
-            f"{max_completed if max_completed is not None else '?'} Tokens wurden gespeichert; "
-            f"Kontextstufe {failed_depth} konnte nicht erstellt werden."
-        )
+    if timed_out:
+        timeout_text = f" nach {timeout_s:.0f} s" if timeout_s is not None else ""
+        if failed_depth is not None:
+            message = (
+                "Long-Context-Test teilweise erfolgreich: Messwerte bis "
+                f"{max_completed if max_completed is not None else '?'} Tokens wurden gespeichert; "
+                f"Kontextstufe {failed_depth} war beim Zeitlimit{timeout_text} noch nicht fertig."
+            )
+        else:
+            message = (
+                "Long-Context-Test teilweise erfolgreich: Bereits abgeschlossene Messwerte "
+                f"wurden gespeichert, bevor das Zeitlimit{timeout_text} erreicht wurde."
+            )
+        limit_status = "timeout"
+        capacity_limited = False
     else:
-        message = (
-            "Long-Context-Test teilweise erfolgreich: Bereits abgeschlossene Messwerte "
-            "wurden gespeichert, bevor llama-bench abgebrochen ist."
-        )
-    if capacity_limited:
-        message += " Die fehlende Stufe wird als Kapazitaetsgrenze behandelt."
+        if failed_depth is not None:
+            message = (
+                "Long-Context-Test teilweise erfolgreich: Messwerte bis "
+                f"{max_completed if max_completed is not None else '?'} Tokens wurden gespeichert; "
+                f"Kontextstufe {failed_depth} konnte nicht erstellt werden."
+            )
+        else:
+            message = (
+                "Long-Context-Test teilweise erfolgreich: Bereits abgeschlossene Messwerte "
+                "wurden gespeichert, bevor llama-bench abgebrochen ist."
+            )
+        if capacity_limited:
+            message += " Die fehlende Stufe wird als Kapazitaetsgrenze behandelt."
+        limit_status = "skipped_capacity" if capacity_limited else "failed"
 
     return {
         "completed_context_depths": completed,
         "failed_context_depth": failed_depth,
-        "limit_status": "skipped_capacity" if capacity_limited else "failed",
+        "limit_status": limit_status,
         "capacity_limited": capacity_limited,
         "message": message,
     }
@@ -430,6 +450,38 @@ def run_llama_bench(
     light = strip_samples(telemetry)
 
     if timed_out:
+        if test_kind == "long_context":
+            partial_rows = _extract_partial_json_rows(stdout)
+            if partial_rows:
+                meta = _long_context_failure_metadata(
+                    partial_rows,
+                    bench_cfg,
+                    stderr,
+                    timed_out=True,
+                    timeout_s=timeout_s,
+                )
+                completed = set(meta["completed_context_depths"])
+                partial_rows = [
+                    row
+                    for row in partial_rows
+                    if int(row.get("n_depth") or 0) in completed
+                ]
+                if partial_rows:
+                    return {
+                        "kind": test_kind,
+                        "status": "partial",
+                        "rows": partial_rows,
+                        "error": meta["message"],
+                        "duration_seconds": duration,
+                        "stderr_tail": (stderr or "")[-4000:],
+                        "telemetry": light,
+                        "completed_context_depths": meta["completed_context_depths"],
+                        "failed_context_depth": meta["failed_context_depth"],
+                        "limit_status": meta["limit_status"],
+                        "capacity_limited": False,
+                        "timed_out": True,
+                        "warnings": [meta["message"]],
+                    }
         return {
             "kind": test_kind,
             "status": "timeout",
@@ -444,10 +496,19 @@ def run_llama_bench(
             partial_rows = _extract_partial_json_rows(stdout)
             if partial_rows:
                 meta = _long_context_failure_metadata(partial_rows, bench_cfg, stderr)
-                return {
-                    "kind": test_kind,
-                    "status": "partial",
-                    "rows": partial_rows,
+                completed = set(meta["completed_context_depths"])
+                partial_rows = [
+                    row
+                    for row in partial_rows
+                    if int(row.get("n_depth") or 0) in completed
+                ]
+                if not partial_rows:
+                    partial_rows = []
+                else:
+                    return {
+                        "kind": test_kind,
+                        "status": "partial",
+                        "rows": partial_rows,
                     "error": meta["message"],
                     "error_detail": err_detail,
                     "duration_seconds": duration,
@@ -456,9 +517,9 @@ def run_llama_bench(
                     "completed_context_depths": meta["completed_context_depths"],
                     "failed_context_depth": meta["failed_context_depth"],
                     "limit_status": meta["limit_status"],
-                    "capacity_limited": meta["capacity_limited"],
-                    "warnings": [meta["message"]],
-                }
+                        "capacity_limited": meta["capacity_limited"],
+                        "warnings": [meta["message"]],
+                    }
         return {
             "kind": test_kind,
             "status": "failed",

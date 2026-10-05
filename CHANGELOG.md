@@ -24,6 +24,11 @@
   (384K). Alte, unveraenderte Standardlisten bis 130K werden automatisch auf
   die neue Leiter migriert; explizit angepasste Benutzerlisten bleiben
   unangetastet.
+- Fehlen fuer den Quantisierungs-Stresstest zwei Quantisierungen desselben
+  Basismodells, wird der Test jetzt als `skipped` (Exitcode 2) statt als
+  Fehler behandelt und schreibt trotzdem eine strukturierte `quant.json`
+  mit dem Grund. Die normale Referenzsuite wird dadurch nicht mehr
+  faelschlich als teilweise fehlgeschlagener Stresslauf markiert.
 - Terminal-, HTML-, PDF-, CSV- und Vergleichsausgaben verstehen die neuen
   Teil-/Kapazitaetsstatus und zeigen valide Teilergebnisse weiterhin an.
 - Regressionstests bilden die im Ubuntu/RTX-5090-Referenzlauf beobachteten

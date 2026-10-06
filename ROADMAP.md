@@ -1,5 +1,7 @@
 # Roadmap
 
+🇩🇪 Deutsch | [🇬🇧 English](ROADMAP.en.md)
+
 Dieses Dokument beschreibt die geplante Weiterentwicklung von `llmbench` — was schon
 funktioniert, was in Arbeit ist und was reine Idee ohne Zusage ist. Es ersetzt keine
 Entscheidung im Einzelfall; Details zu einzelnen Schritten können sich noch ändern.

@@ -1,5 +1,7 @@
 # LLM Server Benchmark
 
+[🇩🇪 Deutsch](README.de.md) | 🇬🇧 English
+
 **Reproducible benchmarking for local LLM inference across llama.cpp and containerized server backends.**
 
 [![Tests](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/tests.yml/badge.svg)](https://github.com/Lautloserspieler/llm-server-benchmark/actions/workflows/tests.yml)
@@ -78,7 +80,7 @@ It should also answer:
 | **Intel GPU** | 📋 Planned | `xpu-smi` |
 | **Apple Silicon** | ✅ Benchmark execution | Platform llama.cpp build; telemetry is more limited |
 
-See [ROADMAP.md](ROADMAP.md) for the current development plan.
+See [ROADMAP.en.md](ROADMAP.en.md) for the current development plan.
 
 ---
 
@@ -595,7 +597,7 @@ The CI pipeline:
 - publishes build provenance
 - pushes approved builds to GHCR
 
-See [docs/DOCKER.md](docs/DOCKER.md) for usage details.
+See [docs/DOCKER.en.md](docs/DOCKER.en.md) for usage details.
 
 ---
 
@@ -639,7 +641,7 @@ The GitHub Actions CI currently validates the project on:
 
 Additional CI checks include CodeQL, dependency review, `pip-audit`, packaging tests, coverage, Docker smoke tests and container vulnerability scanning.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+See [CONTRIBUTING.en.md](CONTRIBUTING.en.md) before opening a pull request.
 
 ---
 
@@ -666,10 +668,10 @@ The repository also uses:
 | Document | Purpose |
 | --- | --- |
 | [Wiki](https://github.com/Lautloserspieler/llm-server-benchmark/wiki) | Bilingual German/English user guide, methodology, model suite, troubleshooting and result interpretation |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, architecture and contribution rules |
-| [ROADMAP.md](ROADMAP.md) | Backend, telemetry and feature roadmap |
-| [CHANGELOG.md](CHANGELOG.md) | Released changes |
-| [docs/DOCKER.md](docs/DOCKER.md) | Docker usage |
+| [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Development setup, architecture and contribution rules |
+| [ROADMAP.en.md](ROADMAP.en.md) | Backend, telemetry and feature roadmap |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Released changes |
+| [docs/DOCKER.en.md](docs/DOCKER.en.md) | Docker usage |
 | [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) | Release validation checklist |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
 
@@ -697,7 +699,7 @@ Good contribution areas include:
 - reproducibility checks
 - documentation
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+Please read [CONTRIBUTING.en.md](CONTRIBUTING.en.md) before submitting a pull request.
 
 ---
 

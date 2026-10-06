@@ -18,9 +18,19 @@ Please fill this out in German or English — either is fine.
 - [ ] `pytest -q` läuft lokal grün durch / `pytest -q` passes locally
 - [ ] `ruff check .` läuft lokal ohne Fehler / `ruff check .` passes locally
 - [ ] Tests wurden hinzugefügt/erweitert / Tests added or updated
-- [ ] `CHANGELOG.md` wurde aktualisiert (deutsch, versionierte Überschrift) / `CHANGELOG.md` updated (German, versioned heading)
+- [ ] `CHANGELOG.md` und `CHANGELOG.en.md` wurden aktualisiert; externe Beiträge nennen `@username` / `CHANGELOG.md` and `CHANGELOG.en.md` updated; external contributions credit `@username`
 - [ ] Für neue `_()`-umschlossene Strings: passender Eintrag in `llmbench/locales/en.json` ergänzt / For any new `_()`-wrapped strings: matching entry added to `llmbench/locales/en.json`
 - [ ] Bei neuem Backend: symmetrischer Install-/Uninstall-Pfad vorhanden (siehe CONTRIBUTING.md) / For a new backend: symmetric install/uninstall path present (see CONTRIBUTING.md)
+- [ ] Markdown-Dokumentation ist in DE/EN synchron / Markdown documentation is synchronized in DE/EN
+
+## Autorenschaft / Attribution
+
+<!-- GitHub-Handle der Person(en), die den Beitrag erstellt haben, z. B. @username -->
+<!-- GitHub handle(s) of the person/people who created the contribution, e.g. @username -->
+
+- [ ] Die ursprüngliche Autorenschaft der Commits bleibt erhalten / Original commit authorship is preserved
+- [ ] Bei einem externen Beitrag nennt der Changelog den Contributor mit `@username` / For an external contribution, the changelog credits the contributor with `@username`
+- [ ] Falls mehrere Personen substanziell beigetragen haben, sind alle als Autor/Co-Autor oder in den Credits genannt / If multiple people contributed substantially, all are credited as author/co-author or in the credits
 
 ## Testnachweis / Test evidence
 

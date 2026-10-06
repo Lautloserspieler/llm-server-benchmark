@@ -1,5 +1,7 @@
 # Modelle
 
+🇩🇪 Deutsch | [🇬🇧 English](README.en.md)
+
 Lege hier die zu benchmarkenden **GGUF-Dateien** ab.
 
 Beim nächsten Start von `START_BENCHMARK.bat` werden alle `*.gguf`-Dateien in diesem Ordner und seinen Unterordnern automatisch erkannt und in `benchmark.yaml` eingetragen.

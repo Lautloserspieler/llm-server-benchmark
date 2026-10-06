@@ -1,5 +1,7 @@
 # Linux: llama.cpp automatisch kompilieren
 
+🇩🇪 Deutsch | [🇬🇧 English](linux-llamacpp-source-build.en.md)
+
 `llmbench install-llama-cpp` waehlt unter Linux automatisch einen passenden llama.cpp-Build und bevorzugt auf NVIDIA-Systemen den nativen CUDA-Pfad.
 
 ## Standardweg

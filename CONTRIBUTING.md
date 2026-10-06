@@ -1,5 +1,7 @@
 # Beitragen zu llmbench
 
+🇩🇪 Deutsch | [🇬🇧 English](CONTRIBUTING.en.md)
+
 Danke, dass du an `llmbench` mitarbeiten willst. Dieses Dokument beschreibt Architektur,
 Entwicklungs-Setup, Code-Konventionen und den Ablauf für Pull Requests.
 
@@ -10,11 +12,11 @@ LLM-Server-Inferencing. Statt nur einer Tokens/s-Zahl erfasst es die komplette U
 (GPU, Treiber, Backend-Build, Modell-Hashes, Benchmark-Konfiguration, Energiezustand), damit
 zwei Systeme unter nachweisbar vergleichbaren Bedingungen gegenübergestellt werden können.
 
-Trotz des generischen Namens "LLM **Server** Benchmark" unterstützt das Projekt aktuell
-ausschließlich **llama.cpp** als Backend und **NVIDIA/NVML** als Telemetriequelle. Das ist
-kein Designziel, sondern der aktuelle Stand — siehe [`ROADMAP.md`](ROADMAP.md) für geplante
-Erweiterungen. Beides ist im Code bereits als Plugin-Punkt vorgesehen (siehe unten), damit
-neue Backends/Telemetriequellen ohne Eingriffe in den Kern ergänzt werden können.
+Das Projekt unterstützt **llama.cpp** nativ und **vLLM** als Docker-Backend. Für
+GPU-Telemetrie sind **NVIDIA/NVML** und **AMD/rocm-smi** implementiert. Weitere Backends
+und Telemetriequellen sind über die vorhandenen Plugin-Schnittstellen vorgesehen — siehe
+[`ROADMAP.md`](ROADMAP.md). Neue Implementierungen sollen den Kern nicht unnötig
+spezialisieren.
 
 ## Architektur im Überblick
 
@@ -25,9 +27,10 @@ Zwei abstrakte Basisklassen bilden die zentralen Erweiterungspunkte:
 | `BenchmarkBackend` | `llmbench/backends/base.py` | Kapselt, *wie* ein Inferenz-Server gestartet, benchmarkt und gestoppt wird |
 | `TelemetryProvider` | `llmbench/telemetry.py` | Kapselt, *woher* GPU-Auslastung/VRAM/Temperatur/Power kommen |
 
-Aktuell existiert je Abstraktion eine konkrete Implementierung: `LlamaCppBackend`
-(`llmbench/backends/llama_cpp.py`) und `NvidiaProvider` (`llmbench/telemetry.py`, NVML-basiert),
-daneben ein `DefaultProvider` als Telemetrie-Fallback ohne Hardwarezugriff.
+Bei den Backends dienen `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) und
+`VllmBackend` (`llmbench/backends/vllm.py`) als Referenzimplementierungen. Bei der
+Telemetrie existieren unter anderem `NvidiaProvider`, `AmdProvider`,
+`CompositeProvider` und `DefaultProvider` als Fallback ohne Hardwarezugriff.
 
 Weitere zentrale Module:
 
@@ -38,11 +41,6 @@ Weitere zentrale Module:
 - `config.py` — Konfigurationsmodell (Pydantic) inkl. `FINGERPRINT_KEYS` für Vergleichbarkeit
 - `compare.py` — Vergleich zweier Ergebnisse, inkl. `--strict`-Konsistenzprüfung
 - `i18n.py` / `locales/en.json` — Übersetzungsschicht (siehe Abschnitt "Sprache & i18n")
-
-> **In Arbeit (parallele Branches, noch nicht gemerged):** Ein vLLM-Backend über Docker
-> (`llmbench/backends/vllm.py`, siehe Phase A der Roadmap) und ein AMD-GPU-Telemetrie-Provider
-> über `rocm-smi` (Phase D) werden aktuell in separaten Branches entwickelt. Bis zum Merge
-> gelten die Beispiele unten als Referenz auf den geplanten, noch nicht finalen Code.
 
 ## Entwicklungs-Setup
 
@@ -61,8 +59,8 @@ pytest -q
 ruff check .
 ```
 
-Beide müssen grün sein — CI läuft dieselben Prüfungen auf Ubuntu und Windows mit
-Python 3.10 und 3.12.
+Beide müssen grün sein — CI prüft das Projekt unter Ubuntu und Windows über die
+unterstützten Python-Versionen 3.10 bis 3.14.
 
 ## Code-Konventionen
 
@@ -130,15 +128,13 @@ Python 3.10 und 3.12.
    - `start_server(model_path, profile, endpoint_cfg, bench_cfg, log_path)`
    - `stop_server(proc)`
    - `wait_health(base_url, timeout_s, headers=None)`
-2. Zusätzlich existieren (Stand Phase A der Roadmap) zwei **optionale, nicht-abstrakte**
-   Hooks `begin_profile(...)` / `end_profile()` mit No-op-Default auf der Basisklasse —
-   gedacht für HTTP-only-Backends, die den Server einmal pro Profil starten wollen statt
-   einmal pro Testart. Bestehende Backends müssen sie nicht überschreiben; nur relevant,
-   wenn dein Backend davon profitiert. Die genaue Signatur richtet sich nach dem Stand von
-   `backends/base.py` zum Zeitpunkt deines PRs.
-3. Referenzimplementierung: `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) für den
-   Subprocess-Fall. Sobald gemergt, ist `VllmBackend` (Phase A, Docker-Container-basiert)
-   die Referenz für HTTP-only-Backends.
+2. Zusätzlich existieren zwei **optionale, nicht-abstrakte** Hooks
+   `begin_profile(...)` / `end_profile()` mit No-op-Default auf der Basisklasse. Sie
+   sind für HTTP-only-Backends gedacht, die den Server einmal pro Profil statt einmal pro
+   Testart starten. Die genaue Signatur richtet sich nach dem aktuellen
+   `backends/base.py` zum Zeitpunkt des PRs.
+3. Referenzimplementierungen: `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) für
+   den Subprocess-Fall und `VllmBackend` für Docker-/HTTP-only-Backends.
 4. Backend in der Factory registrieren (`backends/__init__.py`, bzw. wo `get_backend(cfg)`
    liegt) und ein Konfigurationsfeld ergänzen, das das Backend auswählt.
 5. **Tests**: eigene Datei `tests/test_backends_<name>.py`, die jede Methode gegen gemockte
@@ -164,8 +160,8 @@ Python 3.10 und 3.12.
    Initialisierung) und `DefaultProvider` (Fallback ohne Hardwarezugriff) in
    `llmbench/telemetry.py`.
 4. `get_telemetry_provider()` (Factory in `telemetry.py`) um den neuen Provider erweitern.
-   Bei mehreren gleichzeitig verfügbaren Herstellern ist eine `CompositeProvider`-Lösung
-   geplant (siehe ROADMAP.md, Phase D) statt "erster gewinnt".
+   Bei mehreren gleichzeitig verfügbaren Herstellern kombiniert `CompositeProvider` die
+   verfügbaren Quellen, statt nach dem Prinzip "erster gewinnt" zu arbeiten.
 5. **Tests**: `tests/test_telemetry.py` um Fälle mit gemockter Provider-Ausgabe (z. B.
    gefaktes `rocm-smi --json`/`xpu-smi -j`-Output) erweitern — kein Test darf echte
    Hardware voraussetzen; ohne die jeweilige GPU muss `initialize()` sauber `False`
@@ -187,24 +183,224 @@ Kein Backend darf **Install-only** sein. Ziel: nach der Deinstallation sind `doc
 geplanten Mechanismus (`docker_backend.py`, `install-backend`/`uninstall-backend`) stehen in
 [`ROADMAP.md`](ROADMAP.md).
 
+## Autorenschaft, Credits und Attribution
+
+Beiträge sollen klar der Person zugerechnet bleiben, die sie tatsächlich erstellt hat.
+
+- **PR-Autor bleibt sichtbar:** Externe Beiträge werden regulär über Fork/Branch und Pull Request
+  eingereicht. Der Maintainer übernimmt den Beitrag nicht unter seinem eigenen Namen.
+- **Commit-Autorenschaft erhalten:** Commits sollen mit der Git-Identität des ursprünglichen
+  Autors erstellt werden. Maintainer sollen Autor-/Co-Autor-Angaben nicht entfernen oder
+  durch die eigene Identität ersetzen.
+- **Gemeinsame Arbeit:** Wenn mehrere Personen substanziell an demselben Commit gearbeitet
+  haben, kann Git mit `Co-authored-by: Name <email>` verwendet werden.
+- **Changelog-Credit:** Relevante externe Beiträge werden im `CHANGELOG.md` mit dem
+  GitHub-Handle genannt, z. B.:
+  
+  ```markdown
+  - KV-Cache-Erkennung und verifizierte Context-Limits ergänzt — @username
+  ```
+- **Release Notes:** Bei einem Release werden externe Contributors mit `@username` bei den
+  jeweiligen Änderungen oder in einem eigenen Contributors-Abschnitt genannt.
+- **Maintainer-Änderungen an einem fremden PR:** Kleine Integrations-, Review- oder
+  Konfliktlösungsänderungen ändern nicht die ursprüngliche Zuordnung des Features. Falls
+  mehrere Personen wesentliche Teile beigetragen haben, werden alle Beteiligten genannt.
+- **Kein Credit-Shifting:** Review, Merge oder Release durch den Maintainer macht den
+  Maintainer nicht automatisch zum Autor des beigetragenen Codes.
+
+### Merge- und Review-Modell
+
+`main` ist geschützt. Änderungen werden über Pull Requests eingebracht und müssen die
+konfigurierten Branch-Regeln und Status-Checks erfüllen. Für geschützte Bereiche ist ein
+Code-Owner-Review erforderlich. Die Datei `.github/CODEOWNERS` legt den Maintainer als
+Code Owner fest.
+
+Externe Contributors benötigen dafür **keinen direkten Schreibzugriff auf `main`**. Der
+übliche Ablauf ist:
+
+```text
+Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer-Freigabe -> Merge
+```
+
+
+## Externer Contribution-Workflow: Fork bis Merge
+
+Externe Contributors benötigen keinen direkten Schreibzugriff auf dieses Repository. Der
+übliche Weg ist ein eigener Fork, ein Feature-Branch und anschließend ein Pull Request
+gegen `Lautloserspieler/llm-server-benchmark:main`.
+
+### 1. Repository forken und klonen
+
+Erstelle über GitHubs **Fork**-Button einen eigenen Fork des Repositories und klone diesen:
+
+```bash
+git clone https://github.com/<dein-username>/llm-server-benchmark.git
+cd llm-server-benchmark
+```
+
+Füge anschließend das Original-Repository als `upstream` hinzu:
+
+```bash
+git remote add upstream https://github.com/Lautloserspieler/llm-server-benchmark.git
+git remote -v
+```
+
+`origin` zeigt dabei auf deinen Fork, `upstream` auf das Original-Repository.
+
+### 2. Eigenen Fork vor neuer Arbeit aktualisieren
+
+Vor einem neuen Beitrag sollte der lokale `main` auf dem aktuellen Stand von
+`upstream/main` sein:
+
+```bash
+git checkout main
+git fetch upstream
+git merge --ff-only upstream/main
+git push origin main
+```
+
+Wenn `--ff-only` nicht möglich ist, nicht blind einen Merge erzwingen. Prüfe zuerst,
+warum dein Fork von `upstream/main` abweicht.
+
+### 3. Für jede Änderung einen eigenen Branch erstellen
+
+Arbeite nicht direkt auf `main`. Erstelle stattdessen einen aussagekräftigen Branch:
+
+```bash
+git checkout -b feat/capability-provenance
+```
+
+Empfohlene Präfixe:
+
+- `feat/` — neue Funktion
+- `fix/` — Fehlerbehebung
+- `docs/` — Dokumentation
+- `test/` — Tests
+- `refactor/` — interne Umstrukturierung
+- `chore/` — Wartung ohne direkte Funktionsänderung
+
+Ein Branch sollte möglichst ein klar abgegrenztes Thema behandeln.
+
+### 4. Änderungen umsetzen und lokal prüfen
+
+Vor dem Öffnen eines Pull Requests mindestens ausführen:
+
+```bash
+ruff check .
+mypy llmbench
+pytest -q
+```
+
+Für nutzersichtbare Änderungen müssen bei Bedarf beide Changelogs aktualisiert werden:
+
+```text
+CHANGELOG.md
+CHANGELOG.en.md
+```
+
+Bei externen Beiträgen wird der Contributor mit dem GitHub-Handle genannt, zum Beispiel:
+
+```markdown
+- Capability-Provenance-Schema ergänzt — @username
+```
+
+Dokumentationsänderungen müssen die deutsche und englische Gegenstelle synchron halten.
+
+### 5. Mit der eigenen Git-Identität committen
+
+Commits sollen die Identität des tatsächlichen Autors enthalten. Prüfe bei Bedarf:
+
+```bash
+git config user.name
+git config user.email
+```
+
+Es kann eine verifizierte GitHub-E-Mail oder die von GitHub bereitgestellte
+`noreply`-Adresse verwendet werden; eine private persönliche E-Mail muss nicht
+veröffentlicht werden.
+
+Dann Änderungen committen und in den eigenen Fork pushen:
+
+```bash
+git add .
+git commit -m "feat: add capability provenance schema"
+git push -u origin feat/capability-provenance
+```
+
+### 6. Pull Request öffnen
+
+Öffne auf GitHub einen Pull Request von:
+
+```text
+<dein-username>:feat/capability-provenance
+```
+
+nach:
+
+```text
+Lautloserspieler/llm-server-benchmark:main
+```
+
+Fülle das Pull-Request-Template vollständig aus. Wenn der PR ein Issue abschließt, kann
+die Beschreibung zum Beispiel enthalten:
+
+```text
+Closes #123
+```
+
+Wenn nur ein Bezug besteht:
+
+```text
+Related to #123
+```
+
+Große Änderungen sollten nach Möglichkeit vorher in einem Issue abgestimmt werden.
+
+### 7. CI und Review
+
+Nach dem Öffnen des PRs:
+
+1. GitHub Actions führt die erforderlichen Checks aus.
+2. Der Maintainer kann Review-Kommentare oder Änderungswünsche hinterlassen.
+3. Änderungen für das Review werden als weitere Commits auf **denselben Branch** gepusht;
+   der bestehende PR aktualisiert sich automatisch.
+4. Neue Commits können eine frühere Freigabe ungültig machen und ein erneutes Review
+   erforderlich machen.
+5. Offene Review-Diskussionen müssen vor dem Merge geklärt bzw. aufgelöst sein.
+6. Die finale Freigabe erfolgt durch den Maintainer/Code Owner.
+
+Für Review-Fixes wird kein neuer Pull Request erstellt.
+
+### 8. Merge und Attribution
+
+Externe Contributors mergen nicht direkt nach `main`. Sobald alle erforderlichen Checks
+und Reviews erfolgreich sind, führt der Maintainer den Merge durch.
+
+Der ursprüngliche Contributor bleibt als Autor seiner Commits sichtbar. Relevante externe
+Beiträge werden zusätzlich im Changelog und in den Release Notes mit `@username`
+genannt. Review, Merge oder Release durch den Maintainer übertragen die Autorenschaft
+nicht auf den Maintainer.
+
+
 ## Pull-Request-Checkliste
 
 Vor dem Öffnen eines PRs:
 
 - [ ] `pytest -q` und `ruff check .` laufen lokal grün durch.
-- [ ] `CHANGELOG.md` wurde aktualisiert — deutschsprachig, unter einer versionierten
-  `##`-Überschrift, mit thematischer `###`-Unterüberschrift, passend zum bestehenden Stil
-  (siehe vorhandene Einträge).
+- [ ] Beide Changelogs wurden bei nutzersichtbaren Änderungen aktualisiert: `CHANGELOG.md`
+  (Deutsch) und `CHANGELOG.en.md` (Englisch). Bei externen Beiträgen wird der Contributor
+  mit `@username` genannt.
 - [ ] Neue/geänderte Funktionalität hat Tests, die die HTTP-/Subprocess-Grenzen mocken
   (siehe "Code-Konventionen").
 - [ ] Für jeden neuen `_()`-umschlossenen String wurde ein passender Eintrag in
   `llmbench/locales/en.json` ergänzt.
 - [ ] Neue Backends/Telemetrie-Provider haben einen dokumentierten Install-/
   Uninstall-Pfad bzw. fallen sauber auf `DefaultProvider`-Verhalten zurück.
+- [ ] Markdown-Dokumentation bleibt in Deutsch und Englisch synchron.
 
 ## Weitere Referenzen
 
-- [`README.md`](README.md) — Nutzersicht, Quick Start, Ergebnisstruktur
+- [`README.md`](README.md) / [`README.de.md`](README.de.md) — Nutzersicht, Quick Start, Ergebnisstruktur
 - [`ROADMAP.md`](ROADMAP.md) — geplante Backends/Telemetrie-Quellen und Reihenfolge
 - [`docs/DOCKER.md`](docs/DOCKER.md) — Docker-Betrieb von `llmbench` selbst
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — Abnahme vor einem Release

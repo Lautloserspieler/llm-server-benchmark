@@ -569,6 +569,43 @@ results/
 
 The raw files preserve commands, stdout/stderr and telemetry. `summary.json` contains the aggregated data used for reports and comparisons.
 
+### Result schema v3 and provenance
+
+New runs write `summary.json` with `schema_version: 3`. The reference fields keep their
+JSON value together with evidence: profile `gpu_layers` (unit `layers`), detected CPU
+`physical_cores` (unit `cores`), and llama.cpp `avg_ts` (unit `tokens/s`). `source` is one
+of `requested`, `defaulted`, `detected`, `calculated`, `measured`, or `verified`. A missing
+source is explicit through `status: unknown` or `unavailable` and a reason; `null` never
+stands for zero or false. Optional `evidence.method`, `reference`, and `provider` describe
+how a value was obtained without assigning a confidence score.
+
+llmbench continues to read v2 results unchanged and renders their missing provenance as
+unknown. Results from future schema versions are rejected with an update-required error.
+HTML/PDF include a compact provenance table and `benchmarks.csv` retains scalar metrics while
+adding `configured_gpu_layers`, `gpu_layers_source`, and `avg_ts_source` columns.
+Those two `*_source` columns use a source identifier when known and `unknown` or
+`unavailable` when the explicit state applies.
+
+An envelope is intentionally self-contained:
+
+```json
+"avg_ts": {
+  "value": 80.5,
+  "unit": "tokens/s",
+  "source": "measured",
+  "evidence": {"method": "benchmark_measurement"}
+}
+```
+
+Standard methods are `user_configuration`, `configuration_default`,
+`hardware_introspection`, `backend_runtime_introspection`, `backend_log_parsing`,
+`model_metadata`, `derived_calculation`, `benchmark_measurement`, and
+`experimental_validation`; custom methods use `custom:vendor/procedure`. The v3 backend
+descriptor is `{ "id", "name"?, "config" }`; it identifies the selected benchmark backend,
+not the implementation behind an external endpoint. `requested` is an explicit YAML setting,
+while a proven supplied preset is `defaulted`; llmbench does not infer either from matching
+values or profile names.
+
 ---
 
 ## Reports

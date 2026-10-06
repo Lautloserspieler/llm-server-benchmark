@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Result schema v3 provenance
+
+- New result artifacts use schema version 3 and preserve evidence for requested, defaulted,
+  detected, calculated, measured, and verified values. The initial migration covers configured
+  GPU layers, detected physical CPU cores, and measured llama.cpp throughput.
+- Readers, reports, comparison, and CSV export remain compatible with schema v2 results.
+  HTML/PDF now include a compact provenance section and CSV has scalar provenance columns.
+- Thanks to @enmanuelmag for the provenance roadmap and review direction.
+
 ### Ubuntu reference run: CPU isolation, capacity status, and long-context recovery
 
 - CPU-only llama.cpp profiles now enforce `device none` in addition to `gpu_layers: 0`.

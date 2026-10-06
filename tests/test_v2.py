@@ -227,7 +227,7 @@ def test_oom_stress_initializes_backend_correctly_and_restarts_per_level(tmp_pat
     assert calls["backend"] == ("bench", "server")
     assert calls["starts"] == calls["stops"] == len(module.DEFAULT_OOM_CONTEXTS)
     data = json.loads((tmp_path / "oom" / "oom.json").read_text(encoding="utf-8"))
-    assert data["max_stable_prompt_tokens"] == 32768
+    assert data["max_stable_prompt_tokens"] == module.DEFAULT_OOM_CONTEXTS[-1]
 
 
 def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:

@@ -29,10 +29,13 @@ def _available_cpu_threads() -> int:
     scheduler affinity is therefore the best source for CPU-only benchmark
     profiles.  psutil is a fallback for platforms without sched_getaffinity.
     """
+    # This Linux-only API is resolved dynamically so portable type checks pass.
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
     with contextlib.suppress(AttributeError, OSError):
-        affinity = os.sched_getaffinity(0)
-        if affinity:
-            return len(affinity)
+        if callable(sched_getaffinity):
+            affinity = sched_getaffinity(0)
+            if affinity:
+                return len(affinity)
 
     with contextlib.suppress(Exception):
         import psutil

@@ -24,10 +24,13 @@ _TICK_INTERVAL_SECONDS = 2.0
 
 def _available_cpu_threads() -> int:
     """Return CPUs available to this process, respecting affinity/cgroups."""
+    # This Linux-only API is resolved dynamically so portable type checks pass.
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
     with contextlib.suppress(AttributeError, OSError):
-        affinity = os.sched_getaffinity(0)
-        if affinity:
-            return len(affinity)
+        if callable(sched_getaffinity):
+            affinity = sched_getaffinity(0)
+            if affinity:
+                return len(affinity)
 
     with contextlib.suppress(Exception):
         import psutil

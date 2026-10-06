@@ -18,9 +18,10 @@ Please fill this out in German or English — either is fine.
 - [ ] `pytest -q` läuft lokal grün durch / `pytest -q` passes locally
 - [ ] `ruff check .` läuft lokal ohne Fehler / `ruff check .` passes locally
 - [ ] Tests wurden hinzugefügt/erweitert / Tests added or updated
-- [ ] `CHANGELOG.md` wurde aktualisiert (deutsch; externe Beiträge mit `@username`) / `CHANGELOG.md` updated (German; external contributions credited with `@username`)
+- [ ] `CHANGELOG.md` und `CHANGELOG.en.md` wurden aktualisiert; externe Beiträge nennen `@username` / `CHANGELOG.md` and `CHANGELOG.en.md` updated; external contributions credit `@username`
 - [ ] Für neue `_()`-umschlossene Strings: passender Eintrag in `llmbench/locales/en.json` ergänzt / For any new `_()`-wrapped strings: matching entry added to `llmbench/locales/en.json`
 - [ ] Bei neuem Backend: symmetrischer Install-/Uninstall-Pfad vorhanden (siehe CONTRIBUTING.md) / For a new backend: symmetric install/uninstall path present (see CONTRIBUTING.md)
+- [ ] Markdown-Dokumentation ist in DE/EN synchron / Markdown documentation is synchronized in DE/EN
 
 ## Autorenschaft / Attribution
 

@@ -1,5 +1,7 @@
 # Beitragen zu llmbench
 
+🇩🇪 Deutsch | [🇬🇧 English](CONTRIBUTING.en.md)
+
 Danke, dass du an `llmbench` mitarbeiten willst. Dieses Dokument beschreibt Architektur,
 Entwicklungs-Setup, Code-Konventionen und den Ablauf für Pull Requests.
 
@@ -231,19 +233,20 @@ Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer-Freigabe -> Me
 Vor dem Öffnen eines PRs:
 
 - [ ] `pytest -q` und `ruff check .` laufen lokal grün durch.
-- [ ] `CHANGELOG.md` wurde aktualisiert — deutschsprachig, unter einer versionierten
-  `##`-Überschrift, mit thematischer `###`-Unterüberschrift, passend zum bestehenden Stil.
-  Bei externen Beiträgen wird der Contributor mit `@username` genannt.
+- [ ] Beide Changelogs wurden bei nutzersichtbaren Änderungen aktualisiert: `CHANGELOG.md`
+  (Deutsch) und `CHANGELOG.en.md` (Englisch). Bei externen Beiträgen wird der Contributor
+  mit `@username` genannt.
 - [ ] Neue/geänderte Funktionalität hat Tests, die die HTTP-/Subprocess-Grenzen mocken
   (siehe "Code-Konventionen").
 - [ ] Für jeden neuen `_()`-umschlossenen String wurde ein passender Eintrag in
   `llmbench/locales/en.json` ergänzt.
 - [ ] Neue Backends/Telemetrie-Provider haben einen dokumentierten Install-/
   Uninstall-Pfad bzw. fallen sauber auf `DefaultProvider`-Verhalten zurück.
+- [ ] Markdown-Dokumentation bleibt in Deutsch und Englisch synchron.
 
 ## Weitere Referenzen
 
-- [`README.md`](README.md) — Nutzersicht, Quick Start, Ergebnisstruktur
+- [`README.md`](README.md) / [`README.de.md`](README.de.md) — Nutzersicht, Quick Start, Ergebnisstruktur
 - [`ROADMAP.md`](ROADMAP.md) — geplante Backends/Telemetrie-Quellen und Reihenfolge
 - [`docs/DOCKER.md`](docs/DOCKER.md) — Docker-Betrieb von `llmbench` selbst
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — Abnahme vor einem Release

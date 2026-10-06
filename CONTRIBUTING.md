@@ -222,6 +222,166 @@ Externe Contributors benötigen dafür **keinen direkten Schreibzugriff auf `mai
 Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer-Freigabe -> Merge
 ```
 
+
+## Externer Contribution-Workflow: Fork bis Merge
+
+Externe Contributors benötigen keinen direkten Schreibzugriff auf dieses Repository. Der
+übliche Weg ist ein eigener Fork, ein Feature-Branch und anschließend ein Pull Request
+gegen `Lautloserspieler/llm-server-benchmark:main`.
+
+### 1. Repository forken und klonen
+
+Erstelle über GitHubs **Fork**-Button einen eigenen Fork des Repositories und klone diesen:
+
+```bash
+git clone https://github.com/<dein-username>/llm-server-benchmark.git
+cd llm-server-benchmark
+```
+
+Füge anschließend das Original-Repository als `upstream` hinzu:
+
+```bash
+git remote add upstream https://github.com/Lautloserspieler/llm-server-benchmark.git
+git remote -v
+```
+
+`origin` zeigt dabei auf deinen Fork, `upstream` auf das Original-Repository.
+
+### 2. Eigenen Fork vor neuer Arbeit aktualisieren
+
+Vor einem neuen Beitrag sollte der lokale `main` auf dem aktuellen Stand von
+`upstream/main` sein:
+
+```bash
+git checkout main
+git fetch upstream
+git merge --ff-only upstream/main
+git push origin main
+```
+
+Wenn `--ff-only` nicht möglich ist, nicht blind einen Merge erzwingen. Prüfe zuerst,
+warum dein Fork von `upstream/main` abweicht.
+
+### 3. Für jede Änderung einen eigenen Branch erstellen
+
+Arbeite nicht direkt auf `main`. Erstelle stattdessen einen aussagekräftigen Branch:
+
+```bash
+git checkout -b feat/capability-provenance
+```
+
+Empfohlene Präfixe:
+
+- `feat/` — neue Funktion
+- `fix/` — Fehlerbehebung
+- `docs/` — Dokumentation
+- `test/` — Tests
+- `refactor/` — interne Umstrukturierung
+- `chore/` — Wartung ohne direkte Funktionsänderung
+
+Ein Branch sollte möglichst ein klar abgegrenztes Thema behandeln.
+
+### 4. Änderungen umsetzen und lokal prüfen
+
+Vor dem Öffnen eines Pull Requests mindestens ausführen:
+
+```bash
+ruff check .
+mypy llmbench
+pytest -q
+```
+
+Für nutzersichtbare Änderungen müssen bei Bedarf beide Changelogs aktualisiert werden:
+
+```text
+CHANGELOG.md
+CHANGELOG.en.md
+```
+
+Bei externen Beiträgen wird der Contributor mit dem GitHub-Handle genannt, zum Beispiel:
+
+```markdown
+- Capability-Provenance-Schema ergänzt — @username
+```
+
+Dokumentationsänderungen müssen die deutsche und englische Gegenstelle synchron halten.
+
+### 5. Mit der eigenen Git-Identität committen
+
+Commits sollen die Identität des tatsächlichen Autors enthalten. Prüfe bei Bedarf:
+
+```bash
+git config user.name
+git config user.email
+```
+
+Es kann eine verifizierte GitHub-E-Mail oder die von GitHub bereitgestellte
+`noreply`-Adresse verwendet werden; eine private persönliche E-Mail muss nicht
+veröffentlicht werden.
+
+Dann Änderungen committen und in den eigenen Fork pushen:
+
+```bash
+git add .
+git commit -m "feat: add capability provenance schema"
+git push -u origin feat/capability-provenance
+```
+
+### 6. Pull Request öffnen
+
+Öffne auf GitHub einen Pull Request von:
+
+```text
+<dein-username>:feat/capability-provenance
+```
+
+nach:
+
+```text
+Lautloserspieler/llm-server-benchmark:main
+```
+
+Fülle das Pull-Request-Template vollständig aus. Wenn der PR ein Issue abschließt, kann
+die Beschreibung zum Beispiel enthalten:
+
+```text
+Closes #123
+```
+
+Wenn nur ein Bezug besteht:
+
+```text
+Related to #123
+```
+
+Große Änderungen sollten nach Möglichkeit vorher in einem Issue abgestimmt werden.
+
+### 7. CI und Review
+
+Nach dem Öffnen des PRs:
+
+1. GitHub Actions führt die erforderlichen Checks aus.
+2. Der Maintainer kann Review-Kommentare oder Änderungswünsche hinterlassen.
+3. Änderungen für das Review werden als weitere Commits auf **denselben Branch** gepusht;
+   der bestehende PR aktualisiert sich automatisch.
+4. Neue Commits können eine frühere Freigabe ungültig machen und ein erneutes Review
+   erforderlich machen.
+5. Offene Review-Diskussionen müssen vor dem Merge geklärt bzw. aufgelöst sein.
+6. Die finale Freigabe erfolgt durch den Maintainer/Code Owner.
+
+Für Review-Fixes wird kein neuer Pull Request erstellt.
+
+### 8. Merge und Attribution
+
+Externe Contributors mergen nicht direkt nach `main`. Sobald alle erforderlichen Checks
+und Reviews erfolgreich sind, führt der Maintainer den Merge durch.
+
+Der ursprüngliche Contributor bleibt als Autor seiner Commits sichtbar. Relevante externe
+Beiträge werden zusätzlich im Changelog und in den Release Notes mit `@username`
+genannt. Review, Merge oder Release durch den Maintainer übertragen die Autorenschaft
+nicht auf den Maintainer.
+
+
 ## Pull-Request-Checkliste
 
 Vor dem Öffnen eines PRs:

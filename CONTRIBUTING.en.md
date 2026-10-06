@@ -211,6 +211,165 @@ External contributors do **not** need direct write access to `main`. The normal 
 Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer approval -> Merge
 ```
 
+
+## External contribution workflow: fork to merge
+
+External contributors do not need direct write access to this repository. The normal path
+is to work from your own fork, create a dedicated branch, and open a pull request against
+`Lautloserspieler/llm-server-benchmark:main`.
+
+### 1. Fork and clone the repository
+
+Use GitHub's **Fork** button to create your own fork, then clone it:
+
+```bash
+git clone https://github.com/<your-username>/llm-server-benchmark.git
+cd llm-server-benchmark
+```
+
+Add the original repository as `upstream`:
+
+```bash
+git remote add upstream https://github.com/Lautloserspieler/llm-server-benchmark.git
+git remote -v
+```
+
+`origin` should point to your fork, while `upstream` points to the original repository.
+
+### 2. Update your fork before starting new work
+
+Before beginning a new contribution, keep your local `main` synchronized with
+`upstream/main`:
+
+```bash
+git checkout main
+git fetch upstream
+git merge --ff-only upstream/main
+git push origin main
+```
+
+If `--ff-only` is not possible, do not force a merge blindly. First check why your fork
+has diverged from `upstream/main`.
+
+### 3. Create a dedicated branch for each change
+
+Do not work directly on `main`. Create a descriptive branch instead:
+
+```bash
+git checkout -b feat/capability-provenance
+```
+
+Recommended prefixes:
+
+- `feat/` — new feature
+- `fix/` — bug fix
+- `docs/` — documentation
+- `test/` — tests
+- `refactor/` — internal restructuring
+- `chore/` — maintenance without a direct feature change
+
+A branch should ideally cover one clearly scoped topic.
+
+### 4. Implement and test your changes locally
+
+Before opening a pull request, run at least:
+
+```bash
+ruff check .
+mypy llmbench
+pytest -q
+```
+
+For user-visible changes, update both changelogs when applicable:
+
+```text
+CHANGELOG.md
+CHANGELOG.en.md
+```
+
+External contributions are credited with the contributor's GitHub handle, for example:
+
+```markdown
+- Added capability provenance schema — @username
+```
+
+Documentation changes must keep the German and English counterparts synchronized.
+
+### 5. Commit with your own Git identity
+
+Commits should contain the identity of the person who actually authored the work. Check
+your Git identity if necessary:
+
+```bash
+git config user.name
+git config user.email
+```
+
+You may use a verified GitHub email address or GitHub's `noreply` address; you do not need
+to expose a private personal email address.
+
+Commit the changes and push the branch to your fork:
+
+```bash
+git add .
+git commit -m "feat: add capability provenance schema"
+git push -u origin feat/capability-provenance
+```
+
+### 6. Open a pull request
+
+Open a GitHub pull request from:
+
+```text
+<your-username>:feat/capability-provenance
+```
+
+into:
+
+```text
+Lautloserspieler/llm-server-benchmark:main
+```
+
+Fill out the pull-request template completely. If the PR closes an issue, the description
+can include:
+
+```text
+Closes #123
+```
+
+If it is only related to an issue:
+
+```text
+Related to #123
+```
+
+Large changes should preferably be discussed in an issue before implementation starts.
+
+### 7. CI and review
+
+After the PR is opened:
+
+1. GitHub Actions runs the required checks.
+2. The maintainer may leave review comments or request changes.
+3. Push review fixes as additional commits to the **same branch**; the existing PR updates
+   automatically.
+4. New commits may invalidate an earlier approval and require another review.
+5. Open review conversations must be addressed and resolved before merge.
+6. Final approval is performed by the maintainer/code owner.
+
+Do not open a new pull request just to respond to review feedback.
+
+### 8. Merge and attribution
+
+External contributors do not merge directly into `main`. Once all required checks and
+reviews pass, the maintainer performs the merge.
+
+The original contributor remains visible as the author of their commits. Relevant external
+contributions are additionally credited with `@username` in the changelog and release
+notes. Reviewing, merging, or releasing the contribution does not transfer authorship to
+the maintainer.
+
+
 ## Pull-request checklist
 
 Before opening a PR:

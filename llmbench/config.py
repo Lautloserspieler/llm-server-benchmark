@@ -360,6 +360,17 @@ def load_config(path: str | Path) -> dict[str, Any]:
     # unmittelbar nach load_config() auf.
     cfg_dict["_config_path"] = str(p.resolve())
     cfg_dict["_config_dir"] = str(p.resolve().parent)
+    # Preserve evidence from the unmerged document.  Once DEFAULT_CONFIG has
+    # been merged, equal scalar values cannot tell a user request from a
+    # supplied default.
+    origins: dict[tuple[str, str], str] = {}
+    for model in (raw.get("models") or []) if isinstance(raw, dict) else []:
+        if not isinstance(model, dict):
+            continue
+        for profile in model.get("profiles") or []:
+            if isinstance(profile, dict) and "gpu_layers" in profile:
+                origins[(str(model.get("name") or ""), str(profile.get("name") or ""))] = "requested"
+    cfg_dict["_gpu_layers_origins"] = origins
     return cfg_dict
 
 def public_config(cfg: dict[str, Any]) -> dict[str, Any]:

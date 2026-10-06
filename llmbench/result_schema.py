@@ -1,0 +1,268 @@
+"""Versioned result-summary encoding and safe scalar projections.
+
+The benchmark keeps live values scalar.  Provenance envelopes are introduced
+only when a summary is persisted or read by a public result consumer.
+"""
+from __future__ import annotations
+
+import copy
+import math
+from typing import Any
+
+
+SOURCES = {"requested", "defaulted", "detected", "calculated", "measured", "verified"}
+STATUSES = {"unknown", "unavailable"}
+METHODS = {
+    "user_configuration", "configuration_default", "hardware_introspection",
+    "backend_runtime_introspection", "backend_log_parsing", "model_metadata",
+    "derived_calculation", "benchmark_measurement", "experimental_validation",
+}
+
+
+class ResultSchemaError(ValueError):
+    """A persisted result does not satisfy the declared schema contract."""
+
+
+def envelope(value: Any, source: str | None, *, unit: str | None = None,
+             status: str | None = None, reason: str | None = None,
+             evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {"value": value, "source": source}
+    if unit is not None:
+        result["unit"] = unit
+    if status is not None:
+        result["status"] = status
+    if reason is not None:
+        result["reason"] = reason
+    if evidence is not None:
+        result["evidence"] = copy.deepcopy(evidence)
+    return result
+
+
+def _fail(path: str, detail: str) -> None:
+    raise ResultSchemaError(f"Invalid schema v3 value at {path}: {detail}")
+
+
+def _number(value: Any, path: str, integer: bool = False, positive: bool = False) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _fail(path, "value must be a number" if not integer else "value must be an integer")
+    if not math.isfinite(float(value)):
+        _fail(path, "value must be finite")
+    if integer and not isinstance(value, int):
+        _fail(path, "value must be an integer")
+    if positive and value <= 0:
+        _fail(path, "value must be positive")
+
+
+def validate_envelope(item: Any, path: str, *, kind: str, unit: str | None = None,
+                      positive: bool = False) -> None:
+    if not isinstance(item, dict):
+        _fail(path, "must be an object")
+    if "value" not in item or "source" not in item:
+        _fail(path, "requires value and source")
+    source = item["source"]
+    value = item["value"]
+    if source is None:
+        if not isinstance(item.get("status"), str) or item.get("status") not in STATUSES or not isinstance(item.get("reason"), str) or not item["reason"]:
+            _fail(path, "a missing source requires status unknown/unavailable and a reason")
+    elif not isinstance(source, str) or source not in SOURCES:
+        _fail(path, f"unsupported source {source!r}")
+    elif item.get("status") is not None:
+        _fail(path, "known source cannot include unknown/unavailable status")
+    if item.get("status") == "unavailable" and value is not None:
+        _fail(path, "unavailable requires a null value")
+    if value is None and source is not None:
+        _fail(path, "null value requires unknown or unavailable state")
+    if unit is None:
+        if "unit" in item:
+            _fail(path, "does not allow a unit")
+    elif item.get("unit") != unit:
+        _fail(path, f"requires unit {unit!r}")
+    if value is not None:
+        if kind == "integer":
+            _number(value, path, integer=True, positive=positive)
+        elif kind == "number":
+            _number(value, path)
+        elif kind == "string" and not isinstance(value, str):
+            _fail(path, "value must be a string")
+        elif kind == "boolean" and not isinstance(value, bool):
+            _fail(path, "value must be a boolean")
+    evidence = item.get("evidence")
+    if evidence is not None:
+        if not isinstance(evidence, dict):
+            _fail(path, "evidence must be an object")
+        for key in ("method", "reference", "provider"):
+            if key in evidence and not isinstance(evidence[key], str):
+                _fail(path, f"evidence.{key} must be a string")
+        method = evidence.get("method")
+        if method is not None and not (method in METHODS or method.startswith("custom:")):
+            # Unknown names are allowed as future extensions; only structure is strict.
+            pass
+
+
+def _walk_v3(summary: dict[str, Any]) -> None:
+    backend = summary.get("backend")
+    if not isinstance(backend, dict) or not isinstance(backend.get("id"), str) or not backend["id"]:
+        _fail("backend", "requires a non-empty id")
+    assert isinstance(backend, dict)
+    if "name" in backend and not isinstance(backend["name"], str):
+        _fail("backend.name", "must be a string")
+    if "config" not in backend or not isinstance(backend["config"], dict):
+        _fail("backend.config", "requires an object")
+    hardware = summary.get("hardware", {})
+    if not isinstance(hardware, dict):
+        _fail("hardware", "must be an object")
+    cpu = hardware.get("cpu", {})
+    if not isinstance(cpu, dict):
+        _fail("hardware.cpu", "must be an object")
+    if "physical_cores" in cpu:
+        validate_envelope(cpu["physical_cores"], "hardware.cpu.physical_cores", kind="integer", unit="cores", positive=True)
+    models = summary.get("models", [])
+    if not isinstance(models, list):
+        _fail("models", "must be an array")
+    for mi, model in enumerate(models):
+        if not isinstance(model, dict):
+            _fail(f"models[{mi}]", "must be an object")
+        profiles = model.get("profiles", [])
+        if not isinstance(profiles, list):
+            _fail(f"models[{mi}].profiles", "must be an array")
+        for pi, profile in enumerate(profiles):
+            if not isinstance(profile, dict):
+                _fail(f"models[{mi}].profiles[{pi}]", "must be an object")
+            settings = profile.get("settings", {})
+            if not isinstance(settings, dict):
+                _fail(f"models[{mi}].profiles[{pi}].settings", "must be an object")
+            if "gpu_layers" in settings:
+                validate_envelope(settings["gpu_layers"], f"models[{mi}].profiles[{pi}].settings.gpu_layers", kind="integer", unit="layers")
+            if backend.get("id") == "llama_cpp":
+                benchmarks = profile.get("benchmarks", {})
+                if not isinstance(benchmarks, dict):
+                    _fail(f"models[{mi}].profiles[{pi}].benchmarks", "must be an object")
+                for kind, benchmark in benchmarks.items():
+                    if not isinstance(benchmark, dict):
+                        _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}", "must be an object")
+                    rows = benchmark.get("rows", [])
+                    if not isinstance(rows, list):
+                        _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}.rows", "must be an array")
+                    for ri, row in enumerate(rows):
+                        if not isinstance(row, dict):
+                            _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}.rows[{ri}]", "must be an object")
+                        if "avg_ts" in row:
+                            validate_envelope(row["avg_ts"], f"models[{mi}].profiles[{pi}].benchmarks.{kind}.rows[{ri}].avg_ts", kind="number", unit="tokens/s")
+
+
+def validate_summary(summary: Any) -> int:
+    if not isinstance(summary, dict):
+        raise ResultSchemaError("Summary must be an object")
+    version = summary.get("schema_version", 1)
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ResultSchemaError("Invalid schema_version: expected an integer")
+    if version > 3:
+        raise ResultSchemaError(f"Unsupported schema_version {version}; update llmbench")
+    if version < 1:
+        raise ResultSchemaError(f"Invalid schema_version {version}")
+    if version == 3:
+        _walk_v3(summary)
+    return version
+
+
+def scalar_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return a scalar projection for existing calculation/report consumers.
+
+    The input remains unchanged and this is idempotent for v1/v2 values.
+    """
+    version = validate_summary(summary)
+    data = copy.deepcopy(summary)
+    if version != 3:
+        return data
+    backend = data.get("backend") or {}
+    data["backend"] = backend.get("id")
+
+    def unwrap(value: Any) -> Any:
+        if isinstance(value, dict):
+            if "value" in value and "source" in value:
+                return value["value"]
+            return {k: unwrap(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [unwrap(v) for v in value]
+        return value
+
+    projected = unwrap(data)
+    projected["schema_version"] = 2
+    projected["_source_schema_version"] = 3
+    return projected
+
+
+def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract only reference-field provenance for compact public reports."""
+    version = validate_summary(summary)
+    rows: list[dict[str, Any]] = []
+
+    def add(path: str, item: Any) -> None:
+        if isinstance(item, dict) and "value" in item and "source" in item:
+            rows.append({**copy.deepcopy(item), "path": path})
+
+    cpu = (summary.get("hardware") or {}).get("cpu") or {}
+    if version != 3:
+        if "physical_cores" in cpu:
+            rows.append({"path": "hardware.cpu.physical_cores", "value": cpu["physical_cores"], "source": None, "status": "unknown", "reason": "legacy_provenance_missing", "unit": "cores"})
+        for model in summary.get("models") or []:
+            for profile in model.get("profiles") or []:
+                settings = profile.get("settings") or {}
+                if "gpu_layers" in settings:
+                    rows.append({"path": f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: gpu_layers", "value": settings["gpu_layers"], "source": None, "status": "unknown", "reason": "legacy_provenance_missing", "unit": "layers"})
+                for kind, benchmark in (profile.get("benchmarks") or {}).items():
+                    for index, row in enumerate(benchmark.get("rows") or []):
+                        if "avg_ts" in row:
+                            context = row.get("test") or f"row {index}"
+                            if row.get("n_depth") is not None:
+                                context += f", depth {row['n_depth']}"
+                            rows.append({"path": f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}/{context}: avg_ts", "value": row["avg_ts"], "source": None, "status": "unknown", "reason": "legacy_provenance_missing", "unit": "tokens/s"})
+        return rows
+    add("hardware.cpu.physical_cores", cpu.get("physical_cores"))
+    for model in summary.get("models") or []:
+        for profile in model.get("profiles") or []:
+            add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: gpu_layers", (profile.get("settings") or {}).get("gpu_layers"))
+            for kind, benchmark in (profile.get("benchmarks") or {}).items():
+                for index, row in enumerate(benchmark.get("rows") or []):
+                    context = row.get("test") or f"row {index}"
+                    if row.get("n_depth") is not None:
+                        context += f", depth {row['n_depth']}"
+                    add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}/{context}: avg_ts", row.get("avg_ts"))
+    return rows
+
+
+def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], str] | None = None) -> dict[str, Any]:
+    """Copy a live scalar summary into schema v3 without changing the live run."""
+    data = copy.deepcopy(summary)
+    if data.get("schema_version") == 3:
+        validate_summary(data)
+        return data
+    gpu_origins = gpu_origins or {}
+    backend_id = str(data.get("backend") or "llama_cpp")
+    data["schema_version"] = 3
+    data["backend"] = {"id": backend_id, "name": "llama.cpp" if backend_id == "llama_cpp" else backend_id, "config": {}}
+    cpu = (data.get("hardware") or {}).get("cpu")
+    if isinstance(cpu, dict):
+        value = cpu.get("physical_cores")
+        cpu["physical_cores"] = envelope(value, "detected", unit="cores", evidence={"method": "hardware_introspection"}) if value is not None else envelope(None, None, unit="cores", status="unavailable", reason="hardware_not_reported")
+    for model in data.get("models") or []:
+        model_name = str((model.get("model") or {}).get("name") or "")
+        for profile in model.get("profiles") or []:
+            settings = profile.get("settings") or {}
+            if "gpu_layers" in settings:
+                value = settings["gpu_layers"]
+                origin = gpu_origins.get((model_name, str(profile.get("name") or "")))
+                if origin == "requested":
+                    settings["gpu_layers"] = envelope(value, "requested", unit="layers", evidence={"method": "user_configuration"})
+                elif origin == "defaulted":
+                    settings["gpu_layers"] = envelope(value, "defaulted", unit="layers", evidence={"method": "configuration_default", "provider": "llmbench"})
+                else:
+                    settings["gpu_layers"] = envelope(value, None, unit="layers", status="unknown", reason="config_origin_unknown")
+            if backend_id == "llama_cpp":
+                for benchmark in (profile.get("benchmarks") or {}).values():
+                    for row in benchmark.get("rows") or []:
+                        if "avg_ts" in row:
+                            value = row["avg_ts"]
+                            row["avg_ts"] = (envelope(value, "measured", unit="tokens/s", evidence={"method": "benchmark_measurement"}) if value is not None else envelope(None, None, unit="tokens/s", status="unavailable", reason="measurement_missing"))
+    validate_summary(data)
+    return data

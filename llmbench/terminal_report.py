@@ -20,6 +20,7 @@ from .llama_bench import flatten_bench_rows
 from .report import fms, fnum
 from .utils import human_bytes
 from .i18n import _
+from .result_schema import scalar_summary
 
 STATUS_STYLES = {
     "ok": "bold green",
@@ -261,6 +262,7 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> RenderableType | None:
 
 
 def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
+    summary = scalar_summary(summary)
     """Baut die renderbaren Abschnitte des Laufberichts fuer das Terminal."""
     renderables: list[RenderableType] = [_header(summary), _hardware_cards(summary)]
     warnings_panel = _warnings_panel(summary)

@@ -7,6 +7,7 @@ from typing import Any
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
+from .result_schema import provenance_rows, scalar_summary
 
 CSS = r"""
 :root { color-scheme: light dark; --fg:#15202b; --muted:#5d6b78; --line:#d8dee4; --soft:#f5f7f9;
@@ -264,7 +265,34 @@ def _provenance_block(summary: dict[str, Any]) -> str:
     )
 
 
+def _value_provenance_block(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+    rendered = []
+    for row in rows:
+        evidence = row.get("evidence") or {}
+        detail = " · ".join(str(evidence[k]) for k in ("method", "reference", "provider") if evidence.get(k))
+        origin = row.get("source") or row.get("status") or "unknown"
+        origin_label = {
+            "requested": _("angefordert"), "defaulted": _("voreingestellt"),
+            "detected": _("erkannt"), "calculated": _("berechnet"),
+            "measured": _("gemessen"), "verified": _("verifiziert"),
+            "unknown": _("unbekannt"), "unavailable": _("nicht verfuegbar"),
+        }.get(str(origin), str(origin))
+        rendered.append(
+            f"<tr><td>{esc(row.get('path'))}</td><td>{esc(row.get('value'))} {esc(row.get('unit') or '')}</td>"
+            f"<td>{esc(origin_label)}</td><td>{esc(detail or row.get('reason') or '')}</td></tr>"
+        )
+    return (
+        f"<h2>{_('Wert-Provenienz')}</h2><div class='table-wrap'><table><thead><tr>"
+        f"<th>{_('Feld')}</th><th>{_('Wert')}</th><th>{_('Quelle')}</th><th>{_('Evidenz')}</th>"
+        f"</tr></thead><tbody>{''.join(rendered)}</tbody></table></div>"
+    )
+
+
 def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
+    value_provenance = provenance_rows(summary)
+    summary = scalar_summary(summary)
     hw = summary.get("hardware", {})
     cards = [
         (_("Server"), summary.get("server_name")),
@@ -295,6 +323,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
         f"{_('Server-Interaktivitaet und TTFT.')}</div>"
     )
     body.append(_provenance_block(summary))
+    body.append(_value_provenance_block(value_provenance))
 
     for m in summary.get("models", []):
         meta = m.get("model", {})

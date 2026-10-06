@@ -1,5 +1,7 @@
 # Docker + NVIDIA CUDA Runtime
 
+🇩🇪 Deutsch | [🇬🇧 English](DOCKER.en.md)
+
 Seit v1.5.0 kann `llm-server-benchmark` unter Linux und Windows in einer reproduzierbaren CUDA-Container-Umgebung laufen. Fuer Nutzer bleiben **nur die vorhandenen Einstiegspunkte** relevant:
 
 - Linux/macOS: `./setup.sh` und `./START_BENCHMARK.sh`

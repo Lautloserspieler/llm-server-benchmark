@@ -1,5 +1,7 @@
 # Beitragen zu llmbench
 
+🇩🇪 Deutsch | [🇬🇧 English](CONTRIBUTING.en.md)
+
 Danke, dass du an `llmbench` mitarbeiten willst. Dieses Dokument beschreibt Architektur,
 Entwicklungs-Setup, Code-Konventionen und den Ablauf für Pull Requests.
 
@@ -10,11 +12,11 @@ LLM-Server-Inferencing. Statt nur einer Tokens/s-Zahl erfasst es die komplette U
 (GPU, Treiber, Backend-Build, Modell-Hashes, Benchmark-Konfiguration, Energiezustand), damit
 zwei Systeme unter nachweisbar vergleichbaren Bedingungen gegenübergestellt werden können.
 
-Trotz des generischen Namens "LLM **Server** Benchmark" unterstützt das Projekt aktuell
-ausschließlich **llama.cpp** als Backend und **NVIDIA/NVML** als Telemetriequelle. Das ist
-kein Designziel, sondern der aktuelle Stand — siehe [`ROADMAP.md`](ROADMAP.md) für geplante
-Erweiterungen. Beides ist im Code bereits als Plugin-Punkt vorgesehen (siehe unten), damit
-neue Backends/Telemetriequellen ohne Eingriffe in den Kern ergänzt werden können.
+Das Projekt unterstützt **llama.cpp** nativ und **vLLM** als Docker-Backend. Für
+GPU-Telemetrie sind **NVIDIA/NVML** und **AMD/rocm-smi** implementiert. Weitere Backends
+und Telemetriequellen sind über die vorhandenen Plugin-Schnittstellen vorgesehen — siehe
+[`ROADMAP.md`](ROADMAP.md). Neue Implementierungen sollen den Kern nicht unnötig
+spezialisieren.
 
 ## Architektur im Überblick
 
@@ -25,9 +27,10 @@ Zwei abstrakte Basisklassen bilden die zentralen Erweiterungspunkte:
 | `BenchmarkBackend` | `llmbench/backends/base.py` | Kapselt, *wie* ein Inferenz-Server gestartet, benchmarkt und gestoppt wird |
 | `TelemetryProvider` | `llmbench/telemetry.py` | Kapselt, *woher* GPU-Auslastung/VRAM/Temperatur/Power kommen |
 
-Aktuell existiert je Abstraktion eine konkrete Implementierung: `LlamaCppBackend`
-(`llmbench/backends/llama_cpp.py`) und `NvidiaProvider` (`llmbench/telemetry.py`, NVML-basiert),
-daneben ein `DefaultProvider` als Telemetrie-Fallback ohne Hardwarezugriff.
+Bei den Backends dienen `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) und
+`VllmBackend` (`llmbench/backends/vllm.py`) als Referenzimplementierungen. Bei der
+Telemetrie existieren unter anderem `NvidiaProvider`, `AmdProvider`,
+`CompositeProvider` und `DefaultProvider` als Fallback ohne Hardwarezugriff.
 
 Weitere zentrale Module:
 
@@ -38,11 +41,6 @@ Weitere zentrale Module:
 - `config.py` — Konfigurationsmodell (Pydantic) inkl. `FINGERPRINT_KEYS` für Vergleichbarkeit
 - `compare.py` — Vergleich zweier Ergebnisse, inkl. `--strict`-Konsistenzprüfung
 - `i18n.py` / `locales/en.json` — Übersetzungsschicht (siehe Abschnitt "Sprache & i18n")
-
-> **In Arbeit (parallele Branches, noch nicht gemerged):** Ein vLLM-Backend über Docker
-> (`llmbench/backends/vllm.py`, siehe Phase A der Roadmap) und ein AMD-GPU-Telemetrie-Provider
-> über `rocm-smi` (Phase D) werden aktuell in separaten Branches entwickelt. Bis zum Merge
-> gelten die Beispiele unten als Referenz auf den geplanten, noch nicht finalen Code.
 
 ## Entwicklungs-Setup
 
@@ -61,8 +59,8 @@ pytest -q
 ruff check .
 ```
 
-Beide müssen grün sein — CI läuft dieselben Prüfungen auf Ubuntu und Windows mit
-Python 3.10 und 3.12.
+Beide müssen grün sein — CI prüft das Projekt unter Ubuntu und Windows über die
+unterstützten Python-Versionen 3.10 bis 3.14.
 
 ## Code-Konventionen
 
@@ -130,15 +128,13 @@ Python 3.10 und 3.12.
    - `start_server(model_path, profile, endpoint_cfg, bench_cfg, log_path)`
    - `stop_server(proc)`
    - `wait_health(base_url, timeout_s, headers=None)`
-2. Zusätzlich existieren (Stand Phase A der Roadmap) zwei **optionale, nicht-abstrakte**
-   Hooks `begin_profile(...)` / `end_profile()` mit No-op-Default auf der Basisklasse —
-   gedacht für HTTP-only-Backends, die den Server einmal pro Profil starten wollen statt
-   einmal pro Testart. Bestehende Backends müssen sie nicht überschreiben; nur relevant,
-   wenn dein Backend davon profitiert. Die genaue Signatur richtet sich nach dem Stand von
-   `backends/base.py` zum Zeitpunkt deines PRs.
-3. Referenzimplementierung: `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) für den
-   Subprocess-Fall. Sobald gemergt, ist `VllmBackend` (Phase A, Docker-Container-basiert)
-   die Referenz für HTTP-only-Backends.
+2. Zusätzlich existieren zwei **optionale, nicht-abstrakte** Hooks
+   `begin_profile(...)` / `end_profile()` mit No-op-Default auf der Basisklasse. Sie
+   sind für HTTP-only-Backends gedacht, die den Server einmal pro Profil statt einmal pro
+   Testart starten. Die genaue Signatur richtet sich nach dem aktuellen
+   `backends/base.py` zum Zeitpunkt des PRs.
+3. Referenzimplementierungen: `LlamaCppBackend` (`llmbench/backends/llama_cpp.py`) für
+   den Subprocess-Fall und `VllmBackend` für Docker-/HTTP-only-Backends.
 4. Backend in der Factory registrieren (`backends/__init__.py`, bzw. wo `get_backend(cfg)`
    liegt) und ein Konfigurationsfeld ergänzen, das das Backend auswählt.
 5. **Tests**: eigene Datei `tests/test_backends_<name>.py`, die jede Methode gegen gemockte
@@ -164,8 +160,8 @@ Python 3.10 und 3.12.
    Initialisierung) und `DefaultProvider` (Fallback ohne Hardwarezugriff) in
    `llmbench/telemetry.py`.
 4. `get_telemetry_provider()` (Factory in `telemetry.py`) um den neuen Provider erweitern.
-   Bei mehreren gleichzeitig verfügbaren Herstellern ist eine `CompositeProvider`-Lösung
-   geplant (siehe ROADMAP.md, Phase D) statt "erster gewinnt".
+   Bei mehreren gleichzeitig verfügbaren Herstellern kombiniert `CompositeProvider` die
+   verfügbaren Quellen, statt nach dem Prinzip "erster gewinnt" zu arbeiten.
 5. **Tests**: `tests/test_telemetry.py` um Fälle mit gemockter Provider-Ausgabe (z. B.
    gefaktes `rocm-smi --json`/`xpu-smi -j`-Output) erweitern — kein Test darf echte
    Hardware voraussetzen; ohne die jeweilige GPU muss `initialize()` sauber `False`
@@ -231,19 +227,20 @@ Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer-Freigabe -> Me
 Vor dem Öffnen eines PRs:
 
 - [ ] `pytest -q` und `ruff check .` laufen lokal grün durch.
-- [ ] `CHANGELOG.md` wurde aktualisiert — deutschsprachig, unter einer versionierten
-  `##`-Überschrift, mit thematischer `###`-Unterüberschrift, passend zum bestehenden Stil.
-  Bei externen Beiträgen wird der Contributor mit `@username` genannt.
+- [ ] Beide Changelogs wurden bei nutzersichtbaren Änderungen aktualisiert: `CHANGELOG.md`
+  (Deutsch) und `CHANGELOG.en.md` (Englisch). Bei externen Beiträgen wird der Contributor
+  mit `@username` genannt.
 - [ ] Neue/geänderte Funktionalität hat Tests, die die HTTP-/Subprocess-Grenzen mocken
   (siehe "Code-Konventionen").
 - [ ] Für jeden neuen `_()`-umschlossenen String wurde ein passender Eintrag in
   `llmbench/locales/en.json` ergänzt.
 - [ ] Neue Backends/Telemetrie-Provider haben einen dokumentierten Install-/
   Uninstall-Pfad bzw. fallen sauber auf `DefaultProvider`-Verhalten zurück.
+- [ ] Markdown-Dokumentation bleibt in Deutsch und Englisch synchron.
 
 ## Weitere Referenzen
 
-- [`README.md`](README.md) — Nutzersicht, Quick Start, Ergebnisstruktur
+- [`README.md`](README.md) / [`README.de.md`](README.de.md) — Nutzersicht, Quick Start, Ergebnisstruktur
 - [`ROADMAP.md`](ROADMAP.md) — geplante Backends/Telemetrie-Quellen und Reihenfolge
 - [`docs/DOCKER.md`](docs/DOCKER.md) — Docker-Betrieb von `llmbench` selbst
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — Abnahme vor einem Release

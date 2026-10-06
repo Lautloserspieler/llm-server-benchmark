@@ -1,5 +1,7 @@
 # Release & Demo Checklist
 
+[🇩🇪 Deutsch](RELEASE_CHECKLIST.de.md) | 🇬🇧 English
+
 This document collects the public-release and demo-readiness steps for **LLM Server Benchmark**.
 
 ## One-sentence pitch
@@ -84,6 +86,7 @@ Before publishing a release or public demo:
 - [ ] Contributor attribution checked: external changes in `CHANGELOG.md` name the contributor with `@username`
 - [ ] Release notes credit external contributors for their changes and do not reassign authorship to the maintainer
 - [ ] Where multiple people substantially co-authored work, all contributors are credited
+- [ ] German and English Markdown documentation is synchronized
 
 ## Suggested project announcement copy
 

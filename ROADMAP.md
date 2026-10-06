@@ -1,18 +1,20 @@
 # Roadmap
 
+🇩🇪 Deutsch | [🇬🇧 English](ROADMAP.en.md)
+
 Dieses Dokument beschreibt die geplante Weiterentwicklung von `llmbench` — was schon
 funktioniert, was in Arbeit ist und was reine Idee ohne Zusage ist. Es ersetzt keine
 Entscheidung im Einzelfall; Details zu einzelnen Schritten können sich noch ändern.
 
 ## Vision
 
-`llmbench` heißt "LLM **Server** Benchmark", unterstützt aber aktuell ausschließlich
-**llama.cpp** als Backend und **NVIDIA/NVML** als Telemetriequelle. Ziel dieser Roadmap ist,
-den generischen Namen einzulösen: mehrere Server-Backends (über eine gemeinsame,
-bereits vorhandene `BenchmarkBackend`-Abstraktion) und mehrere GPU-Hersteller (über die
-vorhandene `TelemetryProvider`-Abstraktion) reproduzierbar vergleichbar zu machen — ohne
-die bestehende Kernstärke des Projekts zu verwässern: nachvollziehbare, mit Beweismaterial
-belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
+`llmbench` heißt "LLM **Server** Benchmark" und unterstützt inzwischen neben dem nativen
+**llama.cpp** auch **vLLM** über Docker sowie Telemetrie für **NVIDIA/NVML** und
+**AMD/rocm-smi**. Ziel dieser Roadmap ist, den generischen Ansatz weiter auszubauen:
+mehrere Server-Backends über die gemeinsame `BenchmarkBackend`-Abstraktion und mehrere
+GPU-Hersteller über die `TelemetryProvider`-Abstraktion reproduzierbar vergleichbar zu
+machen — ohne die Kernstärke des Projekts zu verwässern: nachvollziehbare, mit
+Beweismaterial belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 
 ## Backend-Support-Matrix
 

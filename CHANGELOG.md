@@ -1,5 +1,7 @@
 # Changelog
 
+🇩🇪 Deutsch | [🇬🇧 English](CHANGELOG.en.md)
+
 ## Unreleased
 
 ### Ubuntu-Referenzlauf: CPU-Isolation, Kapazitaetsstatus und Long-Context-Recovery

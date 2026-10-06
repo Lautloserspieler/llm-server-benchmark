@@ -3,6 +3,7 @@ from pathlib import Path
 
 from llmbench.report import fms, fnum, generate_run_html
 from llmbench.runner import _write_csv
+from llmbench.result_schema import encode_v3
 
 
 def _summary(bench_status: str = "ok") -> dict:
@@ -89,6 +90,22 @@ def test_csv_contains_fingerprint_for_successful_rows(tmp_path: Path):
     assert rows[0]["avg_ts"] == "42.0"
     assert rows[0]["status"] == "ok"
     assert rows[0]["config_fingerprint"] == "abc123"
+
+
+def test_v3_html_and_csv_show_scalar_values_and_provenance(tmp_path: Path):
+    summary = encode_v3(_summary(), {("M", "Full-GPU"): "requested"})
+    html_path = tmp_path / "report.html"
+    generate_run_html(summary, html_path)
+    html = html_path.read_text(encoding="utf-8")
+    assert "Wert-Provenienz" in html
+    assert "angefordert" in html
+    csv_path = tmp_path / "benchmarks.csv"
+    _write_csv(csv_path, summary)
+    row = next(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
+    assert row["avg_ts"] == "42.0"
+    assert row["avg_ts_source"] == "measured"
+    assert row["configured_gpu_layers"] == "-1"
+    assert row["gpu_layers_source"] == "requested"
 
 
 def test_report_shows_soak_results_and_throttling_flag(tmp_path: Path):

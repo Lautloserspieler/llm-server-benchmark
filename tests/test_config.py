@@ -5,6 +5,7 @@ from llmbench.config import (
     apply_duration_preset,
     config_fingerprint,
     deep_merge,
+    load_config,
     normalize_flash_attention,
     public_config,
     validate_config,
@@ -208,3 +209,13 @@ def test_backend_is_not_part_of_the_config_fingerprint():
 
     assert "backend" not in FINGERPRINT_KEYS
     assert "vllm_image" not in FINGERPRINT_KEYS
+
+
+def test_load_config_records_only_explicit_gpu_layer_origin(tmp_path):
+    path = tmp_path / "benchmark.yaml"
+    path.write_text(
+        "models:\n  - name: M\n    path: model.gguf\n    profiles:\n      - name: GPU\n        gpu_layers: -1\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    assert cfg["_gpu_layers_origins"] == {("M", "GPU"): "requested"}

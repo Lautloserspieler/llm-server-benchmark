@@ -213,7 +213,7 @@ class _RecordingBackend(BenchmarkBackend):
 @pytest.fixture
 def suite_env(tmp_path: Path, monkeypatch):
     """Minimale, schnelle Umgebung fuer run_suite (keine echte Hardware/Reports)."""
-    monkeypatch.setattr("llmbench.runner.collect_hardware", lambda _root: {"cpu": {"name": "TestCPU"}})
+    monkeypatch.setattr("llmbench.runner.collect_hardware", lambda _root: {"cpu": {"name": "TestCPU", "physical_cores": 8}})
     monkeypatch.setattr("llmbench.runner.generate_run_html", lambda _s, _p: None)
     monkeypatch.setattr("llmbench.runner.generate_run_pdf", lambda _s, _p: None)
     monkeypatch.setattr("llmbench.runner.print_run_report", lambda _s, _c: None)
@@ -277,14 +277,27 @@ def test_run_suite_records_hardware_target(suite_env, monkeypatch):
 def test_run_suite_records_backend_in_summary(suite_env, monkeypatch):
     monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
     run_dir = run_suite(suite_env, plain=True)
-    assert _read_summary(run_dir)["backend"] == "llama_cpp"
+    assert _read_summary(run_dir)["backend"]["id"] == "llama_cpp"
+
+
+def test_run_suite_writes_matching_v3_partial_and_final_artifacts(suite_env, monkeypatch):
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
+    run_dir = run_suite(suite_env, plain=True)
+    partial = json.loads((run_dir / "summary.partial.json").read_text(encoding="utf-8"))
+    final = _read_summary(run_dir)
+    for artifact in (partial, final):
+        assert artifact["schema_version"] == 3
+        assert artifact["backend"]["id"] == "llama_cpp"
+        assert artifact["hardware"]["cpu"]["physical_cores"]["source"] == "detected"
+        assert artifact["models"][0]["profiles"][0]["settings"]["gpu_layers"]["status"] == "unknown"
+        assert artifact["models"][0]["profiles"][0]["benchmarks"]["generation"]["rows"][0]["avg_ts"]["source"] == "measured"
 
 
 def test_run_suite_records_configured_backend_name(suite_env, monkeypatch):
     suite_env["tools"]["backend"] = "vllm"
     monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
     run_dir = run_suite(suite_env, plain=True)
-    assert _read_summary(run_dir)["backend"] == "vllm"
+    assert _read_summary(run_dir)["backend"]["id"] == "vllm"
 
 
 def test_run_suite_uses_llama_cpp_backend_when_backend_key_absent(suite_env, monkeypatch):
@@ -305,7 +318,7 @@ def test_run_suite_uses_llama_cpp_backend_when_backend_key_absent(suite_env, mon
     assert seen["kinds"] == list(BENCH_KINDS)
     assert seen["exe"] == "llama-bench"
     summary = _read_summary(run_dir)
-    assert summary["backend"] == "llama_cpp"
+    assert summary["backend"]["id"] == "llama_cpp"
     benchmarks = summary["models"][0]["profiles"][0]["benchmarks"]
     assert all(benchmarks[k]["status"] == "ok" for k in BENCH_KINDS)
 

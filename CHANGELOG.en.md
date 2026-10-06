@@ -15,6 +15,16 @@
 - If a long-context run fails only at a later context stage, all previously completed
   prompt/generation pairs are preserved. The run is stored as `partial` and records the
   context stage that was not reached and any detected capacity boundary.
+- The same now applies to a **benchmark timeout**: fully completed context stages are
+  recovered from llama-bench JSON that was already written, while a half-finished next
+  stage is discarded. The limiting reason remains visible as `limit_status: timeout`.
+- The default OOM/context stress ladder now extends to 393,216 tokens (384K). Existing
+  configurations that still use the unchanged legacy default ending around 130K are
+  migrated automatically, while explicitly customized `oom_contexts` lists are preserved.
+- If `stress-quant` cannot find two quantizations of the same base model, the test is now
+  reported as `skipped` (exit code 2) instead of failed. A structured `quant.json` is still
+  written with reason `no_matching_quantizations`, while real quant benchmark failures
+  continue to return an error.
 - Terminal, HTML, PDF, CSV, and comparison outputs understand the new partial/capacity
   states and continue to show valid partial results.
 - Regression tests reproduce cases observed in the Ubuntu/RTX-5090 reference run:

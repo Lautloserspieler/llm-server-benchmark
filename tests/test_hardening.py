@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ from llmbench import llama_bench, llama_cpp_setup as lcs
 from llmbench import soak, tuner
 from llmbench.backends import llama_cpp as backend_mod
 from llmbench.capacity import profile_vram_issue, total_gpu_vram_bytes
-from llmbench.stress import multitenant
+from llmbench.stress import multitenant, oom, quant
 
 GIB = 1024 ** 3
 
@@ -236,6 +237,105 @@ def test_long_context_failure_keeps_completed_rows_and_marks_capacity(monkeypatc
     assert result["completed_context_depths"] == [0, 131072]
     assert len(result["rows"]) == 4
     assert len(llama_bench.flatten_bench_rows(result)) == 4
+
+
+
+def test_long_context_timeout_keeps_completed_rows_only(monkeypatch, tmp_path: Path):
+    rows = [
+        {"n_prompt": 512, "n_gen": 0, "n_depth": 0, "avg_ts": 3000.0, "stddev_ts": 1.0},
+        {"n_prompt": 0, "n_gen": 128, "n_depth": 0, "avg_ts": 80.0, "stddev_ts": 0.1},
+        {"n_prompt": 512, "n_gen": 0, "n_depth": 131072, "avg_ts": 1200.0, "stddev_ts": 2.0},
+        {"n_prompt": 0, "n_gen": 128, "n_depth": 131072, "avg_ts": 55.0, "stddev_ts": 0.1},
+        # Die naechste Stufe hat nur Prompt Processing abgeschlossen, als das
+        # Zeitlimit erreicht wurde. Sie darf nicht als gueltige 262K-Stufe
+        # in CSV/HTML/PDF auftauchen.
+        {"n_prompt": 512, "n_gen": 0, "n_depth": 262144, "avg_ts": 700.0, "stddev_ts": 3.0},
+    ]
+    truncated_json = json.dumps(rows, indent=2)[:-1]
+
+    class FakeMonitor:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            return {"sample_count": 0}
+
+        def latest(self):
+            return None
+
+        def set_target_pid(self, _pid):
+            pass
+
+    monkeypatch.setattr(llama_bench, "resolve_executable", lambda exe: exe)
+    monkeypatch.setattr(llama_bench, "load_flags", lambda *_a, **_k: [])
+    monkeypatch.setattr(llama_bench, "no_op_offload_flags", lambda *_a, **_k: [])
+    monkeypatch.setattr(llama_bench, "ResourceMonitor", FakeMonitor)
+    monkeypatch.setattr(
+        llama_bench,
+        "_execute",
+        lambda *_a, **_k: (truncated_json, "benchmark 11/12: depth run 1/10", 15, True),
+    )
+
+    result = llama_bench.run_llama_bench(
+        "llama-bench",
+        "model.gguf",
+        {
+            "repetitions": 1,
+            "batch_size": 512,
+            "ubatch_size": 512,
+            "context_depths": [0, 131072, 262144],
+            "long_context_prompt_tokens": 512,
+            "long_context_generation_tokens": 128,
+            "gpu_timeout_seconds": 3600,
+        },
+        {"gpu_layers": -1},
+        "long_context",
+        tmp_path,
+    )
+
+    assert result["status"] == "partial"
+    assert result["limit_status"] == "timeout"
+    assert result["timed_out"] is True
+    assert result["failed_context_depth"] == 262144
+    assert result["completed_context_depths"] == [0, 131072]
+    assert {row["n_depth"] for row in result["rows"]} == {0, 131072}
+    assert len(result["rows"]) == 4
+
+
+def test_oom_context_levels_migrate_legacy_default_but_preserve_custom_lists():
+    legacy = {"stress": {"oom_contexts": list(oom.LEGACY_OOM_CONTEXTS)}}
+    levels = oom._context_levels(legacy)
+
+    assert levels == oom.DEFAULT_OOM_CONTEXTS
+    assert levels[-3:] == [196608, 262144, 393216]
+
+    custom = {"stress": {"oom_contexts": [4096, 32768, 65536]}}
+    assert oom._context_levels(custom) == [4096, 32768, 65536]
+
+
+
+def test_quant_stress_without_matching_variants_is_skipped(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        quant,
+        "load_config",
+        lambda _path: {
+            "_config_dir": str(tmp_path),
+            "project": {"output_dir": str(tmp_path / "results")},
+        },
+    )
+    monkeypatch.setattr(quant, "discover_quant_groups", lambda *_args, **_kwargs: {})
+
+    out_dir = tmp_path / "quant"
+    status = asyncio.run(quant.run_quant_stress("benchmark.yaml", out_dir))
+
+    assert status == 2
+    result = json.loads((out_dir / "quant.json").read_text(encoding="utf-8"))
+    assert result["status"] == "skipped"
+    assert result["reason"] == "no_matching_quantizations"
+    assert result["groups"] == []
 
 
 def test_tuner_reads_top_level_gpu_telemetry_in_bytes():

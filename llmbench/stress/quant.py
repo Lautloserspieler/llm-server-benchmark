@@ -68,17 +68,24 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
     root = Path(cfg.get("_config_dir") or ".").resolve()
     models_dir = root / "models"
     groups = discover_quant_groups(root, models_dir)
-    if not groups:
-        print_err(
-            _(
-                "Kein echter Quantisierungsvergleich moeglich. Lege mindestens zwei Quantisierungen "
-                "desselben Modells (z.B. Q4_K_M und Q8_0) unter models/ ab."
-            )
-        )
-        return 1
-
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_quant"
     out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
+    if not groups:
+        message = _(
+            "Kein echter Quantisierungsvergleich moeglich. Lege mindestens zwei Quantisierungen "
+            "desselben Modells (z.B. Q4_K_M und Q8_0) unter models/ ab."
+        )
+        print_msg(message, style="yellow")
+        write_json(
+            out_dir / "quant.json",
+            {
+                "status": "skipped",
+                "reason": "no_matching_quantizations",
+                "message": message,
+                "groups": [],
+            },
+        )
+        return 2
     bench_cfg = dict(cfg["benchmark"])
     bench_cfg["prompt_tokens"] = [512]
     bench_cfg["generation_tokens"] = [128]

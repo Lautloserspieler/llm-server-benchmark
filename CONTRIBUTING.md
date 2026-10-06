@@ -187,14 +187,53 @@ Kein Backend darf **Install-only** sein. Ziel: nach der Deinstallation sind `doc
 geplanten Mechanismus (`docker_backend.py`, `install-backend`/`uninstall-backend`) stehen in
 [`ROADMAP.md`](ROADMAP.md).
 
+## Autorenschaft, Credits und Attribution
+
+Beiträge sollen klar der Person zugerechnet bleiben, die sie tatsächlich erstellt hat.
+
+- **PR-Autor bleibt sichtbar:** Externe Beiträge werden regulär über Fork/Branch und Pull Request
+  eingereicht. Der Maintainer übernimmt den Beitrag nicht unter seinem eigenen Namen.
+- **Commit-Autorenschaft erhalten:** Commits sollen mit der Git-Identität des ursprünglichen
+  Autors erstellt werden. Maintainer sollen Autor-/Co-Autor-Angaben nicht entfernen oder
+  durch die eigene Identität ersetzen.
+- **Gemeinsame Arbeit:** Wenn mehrere Personen substanziell an demselben Commit gearbeitet
+  haben, kann Git mit `Co-authored-by: Name <email>` verwendet werden.
+- **Changelog-Credit:** Relevante externe Beiträge werden im `CHANGELOG.md` mit dem
+  GitHub-Handle genannt, z. B.:
+  
+  ```markdown
+  - KV-Cache-Erkennung und verifizierte Context-Limits ergänzt — @username
+  ```
+- **Release Notes:** Bei einem Release werden externe Contributors mit `@username` bei den
+  jeweiligen Änderungen oder in einem eigenen Contributors-Abschnitt genannt.
+- **Maintainer-Änderungen an einem fremden PR:** Kleine Integrations-, Review- oder
+  Konfliktlösungsänderungen ändern nicht die ursprüngliche Zuordnung des Features. Falls
+  mehrere Personen wesentliche Teile beigetragen haben, werden alle Beteiligten genannt.
+- **Kein Credit-Shifting:** Review, Merge oder Release durch den Maintainer macht den
+  Maintainer nicht automatisch zum Autor des beigetragenen Codes.
+
+### Merge- und Review-Modell
+
+`main` ist geschützt. Änderungen werden über Pull Requests eingebracht und müssen die
+konfigurierten Branch-Regeln und Status-Checks erfüllen. Für geschützte Bereiche ist ein
+Code-Owner-Review erforderlich. Die Datei `.github/CODEOWNERS` legt den Maintainer als
+Code Owner fest.
+
+Externe Contributors benötigen dafür **keinen direkten Schreibzugriff auf `main`**. Der
+übliche Ablauf ist:
+
+```text
+Fork/Branch -> Commits -> Pull Request -> CI/Review -> Maintainer-Freigabe -> Merge
+```
+
 ## Pull-Request-Checkliste
 
 Vor dem Öffnen eines PRs:
 
 - [ ] `pytest -q` und `ruff check .` laufen lokal grün durch.
 - [ ] `CHANGELOG.md` wurde aktualisiert — deutschsprachig, unter einer versionierten
-  `##`-Überschrift, mit thematischer `###`-Unterüberschrift, passend zum bestehenden Stil
-  (siehe vorhandene Einträge).
+  `##`-Überschrift, mit thematischer `###`-Unterüberschrift, passend zum bestehenden Stil.
+  Bei externen Beiträgen wird der Contributor mit `@username` genannt.
 - [ ] Neue/geänderte Funktionalität hat Tests, die die HTTP-/Subprocess-Grenzen mocken
   (siehe "Code-Konventionen").
 - [ ] Für jeden neuen `_()`-umschlossenen String wurde ein passender Eintrag in

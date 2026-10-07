@@ -241,11 +241,11 @@ class LinuxRaplCpuProvider(PsutilCpuProvider):
 def get_cpu_telemetry_provider() -> CpuTelemetryProvider:
     """Return the best available CPU telemetry provider for this platform."""
     if os.name == "posix" and Path("/sys/class/powercap").exists():
-        provider = LinuxRaplCpuProvider()
-        provider.initialize()
-        if provider.rapl_available:
-            return provider
-        provider.shutdown()
+        rapl_provider = LinuxRaplCpuProvider()
+        rapl_provider.initialize()
+        if rapl_provider.rapl_available:
+            return rapl_provider
+        rapl_provider.shutdown()
 
     provider = PsutilCpuProvider()
     provider.initialize()

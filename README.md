@@ -16,6 +16,20 @@ LLM benchmark results are often reduced to a single number such as **84 tok/s**.
 
 ---
 
+## Community & support
+
+GitHub Discussions is the preferred place for community conversations:
+
+- **Questions and troubleshooting:** use [Q&A](https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/q-a)
+- **Benchmark results:** share and compare results in [Benchmark Results](https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/benchmark-results) and follow the [benchmark results template](https://github.com/Lautloserspieler/llm-server-benchmark/discussions/84)
+- **Ideas and early proposals:** use [Ideas](https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/ideas)
+- **Hardware, OS, driver and CUDA topics:** use [Hardware & OS](https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/hardware-os)
+- **Bugs and concrete feature requests:** open a GitHub Issue
+
+Discussions are welcome in both **English and German**.
+
+---
+
 ## Highlights
 
 - Reproducible local LLM benchmarks instead of isolated tokens/s numbers

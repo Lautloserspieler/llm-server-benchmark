@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Memory-Bandwidth-Charakterisierung
+
+- Schema-v3-Hardwareartefakte stellen Memory-Domains getrennt von GPUs mit
+  expliziter GB/s-Herkunft sowie Unknown-/Unavailable-Zustaenden dar.
+- Apple Silicon kann einen kleinen gebuendelten Katalog offizieller Spezifikationen
+  matchen; NVIDIA bewahrt sichere NVML-Bus-/Clock-Eingaben ohne geratene
+  Data-Rate-Formel, und AMD-SMI-Werte sind als Current-Clock-Provider-Operating-Ceilings markiert.
+- `llmbench run --collect-memory-bandwidth` zeichnet optional einen installierten
+  Apple-System-DRAM-Trace von `mactop` auf. Die Beobachtung ist experimentell,
+  nicht blockierend und nie prozessexklusive effective bandwidth.
+- Danke an @enmanuelmag fuer Roadmap und Design-Review.
+
 ### Ergebnisschema v3: Herkunft
 
 - Neue Ergebnisartefakte verwenden Schema-Version 3 und speichern Nachweise für angeforderte,

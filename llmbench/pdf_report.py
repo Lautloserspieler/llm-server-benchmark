@@ -195,6 +195,30 @@ def _hardware_rows(hardware: dict[str, Any]) -> list[list[str]]:
         rows.append([f"GPU {gpu.get('index', 0)}", detail])
     if not (hardware.get("gpus") or []):
         rows.append(["GPU", "keine erkannt"])
+    for domain in hardware.get("memory_domains") or []:
+        item = (domain.get("bandwidth") or {}).get("theoretical") or {}
+        if isinstance(item, dict):
+            value = item.get("value")
+            detail = f"{value:.2f} GB/s" if isinstance(value, (int, float)) else str(item.get("reason") or item.get("status") or "unavailable")
+        else:
+            detail = f"{item:.2f} GB/s" if isinstance(item, (int, float)) else "unavailable"
+        rows.append([f"Memory bandwidth ({domain.get('id')})", f"Theoretical/spec: {detail}"])
+    return rows
+
+
+def _memory_bandwidth_rows(telemetry: dict[str, Any]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for observation in telemetry.get("memory_bandwidth") or []:
+        item = observation.get("observed_during_benchmark") or {}
+        if isinstance(item, dict):
+            value = item.get("value")
+            detail = f"{value:.2f} GB/s" if isinstance(value, (int, float)) else str(item.get("reason") or "unavailable")
+        else:
+            detail = f"{item:.2f} GB/s" if isinstance(item, (int, float)) else "unavailable"
+        rows.append([
+            str(observation.get("domain_id") or "—"),
+            f"Observed runtime traffic ({observation.get('scope') or 'unknown'}): {detail}",
+        ])
     return rows
 
 
@@ -369,6 +393,16 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
     story.append(Paragraph("Server und Hardware", styles["h2"]))
     story.append(_table([["Merkmal", "Wert"]] + _hardware_rows(summary.get("hardware") or {}),
                         [width * 0.28, width * 0.72], numeric_from=99))
+
+    bandwidth_rows = _memory_bandwidth_rows(summary.get("telemetry") or {})
+    if bandwidth_rows:
+        story.append(Paragraph("Memory bandwidth runtime telemetry (experimental)", styles["h2"]))
+        story.append(Paragraph(
+            "Observed system traffic is not process-exclusive or universal effective bandwidth.",
+            styles["muted"],
+        ))
+        story.append(_table([["Domain", "Observation"]] + bandwidth_rows,
+                            [width * 0.28, width * 0.72], numeric_from=99))
 
     story.append(Paragraph("Nachweis der Testbedingungen", styles["h2"]))
     story.append(Paragraph(

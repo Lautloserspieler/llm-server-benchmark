@@ -14,6 +14,38 @@ from .execution import collect_execution_environment
 from .utils import command_exists, run_capture, utc_now_iso
 
 
+# The catalog deliberately has a small, auditable surface.  Entries must be
+# backed by an Apple specification; a missing or ambiguous local identity is
+# represented as unknown rather than guessed from a product-family name.
+APPLE_MEMORY_BANDWIDTH_CATALOG_VERSION = "2026.10"
+APPLE_MEMORY_BANDWIDTH_CATALOG: tuple[dict[str, Any], ...] = (
+    {
+        "chip": "Apple M4 Pro", "gpu_cores": 20, "bandwidth_gb_s": 273,
+        "reference": "https://www.apple.com/macbook-pro/specs/",
+    },
+    {
+        "chip": "Apple M4 Max", "gpu_cores": 32, "bandwidth_gb_s": 410,
+        "reference": "https://www.apple.com/mac-studio/specs/",
+    },
+    {
+        "chip": "Apple M4 Max", "gpu_cores": 40, "bandwidth_gb_s": 546,
+        "reference": "https://www.apple.com/mac-studio/specs/",
+    },
+    {
+        "chip": "Apple M3 Ultra", "gpu_cores": 80, "bandwidth_gb_s": 819,
+        "reference": "https://www.apple.com/mac-studio/specs/",
+    },
+)
+
+
+def _unavailable(reason: str) -> dict[str, Any]:
+    return {"value": None, "source": None, "unit": "GB/s", "status": "unavailable", "reason": reason}
+
+
+def _unknown(reason: str) -> dict[str, Any]:
+    return {"value": None, "source": None, "unit": "GB/s", "status": "unknown", "reason": reason}
+
+
 def _cpu_name() -> str:
     name = platform.processor().strip()
     if name and name != "unknown" and not name.startswith("x86_64"):
@@ -171,6 +203,183 @@ def _xpu_smi_info() -> list[dict[str, Any]]:
         return []
 
 
+def _nvidia_memory_domains(gpus: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collect safe NVML inputs without guessing an effective transfer rate."""
+    if not gpus:
+        return []
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+    except Exception:
+        return [
+            {
+                "id": f"nvidia:{gpu.get('index', index)}", "kind": "discrete_vram",
+                "vendor": "NVIDIA", "name": gpu.get("name"),
+                "identity": {"gpu_index": gpu.get("index", index)},
+                "bandwidth": {"theoretical": _unavailable("nvml_unavailable")},
+            }
+            for index, gpu in enumerate(gpus)
+        ]
+
+    domains: list[dict[str, Any]] = []
+    try:
+        for index, gpu in enumerate(gpus):
+            bus_width = max_clock = None
+            try:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(int(gpu.get("index", index)))
+                bus_width = pynvml.nvmlDeviceGetMemoryBusWidth(handle)
+                max_clock = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_MEM)
+            except Exception:
+                pass
+            inputs: dict[str, Any] = {}
+            if isinstance(bus_width, int) and bus_width > 0:
+                inputs["memory_bus_width_bits"] = bus_width
+            if isinstance(max_clock, int) and max_clock > 0:
+                inputs["max_memory_clock_mhz"] = max_clock
+            domains.append({
+                "id": f"nvidia:{gpu.get('index', index)}", "kind": "discrete_vram",
+                "vendor": "NVIDIA", "name": gpu.get("name"),
+                "identity": {"gpu_index": gpu.get("index", index)},
+                "properties": inputs,
+                "bandwidth": {
+                    # NVML documents the two inputs, not one cross-architecture
+                    # data-rate multiplier.  Do not turn a clock into a spec.
+                    "theoretical": _unknown("unverified_data_rate"),
+                },
+            })
+    finally:
+        with contextlib.suppress(Exception):
+            pynvml.nvmlShutdown()
+    return domains
+
+
+def _find_number(value: Any, keys: set[str]) -> float | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key.lower() in keys and isinstance(child, (int, float)) and not isinstance(child, bool):
+                return float(child)
+            found = _find_number(child, keys)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for child in value:
+            found = _find_number(child, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def _amd_smi_bandwidths() -> dict[int, float]:
+    """Best-effort optional AMD SMI data, separate from legacy rocm-smi."""
+    if not command_exists("amd-smi"):
+        return {}
+    try:
+        cp = run_capture(["amd-smi", "static", "--vram", "--json"], timeout=10)
+        if cp.returncode != 0:
+            return {}
+        payload = json.loads(cp.stdout)
+        output: dict[int, float] = {}
+        devices = payload.get("gpu") if isinstance(payload, dict) else payload
+        if not isinstance(devices, (dict, list)):
+            return output
+        iterable = devices.items() if isinstance(devices, dict) else enumerate(devices)
+        for raw_index, device in iterable:
+            try:
+                index = int(str(raw_index).split(":")[-1])
+            except ValueError:
+                continue
+            value = _find_number(device, {"vram_max_bandwidth", "max_bandwidth"})
+            if value is not None and value > 0:
+                output[index] = value
+        return output
+    except Exception:
+        return {}
+
+
+def _amd_memory_domains(gpus: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reported = _amd_smi_bandwidths()
+    domains: list[dict[str, Any]] = []
+    for index, gpu in enumerate(gpus):
+        gpu_index = int(gpu.get("index", index))
+        bandwidth: dict[str, Any] = {"theoretical": _unknown("board_spec_not_reported")}
+        if gpu_index in reported:
+            bandwidth["provider_operating"] = {
+                "value": reported[gpu_index], "source": "detected", "unit": "GB/s",
+                "evidence": {
+                    "method": "hardware_introspection", "provider": "amd-smi",
+                    "qualifier": "at_current_memory_clock",
+                },
+            }
+        else:
+            bandwidth["provider_operating"] = _unavailable("amd_smi_vram_bandwidth_unavailable")
+        domains.append({
+            "id": f"amd:{gpu_index}", "kind": "discrete_vram", "vendor": "AMD",
+            "name": gpu.get("name"), "identity": {"gpu_index": gpu_index}, "bandwidth": bandwidth,
+        })
+    return domains
+
+
+def _apple_identity() -> dict[str, Any] | None:
+    if sys.platform != "darwin":
+        return None
+    try:
+        cp = run_capture(["system_profiler", "SPHardwareDataType", "SPDisplaysDataType", "-json"], timeout=15)
+        if cp.returncode != 0:
+            return None
+        payload = json.loads(cp.stdout)
+        hardware = (payload.get("SPHardwareDataType") or [{}])[0]
+        displays = (payload.get("SPDisplaysDataType") or [{}])[0]
+        chip = hardware.get("chip_type") or hardware.get("_name")
+        cores = displays.get("sppci_cores") or displays.get("spdisplays_cores")
+        gpu_cores = int(cores) if str(cores).isdigit() else None
+        model = run_capture(["sysctl", "-n", "hw.model"], timeout=5).stdout.strip()
+        if not isinstance(chip, str) or not chip.startswith("Apple"):
+            return None
+        identity: dict[str, Any] = {"chip": chip, "machine_model": model or None}
+        if gpu_cores:
+            identity["gpu_cores"] = gpu_cores
+        return identity
+    except Exception:
+        return None
+
+
+def _apple_memory_domain() -> dict[str, Any] | None:
+    identity = _apple_identity()
+    if not identity:
+        return None
+    matches = [
+        row for row in APPLE_MEMORY_BANDWIDTH_CATALOG
+        if row["chip"] == identity["chip"] and row["gpu_cores"] == identity.get("gpu_cores")
+    ]
+    if len(matches) == 1:
+        row = matches[0]
+        theoretical: dict[str, Any] = {
+            "value": row["bandwidth_gb_s"], "source": "detected", "unit": "GB/s",
+            "evidence": {
+                "method": "hardware_introspection", "provider": "apple_official_catalog",
+                "reference": row["reference"], "catalog_version": APPLE_MEMORY_BANDWIDTH_CATALOG_VERSION,
+            },
+        }
+    else:
+        theoretical = _unknown("apple_catalog_identity_ambiguous" if identity.get("chip") else "apple_identity_missing")
+    return {
+        "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+        "name": identity["chip"], "identity": identity,
+        "bandwidth": {"theoretical": theoretical},
+    }
+
+
+def _memory_domains(gpus: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    domains: list[dict[str, Any]] = []
+    domains.extend(_nvidia_memory_domains([gpu for gpu in gpus if gpu.get("vendor") == "NVIDIA"]))
+    domains.extend(_amd_memory_domains([gpu for gpu in gpus if gpu.get("vendor") == "AMD"]))
+    apple = _apple_memory_domain()
+    if apple:
+        domains.append(apple)
+    return domains
+
+
 def collect_hardware(output_dir: str | Path | None = None) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     disk_target = Path(output_dir) if output_dir else Path.cwd()
@@ -207,4 +416,7 @@ def collect_hardware(output_dir: str | Path | None = None) -> dict[str, Any]:
         "memory": {"total_bytes": vm.total, "available_bytes": vm.available},
         "disk": disk_info,
         "gpus": gpus,
+        # Keep legacy gpus intact.  A memory domain can also represent Apple
+        # unified memory, which is not safely modelled as a GPU-only property.
+        "memory_domains": _memory_domains(gpus),
     }

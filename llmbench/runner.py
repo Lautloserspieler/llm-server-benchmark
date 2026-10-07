@@ -149,6 +149,30 @@ def run_suite(
     reporter: Reporter | None = None,
     hardware_target: str = "both",
     plain: bool = False,
+    collect_memory_bandwidth: bool = False,
+) -> Path:
+    """Run a suite and always stop an optional bandwidth sidecar."""
+    holder: dict[str, Any] = {}
+    try:
+        return _run_suite(
+            cfg, selected_model, skip_endpoint, reporter, hardware_target, plain,
+            collect_memory_bandwidth, holder,
+        )
+    finally:
+        observer = holder.get("observer")
+        if observer is not None:
+            observer.stop()
+
+
+def _run_suite(
+    cfg: dict[str, Any],
+    selected_model: str | None = None,
+    skip_endpoint: bool = False,
+    reporter: Reporter | None = None,
+    hardware_target: str = "both",
+    plain: bool = False,
+    collect_memory_bandwidth: bool = False,
+    observer_holder: dict[str, Any] | None = None,
 ) -> Path:
     if hardware_target not in HARDWARE_TARGETS:
         raise ValueError(f"Ungueltige Hardware-Auswahl: {hardware_target!r}. Erlaubt: {HARDWARE_TARGETS}")
@@ -159,6 +183,14 @@ def run_suite(
 
     hardware = collect_hardware(output_root)
     write_json(run_dir / "hardware.json", hardware)
+    observer = None
+    if collect_memory_bandwidth:
+        from .memory_bandwidth_observer import MactopObserver
+
+        observer = MactopObserver(run_dir, enabled=True, hardware=hardware)
+        if observer_holder is not None:
+            observer_holder["observer"] = observer
+        observer.start()
     tools = _tool_info(cfg)
 
     backend = get_backend(cfg)
@@ -178,6 +210,7 @@ def run_suite(
         "config_fingerprint": config_fingerprint(cfg["benchmark"]),
         "tools": tools,
         "hardware": hardware,
+        "telemetry": {"memory_bandwidth": []},
         "performance_mode": cfg.get("_performance_mode"),
         "warnings": [],
         "models": [],
@@ -482,6 +515,10 @@ def run_suite(
         summary["models"].append(model_result)
         _write_summary(run_dir / "summary.partial.json", summary, cfg)
 
+    if observer is not None:
+        observation = observer.stop()
+        if observation is not None:
+            summary["telemetry"]["memory_bandwidth"].append(observation)
     summary["tools"]["llama_cpp_build_ids"] = sorted(build_ids)
     if len(build_ids) > 1:
         summary["warnings"].append(

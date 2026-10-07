@@ -1,5 +1,6 @@
 import time
 
+from llmbench.cpu_telemetry import CpuSample, CpuTelemetryProvider
 from llmbench.monitor import ResourceMonitor, strip_samples
 from llmbench.telemetry import GpuSample, TelemetryProvider
 
@@ -20,6 +21,26 @@ class FakeProvider(TelemetryProvider):
         if not self._sequence:
             return []
         return self._sequence.pop(0) if len(self._sequence) > 1 else list(self._sequence[0])
+
+    def shutdown(self) -> None:
+        self.initialized = False
+        self.shutdown_called = True
+
+
+class FakeCpuProvider(CpuTelemetryProvider):
+    TELEMETRY_SOURCE = "test_cpu"
+
+    def __init__(self, sample):
+        super().__init__()
+        self._sample = sample
+        self.shutdown_called = False
+
+    def initialize(self) -> bool:
+        self.initialized = True
+        return True
+
+    def sample_cpu(self):
+        return self._sample
 
     def shutdown(self) -> None:
         self.initialized = False
@@ -194,3 +215,85 @@ def test_windows_system_process_is_not_reported_as_foreign():
     summary = monitor.summary()
     assert summary["foreign_gpu_processes"] == []
     assert not any("Fremde Prozesse" in w for w in summary["warnings"])
+
+
+def test_summary_aggregates_cpu_frequency_temperature_and_package_power():
+    monitor = ResourceMonitor()
+    monitor._cpu_provider = FakeCpuProvider(
+        CpuSample(frequency_mhz=4000.0, temperature_c=70.0, package_power_w=100.0)
+    )
+    monitor._samples = [
+        {
+            "cpu_percent": 50.0,
+            "ram_used_bytes": 1000,
+            "cpu": {
+                "util_percent": 50.0,
+                "frequency_mhz": 3900.0,
+                "temperature_c": 68.0,
+                "package_power_w": 90.0,
+            },
+            "gpus": [],
+        },
+        {
+            "cpu_percent": 80.0,
+            "ram_used_bytes": 2000,
+            "cpu": {
+                "util_percent": 80.0,
+                "frequency_mhz": 4300.0,
+                "temperature_c": 76.0,
+                "package_power_w": 130.0,
+            },
+            "gpus": [],
+        },
+    ]
+
+    summary = monitor.summary()
+    cpu = summary["cpu"]
+    assert cpu["avg_util_percent"] == 65.0
+    assert cpu["avg_frequency_mhz"] == 4100.0
+    assert cpu["min_frequency_mhz"] == 3900.0
+    assert cpu["max_frequency_mhz"] == 4300.0
+    assert cpu["avg_temperature_c"] == 72.0
+    assert cpu["max_temperature_c"] == 76.0
+    assert cpu["avg_package_power_w"] == 110.0
+    assert cpu["max_package_power_w"] == 130.0
+    assert cpu["telemetry_source"] == "test_cpu"
+
+
+def test_cpu_sensor_failures_degrade_to_unavailable_values():
+    class BrokenCpuProvider(FakeCpuProvider):
+        def sample_cpu(self):
+            raise RuntimeError("sensor unavailable")
+
+    monitor = ResourceMonitor()
+    monitor._cpu_provider = BrokenCpuProvider(
+        CpuSample(frequency_mhz=None, temperature_c=None, package_power_w=None)
+    )
+    sample = monitor._cpu_sample(42.0)
+    assert sample == {
+        "util_percent": 42.0,
+        "frequency_mhz": None,
+        "temperature_c": None,
+        "package_power_w": None,
+    }
+
+
+def test_start_and_stop_shuts_down_cpu_provider(monkeypatch):
+    gpu_provider = FakeProvider([[_gpu(util=1.0)]])
+    cpu_provider = FakeCpuProvider(
+        CpuSample(frequency_mhz=4100.0, temperature_c=65.0, package_power_w=95.0)
+    )
+    monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", lambda: gpu_provider)
+    monkeypatch.setattr("llmbench.monitor.get_cpu_telemetry_provider", lambda: cpu_provider)
+
+    monitor = ResourceMonitor(interval=0.02, idle_wait_seconds=0)
+    monitor.start()
+    start_time = time.time()
+    while len(monitor._samples) == 0 and time.time() - start_time < 2.0:
+        time.sleep(0.01)
+    summary = monitor.stop()
+
+    assert summary["cpu"]["avg_frequency_mhz"] == 4100.0
+    assert summary["cpu"]["max_temperature_c"] == 65.0
+    assert summary["cpu"]["avg_package_power_w"] == 95.0
+    assert cpu_provider.shutdown_called is True

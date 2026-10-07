@@ -10,6 +10,7 @@ from typing import Any
 
 import psutil
 
+from .cpu_telemetry import get_cpu_telemetry_provider
 from .i18n import _
 from .telemetry import get_telemetry_provider
 
@@ -49,6 +50,7 @@ class ResourceMonitor:
     _stop: threading.Event = field(default_factory=threading.Event)
     _thread: threading.Thread | None = None
     _provider: Any = None
+    _cpu_provider: Any = None
     _target_pids: set[int] = field(default_factory=set)
     _own_pids: set[int] = field(default_factory=set)
     _seen_gpu_pids: set[int] = field(default_factory=set)
@@ -65,6 +67,7 @@ class ResourceMonitor:
         self._stop.clear()
         psutil.cpu_percent(interval=None)
         self._provider = get_telemetry_provider()
+        self._cpu_provider = get_cpu_telemetry_provider()
         self._baseline = self._wait_for_idle_gpu()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -135,13 +138,34 @@ class ResourceMonitor:
             )
         return out
 
+    def _cpu_sample(self, util_percent: float) -> dict[str, Any]:
+        sample: dict[str, Any] = {
+            "util_percent": util_percent,
+            "frequency_mhz": None,
+            "temperature_c": None,
+            "package_power_w": None,
+        }
+        if not self._cpu_provider:
+            return sample
+        try:
+            current = self._cpu_provider.sample_cpu()
+        except Exception:
+            return sample
+        sample["frequency_mhz"] = current.frequency_mhz
+        sample["temperature_c"] = current.temperature_c
+        sample["package_power_w"] = current.package_power_w
+        return sample
+
     def _sample(self) -> dict[str, Any]:
         vm = psutil.virtual_memory()
+        cpu_percent = psutil.cpu_percent(interval=None)
         return {
             "ts": time.time(),
-            "cpu_percent": psutil.cpu_percent(interval=None),
+            # Keep the existing flat fields for backward compatibility.
+            "cpu_percent": cpu_percent,
             "ram_used_bytes": vm.used,
             "ram_percent": vm.percent,
+            "cpu": self._cpu_sample(float(cpu_percent)),
             "gpus": self._gpu_sample(),
         }
 
@@ -163,6 +187,8 @@ class ResourceMonitor:
             self._thread.join(timeout=max(2.0, self.interval * 3))
         if self._provider:
             self._provider.shutdown()
+        if self._cpu_provider:
+            self._cpu_provider.shutdown()
         return self.summary()
 
     def _foreign_processes(self) -> list[dict[str, Any]]:
@@ -196,6 +222,44 @@ class ResourceMonitor:
 
         cpu = [float(s["cpu_percent"]) for s in self._samples]
         ram = [int(s["ram_used_bytes"]) for s in self._samples]
+
+        cpu_items = [s.get("cpu") or {} for s in self._samples]
+        frequency_values = [
+            float(item["frequency_mhz"])
+            for item in cpu_items
+            if item.get("frequency_mhz") is not None
+        ]
+        temperature_values = [
+            float(item["temperature_c"])
+            for item in cpu_items
+            if item.get("temperature_c") is not None
+        ]
+        package_power_values = [
+            float(item["package_power_w"])
+            for item in cpu_items
+            if item.get("package_power_w") is not None
+        ]
+        cpu_summary = {
+            "avg_util_percent": statistics.fmean(cpu),
+            "max_util_percent": max(cpu),
+            "avg_frequency_mhz": (
+                statistics.fmean(frequency_values) if frequency_values else None
+            ),
+            "min_frequency_mhz": min(frequency_values) if frequency_values else None,
+            "max_frequency_mhz": max(frequency_values) if frequency_values else None,
+            "avg_temperature_c": (
+                statistics.fmean(temperature_values) if temperature_values else None
+            ),
+            "max_temperature_c": max(temperature_values) if temperature_values else None,
+            "avg_package_power_w": (
+                statistics.fmean(package_power_values) if package_power_values else None
+            ),
+            "max_package_power_w": max(package_power_values) if package_power_values else None,
+            "telemetry_source": getattr(
+                self._cpu_provider, "TELEMETRY_SOURCE", "psutil"
+            ),
+        }
+
         gpu_count = max((len(s.get("gpus", [])) for s in self._samples), default=0)
 
         gpu_summaries = []
@@ -250,6 +314,8 @@ class ResourceMonitor:
             "max_cpu_percent": max(cpu),
             "avg_ram_used_bytes": statistics.fmean(ram),
             "max_ram_used_bytes": max(ram),
+            "cpu": cpu_summary,
+            "cpu_telemetry_source": cpu_summary["telemetry_source"],
             "gpus": gpu_summaries,
             "baseline": self._baseline,
             "foreign_gpu_processes": foreign,

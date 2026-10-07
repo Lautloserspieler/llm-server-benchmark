@@ -58,6 +58,24 @@ def test_report_shows_provenance_and_warnings(tmp_path: Path):
     assert "Hoechstleistung" in html
 
 
+def test_v3_html_keeps_memory_bandwidth_envelopes_before_scalar_projection(tmp_path: Path):
+    summary = _summary()
+    summary["hardware"]["memory_domains"] = [{
+        "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+        "bandwidth": {"theoretical": {"value": 410.0, "source": "detected", "unit": "GB/s"}},
+    }]
+    summary["telemetry"] = {"memory_bandwidth": [{
+        "domain_id": "apple:unified:0", "scope": "system_soc_dram",
+        "observed_during_benchmark": {"value": 120.0, "source": "measured", "unit": "GB/s"},
+    }]}
+    out = tmp_path / "bandwidth.html"
+    generate_run_html(encode_v3(summary), out)
+    html = out.read_text(encoding="utf-8")
+    assert "Memory bandwidth" in html
+    assert "410.00 GB/s" in html
+    assert "120.00 GB/s" in html
+
+
 def test_report_lists_every_gpu_not_only_the_first(tmp_path: Path):
     out = tmp_path / "report.html"
     generate_run_html(_summary(), out)

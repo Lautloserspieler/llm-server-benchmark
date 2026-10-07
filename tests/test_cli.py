@@ -120,7 +120,7 @@ def test_main_run_reports_config_errors_and_exits_2(tmp_path: Path, capsys):
     assert "Konfigurationsfehler" in out.err
 
 
-def test_main_run_passes_hardware_choice_to_run_suite(tmp_path: Path, monkeypatch):
+def test_main_run_passes_hardware_and_memory_bandwidth_choices_to_run_suite(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "benchmark.yaml"
     config_path.write_text(
         "models:\n  - name: M\n    path: model.gguf\n    profiles:\n      - name: GPU\n        gpu_layers: -1\n",
@@ -133,9 +133,13 @@ def test_main_run_passes_hardware_choice_to_run_suite(tmp_path: Path, monkeypatc
         return tmp_path
 
     monkeypatch.setattr("llmbench.cli.run_suite", _fake_run_suite)
-    rc = main(["run", "--config", str(config_path), "--hardware", "gpu"])
+    rc = main([
+        "run", "--config", str(config_path), "--hardware", "gpu",
+        "--collect-memory-bandwidth",
+    ])
     assert rc == 0
     assert captured["hardware_target"] == "gpu"
+    assert captured["collect_memory_bandwidth"] is True
 
 
 def test_main_doctor_json_reports_status(tmp_path: Path, monkeypatch, capsys):

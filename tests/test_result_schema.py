@@ -136,6 +136,42 @@ def test_unknown_null_is_valid_but_unavailable_known_value_is_not():
         validate_summary(result)
 
 
+def test_v3_accepts_memory_domains_and_runtime_bandwidth_provenance():
+    result = encode_v3(_summary())
+    result["hardware"]["memory_domains"] = [{
+        "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+        "bandwidth": {
+            "theoretical": envelope(410, "detected", unit="GB/s", evidence={"method": "hardware_introspection"}),
+        },
+    }]
+    result["telemetry"] = {"memory_bandwidth": [{
+        "domain_id": "apple:unified:0", "method": "mactop_headless_json", "scope": "system_soc_dram",
+        "observed_during_benchmark": envelope(120.0, "measured", unit="GB/s", evidence={"method": "benchmark_measurement"}),
+    }]}
+    validate_summary(result)
+    projected = scalar_summary(result)
+    assert projected["hardware"]["memory_domains"][0]["bandwidth"]["theoretical"] == 410
+
+
+def test_v3_rejects_non_positive_bandwidth_and_unknown_domain_reference():
+    result = encode_v3(_summary())
+    result["hardware"]["memory_domains"] = [{
+        "id": "gpu:0", "kind": "discrete_vram", "vendor": "NVIDIA",
+        "bandwidth": {"theoretical": envelope(0, "detected", unit="GB/s")},
+    }]
+    with pytest.raises(ResultSchemaError, match="positive"):
+        validate_summary(result)
+    result["hardware"]["memory_domains"][0]["bandwidth"]["theoretical"] = envelope(1, "detected", unit="GB/s")
+    result["telemetry"] = {
+        "memory_bandwidth": [{
+            "domain_id": "missing",
+            "observed_during_benchmark": envelope(1, "measured", unit="GB/s"),
+        }],
+    }
+    with pytest.raises(ResultSchemaError, match="unknown memory domain"):
+        validate_summary(result)
+
+
 def test_v2_remains_readable_without_rewriting_or_inventing_provenance():
     legacy = _summary()
     assert scalar_summary(legacy)["schema_version"] == 2

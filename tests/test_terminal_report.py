@@ -2,6 +2,7 @@ import io
 
 from rich.console import Console
 
+from llmbench.result_schema import encode_v3, envelope
 from llmbench.terminal_report import print_run_report
 
 
@@ -150,6 +151,22 @@ def test_terminal_report_labels_soak_capacity_limit():
     text = _render(summary)
     assert "Kapazitaetsgrenze" in text
     assert "VRAM" in text
+
+
+def test_terminal_report_keeps_v3_bandwidth_envelopes_before_projection():
+    summary = encode_v3(_summary(), {("M", "Full-GPU"): "requested"})
+    summary["hardware"]["memory_domains"] = [{
+        "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+        "bandwidth": {"theoretical": envelope(410.0, "detected", unit="GB/s")},
+    }]
+    summary["telemetry"] = {"memory_bandwidth": [{
+        "domain_id": "apple:unified:0", "scope": "system_soc_dram",
+        "observed_during_benchmark": envelope(120.0, "measured", unit="GB/s"),
+    }]}
+    text = _render(summary)
+    assert "Memory bandwidth" in text
+    assert "410.00 GB/s" in text
+    assert "120.00 GB/s" in text
 
 def test_terminal_report_shows_context_capability_boundary():
     summary = _summary()

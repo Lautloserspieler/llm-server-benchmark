@@ -12,6 +12,7 @@ from typing import Any
 
 SOURCES = {"requested", "defaulted", "detected", "calculated", "measured", "verified"}
 STATUSES = {"unknown", "unavailable"}
+CONTEXT_RESULTS = {"pass", "oom", "timeout", "failed", "partial", "unknown"}
 METHODS = {
     "user_configuration", "configuration_default", "hardware_introspection",
     "backend_runtime_introspection", "backend_log_parsing", "model_metadata",
@@ -99,6 +100,63 @@ def validate_envelope(item: Any, path: str, *, kind: str, unit: str | None = Non
             pass
 
 
+def _validate_context_capability(item: Any, path: str) -> None:
+    if not isinstance(item, dict):
+        _fail(path, "must be an object")
+
+    if "maximum_verified_context" in item:
+        maximum = item["maximum_verified_context"]
+        validate_envelope(
+            maximum,
+            f"{path}.maximum_verified_context",
+            kind="integer",
+            unit="tokens",
+        )
+        if maximum.get("value") is not None and maximum.get("source") != "verified":
+            _fail(
+                f"{path}.maximum_verified_context",
+                "a successful context maximum must use source 'verified'",
+            )
+
+    for key in ("completed_context_depths", "requested_context_depths"):
+        values = item.get(key, [])
+        if not isinstance(values, list):
+            _fail(f"{path}.{key}", "must be an array")
+        for index, value in enumerate(values):
+            _number(value, f"{path}.{key}[{index}]", integer=True)
+            if value < 0:
+                _fail(f"{path}.{key}[{index}]", "must not be negative")
+
+    failed = item.get("first_failed_context")
+    if failed is not None:
+        _number(failed, f"{path}.first_failed_context", integer=True)
+        if failed < 0:
+            _fail(f"{path}.first_failed_context", "must not be negative")
+
+    limit_status = item.get("limit_status")
+    if limit_status is not None and not isinstance(limit_status, str):
+        _fail(f"{path}.limit_status", "must be a string or null")
+
+    curve = item.get("curve", [])
+    if not isinstance(curve, list):
+        _fail(f"{path}.curve", "must be an array")
+    for index, row in enumerate(curve):
+        row_path = f"{path}.curve[{index}]"
+        if not isinstance(row, dict):
+            _fail(row_path, "must be an object")
+        if "populated_context" not in row:
+            _fail(row_path, "requires populated_context")
+        _number(row["populated_context"], f"{row_path}.populated_context", integer=True)
+        if row["populated_context"] < 0:
+            _fail(f"{row_path}.populated_context", "must not be negative")
+        for key in ("prefill_tps", "decode_tps", "combined_tps"):
+            if row.get(key) is not None:
+                _number(row[key], f"{row_path}.{key}")
+        result = row.get("result")
+        if not isinstance(result, str) or result not in CONTEXT_RESULTS:
+            _fail(f"{row_path}.result", f"unsupported result {result!r}")
+
+
 def _walk_v3(summary: dict[str, Any]) -> None:
     backend = summary.get("backend")
     if not isinstance(backend, dict) or not isinstance(backend.get("id"), str) or not backend["id"]:
@@ -133,6 +191,11 @@ def _walk_v3(summary: dict[str, Any]) -> None:
                 _fail(f"models[{mi}].profiles[{pi}].settings", "must be an object")
             if "gpu_layers" in settings:
                 validate_envelope(settings["gpu_layers"], f"models[{mi}].profiles[{pi}].settings.gpu_layers", kind="integer", unit="layers")
+            if "context_capability" in profile:
+                _validate_context_capability(
+                    profile["context_capability"],
+                    f"models[{mi}].profiles[{pi}].context_capability",
+                )
             if backend.get("id") == "llama_cpp":
                 benchmarks = profile.get("benchmarks", {})
                 if not isinstance(benchmarks, dict):
@@ -210,6 +273,16 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
                 settings = profile.get("settings") or {}
                 if "gpu_layers" in settings:
                     rows.append({"path": f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: gpu_layers", "value": settings["gpu_layers"], "source": None, "status": "unknown", "reason": "legacy_provenance_missing", "unit": "layers"})
+                capability = profile.get("context_capability") or {}
+                if "maximum_verified_context" in capability:
+                    rows.append({
+                        "path": f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: maximum_verified_context",
+                        "value": capability["maximum_verified_context"],
+                        "source": None,
+                        "status": "unknown",
+                        "reason": "legacy_provenance_missing",
+                        "unit": "tokens",
+                    })
                 for kind, benchmark in (profile.get("benchmarks") or {}).items():
                     for index, row in enumerate(benchmark.get("rows") or []):
                         if "avg_ts" in row:
@@ -222,6 +295,10 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     for model in summary.get("models") or []:
         for profile in model.get("profiles") or []:
             add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: gpu_layers", (profile.get("settings") or {}).get("gpu_layers"))
+            add(
+                f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: maximum_verified_context",
+                (profile.get("context_capability") or {}).get("maximum_verified_context"),
+            )
             for kind, benchmark in (profile.get("benchmarks") or {}).items():
                 for index, row in enumerate(benchmark.get("rows") or []):
                     context = row.get("test") or f"row {index}"
@@ -272,6 +349,25 @@ def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], Any] |
                         settings["gpu_layers"] = envelope(value, None, unit="layers", status="unknown", reason="invalid_calculation_origin")
                 else:
                     settings["gpu_layers"] = envelope(value, None, unit="layers", status="unknown", reason="config_origin_unknown")
+            capability = profile.get("context_capability")
+            if isinstance(capability, dict) and "maximum_verified_context" in capability:
+                value = capability["maximum_verified_context"]
+                capability["maximum_verified_context"] = (
+                    envelope(
+                        value,
+                        "verified",
+                        unit="tokens",
+                        evidence={"method": "experimental_validation"},
+                    )
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit="tokens",
+                        status="unavailable",
+                        reason="no_verified_context_depth",
+                    )
+                )
             if backend_id == "llama_cpp":
                 for benchmark in (profile.get("benchmarks") or {}).values():
                     for row in benchmark.get("rows") or []:

@@ -612,6 +612,37 @@ Benchmark-Backend, nicht die Implementierung hinter einem externen Endpoint. `re
 setzt einen expliziten YAML-Wert voraus, ein nachweislich geliefertes Preset ist `defaulted`;
 llmbench leitet beides nicht aus gleichen Werten oder Profilnamen ab.
 
+### Verifizierte Kontext-Kapazitaet
+
+Long-Context-Ergebnisse enthalten jetzt pro Profil eine ausdrueckliche
+Kapazitaetszusammenfassung. Eine Kontexttiefe gilt nur dann als verifiziert, wenn bei dieser
+belegten Tiefe sowohl Prompt Processing als auch Text Generation vollstaendig abgeschlossen
+wurden. Die hoechste abgeschlossene Tiefe wird als `maximum_verified_context` gespeichert
+und erhaelt in Schema v3 `source: verified` sowie
+`evidence.method: experimental_validation`.
+
+Der Kapazitaetsblock bewahrt ausserdem die angeforderten und abgeschlossenen Tiefen, die
+erste fehlgeschlagene Tiefe soweit bekannt, den Grenzstatus und eine Kontext-
+Performance-Tabelle. Kapazitaetsfehler erscheinen als OOM-/Kapazitaetsgrenze, Timeouts
+bleiben davon getrennt und eine nur teilweise abgeschlossene Tiefe erhoeht niemals das
+verifizierte Maximum. HTML-, PDF- und Terminal-Berichte zeigen dieselbe Grenze sowie die
+verfuegbaren Prefill-/Decode-Durchsatzwerte.
+
+Beispiel:
+
+```json
+"context_capability": {
+  "maximum_verified_context": {
+    "value": 131072,
+    "unit": "tokens",
+    "source": "verified",
+    "evidence": {"method": "experimental_validation"}
+  },
+  "first_failed_context": 262144,
+  "limit_status": "skipped_capacity"
+}
+```
+
 ---
 
 ## Berichte

@@ -134,6 +134,7 @@ def _long_context_failure_metadata(
 
     return {
         "completed_context_depths": completed,
+        "requested_context_depths": requested,
         "failed_context_depth": failed_depth,
         "limit_status": limit_status,
         "capacity_limited": capacity_limited,
@@ -476,12 +477,35 @@ def run_llama_bench(
                         "stderr_tail": (stderr or "")[-4000:],
                         "telemetry": light,
                         "completed_context_depths": meta["completed_context_depths"],
+                        "requested_context_depths": meta["requested_context_depths"],
                         "failed_context_depth": meta["failed_context_depth"],
                         "limit_status": meta["limit_status"],
                         "capacity_limited": False,
                         "timed_out": True,
                         "warnings": [meta["message"]],
                     }
+        if test_kind == "long_context":
+            meta = _long_context_failure_metadata(
+                [],
+                bench_cfg,
+                stderr,
+                timed_out=True,
+                timeout_s=timeout_s,
+            )
+            return {
+                "kind": test_kind,
+                "status": "timeout",
+                "error": _timeout_message(test_kind, profile, timeout_s),
+                "duration_seconds": duration,
+                "stderr_tail": (stderr or "")[-4000:],
+                "telemetry": light,
+                "completed_context_depths": [],
+                "requested_context_depths": meta["requested_context_depths"],
+                "failed_context_depth": meta["failed_context_depth"],
+                "limit_status": "timeout",
+                "capacity_limited": False,
+                "timed_out": True,
+            }
         return {
             "kind": test_kind,
             "status": "timeout",
@@ -513,11 +537,28 @@ def run_llama_bench(
                         "stderr_tail": (stderr or "")[-4000:],
                         "telemetry": light,
                         "completed_context_depths": meta["completed_context_depths"],
+                        "requested_context_depths": meta["requested_context_depths"],
                         "failed_context_depth": meta["failed_context_depth"],
                         "limit_status": meta["limit_status"],
                         "capacity_limited": meta["capacity_limited"],
                         "warnings": [meta["message"]],
                     }
+        if test_kind == "long_context":
+            meta = _long_context_failure_metadata([], bench_cfg, stderr)
+            return {
+                "kind": test_kind,
+                "status": "failed",
+                "error": f"llama-bench endete mit Code {returncode}",
+                "error_detail": err_detail,
+                "duration_seconds": duration,
+                "stderr_tail": (stderr or "")[-4000:],
+                "telemetry": light,
+                "completed_context_depths": [],
+                "requested_context_depths": meta["requested_context_depths"],
+                "failed_context_depth": meta["failed_context_depth"],
+                "limit_status": meta["limit_status"],
+                "capacity_limited": meta["capacity_limited"],
+            }
         return {
             "kind": test_kind,
             "status": "failed",
@@ -545,6 +586,10 @@ def run_llama_bench(
         "rows": rows,
         "telemetry": light,
     }
+    if test_kind == "long_context":
+        meta = _long_context_failure_metadata(rows, bench_cfg, stderr)
+        result["completed_context_depths"] = meta["completed_context_depths"]
+        result["requested_context_depths"] = meta["requested_context_depths"]
     if load_warning:
         result["warnings"] = [load_warning]
     return result

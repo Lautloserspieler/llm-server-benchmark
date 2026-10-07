@@ -613,6 +613,34 @@ not the implementation behind an external endpoint. `requested` is an explicit Y
 while a proven supplied preset is `defaulted`; llmbench does not infer either from matching
 values or profile names.
 
+### Verified context capability
+
+Long-context results now expose an explicit capability summary per profile. A context depth
+counts as verified only when both prompt processing and text generation completed at that
+populated depth. The highest completed depth becomes `maximum_verified_context` with
+`source: verified` and `evidence.method: experimental_validation` in schema v3.
+
+The capability block also retains the requested depths, completed depths, the first failed
+depth when known, the limiting status, and a context-depth performance table. Capacity
+failures are shown as OOM/capacity boundaries, timeouts remain distinct, and an incomplete
+depth never raises the verified maximum. HTML, PDF, and terminal reports show the same
+boundary and the available prefill/decode throughput values.
+
+Example:
+
+```json
+"context_capability": {
+  "maximum_verified_context": {
+    "value": 131072,
+    "unit": "tokens",
+    "source": "verified",
+    "evidence": {"method": "experimental_validation"}
+  },
+  "first_failed_context": 262144,
+  "limit_status": "skipped_capacity"
+}
+```
+
 ---
 
 ## Reports

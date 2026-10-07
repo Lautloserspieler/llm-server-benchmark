@@ -266,6 +266,69 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
     return block
 
 
+def _context_capability_block(
+    capability: dict[str, Any] | None,
+    width: float,
+    styles: dict[str, Any],
+) -> list[Any]:
+    if not capability:
+        return []
+
+    from reportlab.platypus import Paragraph, Spacer
+
+    maximum = capability.get("maximum_verified_context")
+    failed = capability.get("first_failed_context")
+    summary = (
+        f"<b>{_('Maximal verifizierter Kontext')}:</b> "
+        f"{maximum if maximum is not None else '—'} {_('Tokens')}"
+    )
+    if failed is not None:
+        summary += (
+            f" &middot; <b>{_('Erste fehlgeschlagene Kontextstufe')}:</b> "
+            f"{failed} {_('Tokens')}"
+        )
+
+    rows = [[
+        _("Kontexttiefe"),
+        _("Prefill Tokens/s"),
+        _("Decode Tokens/s"),
+        _("Kombiniert Tokens/s"),
+        _("Ergebnis"),
+    ]]
+    labels = {
+        "pass": _("OK"),
+        "oom": _("Kapazitaetsgrenze"),
+        "timeout": _("Zeitueberschreitung"),
+        "failed": _("Fehler"),
+        "partial": _("Teilweise"),
+        "unknown": _("unbekannt"),
+    }
+    for row in capability.get("curve") or []:
+        result = str(row.get("result") or "unknown")
+        rows.append([
+            str(row.get("populated_context") if row.get("populated_context") is not None else "—"),
+            _fmt(row.get("prefill_tps")),
+            _fmt(row.get("decode_tps")),
+            _fmt(row.get("combined_tps")),
+            labels.get(result, result),
+        ])
+
+    out: list[Any] = [
+        Spacer(1, 6),
+        Paragraph(_("Kontext-Kapazitaet"), styles["mutedKeep"]),
+        Paragraph(summary, styles["muted"]),
+    ]
+    if len(rows) > 1:
+        out.append(_table(rows, [
+            width * 0.20,
+            width * 0.20,
+            width * 0.20,
+            width * 0.20,
+            width * 0.20,
+        ], numeric_from=0))
+    return out
+
+
 def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
     _require_reportlab()
     value_provenance = provenance_rows(summary)
@@ -398,6 +461,12 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                         f"{kind}: {result['error']}",
                         styles["warn"],
                     ))
+
+            block.extend(_context_capability_block(
+                profile.get("context_capability"),
+                width,
+                styles,
+            ))
 
             for kind, entries in charts.items():
                 block.append(KeepTogether([

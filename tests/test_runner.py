@@ -422,3 +422,40 @@ def test_tool_info_keeps_llama_cpp_probe_by_default(suite_env, monkeypatch):
     info = _tool_info(suite_env)
     assert "llama_bench" in info
     assert "vllm" not in info
+
+def test_run_suite_persists_verified_context_capability(suite_env, monkeypatch):
+    class ContextBackend(_RecordingBackend):
+        def run_benchmark(self, model_path, profile, kind, out_dir, bench_cfg, on_progress=None):
+            if kind != "long_context":
+                return super().run_benchmark(
+                    model_path, profile, kind, out_dir, bench_cfg, on_progress=on_progress
+                )
+            return {
+                "kind": "long_context",
+                "status": "partial",
+                "rows": [
+                    {"n_prompt": 512, "n_gen": 0, "n_depth": 0, "avg_ts": 3000.0},
+                    {"n_prompt": 0, "n_gen": 128, "n_depth": 0, "avg_ts": 80.0},
+                    {"n_prompt": 512, "n_gen": 0, "n_depth": 131072, "avg_ts": 1200.0},
+                    {"n_prompt": 0, "n_gen": 128, "n_depth": 131072, "avg_ts": 55.0},
+                ],
+                "completed_context_depths": [0, 131072],
+                "requested_context_depths": [0, 131072, 262144],
+                "failed_context_depth": 262144,
+                "limit_status": "skipped_capacity",
+                "capacity_limited": True,
+                "error": "Kontextstufe 262144 konnte nicht erstellt werden.",
+                "telemetry": {},
+            }
+
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: ContextBackend())
+    run_dir = run_suite(suite_env, plain=True)
+    summary = _read_summary(run_dir)
+
+    capability = summary["models"][0]["profiles"][0]["context_capability"]
+    maximum = capability["maximum_verified_context"]
+    assert maximum["value"] == 131072
+    assert maximum["source"] == "verified"
+    assert maximum["unit"] == "tokens"
+    assert capability["first_failed_context"] == 262144
+    assert capability["curve"][-1]["result"] == "oom"

@@ -176,3 +176,25 @@ def test_pdf_labels_soak_capacity_limit(tmp_path: Path):
     text = _text(generate_run_pdf(summary, tmp_path / "capacity.pdf"))
     assert "Kapazitaetsgrenze" in text
     assert "VRAM" in text
+
+def test_pdf_shows_context_capability_boundary(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["profiles"][0]["context_capability"] = {
+        "maximum_verified_context": 131072,
+        "completed_context_depths": [0, 131072],
+        "requested_context_depths": [0, 131072, 262144],
+        "first_failed_context": 262144,
+        "limit_status": "skipped_capacity",
+        "curve": [
+            {"populated_context": 131072, "prefill_tps": 1200.0, "decode_tps": 55.0,
+             "combined_tps": None, "result": "pass"},
+            {"populated_context": 262144, "prefill_tps": None, "decode_tps": None,
+             "combined_tps": None, "result": "oom"},
+        ],
+    }
+
+    text = _text(generate_run_pdf(summary, tmp_path / "context.pdf"))
+    assert "Kontext-Kapazitaet" in text
+    assert "131072" in text
+    assert "262144" in text
+    assert "Kapazitaetsgrenze" in text

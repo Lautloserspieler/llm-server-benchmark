@@ -135,6 +135,60 @@ def _bench_table(profile: dict[str, Any]) -> str:
     )
 
 
+def _context_capability_block(capability: dict[str, Any] | None) -> str:
+    if not capability:
+        return ""
+
+    maximum = capability.get("maximum_verified_context")
+    failed = capability.get("first_failed_context")
+    summary = (
+        f"<p class='muted'><strong>{_('Maximal verifizierter Kontext')}:</strong> "
+        f"{esc(maximum) if maximum is not None else '—'} {_('Tokens')}"
+    )
+    if failed is not None:
+        summary += (
+            f" · <strong>{_('Erste fehlgeschlagene Kontextstufe')}:</strong> "
+            f"{esc(failed)} {_('Tokens')}"
+        )
+    summary += "</p>"
+
+    rows_html: list[str] = []
+    labels = {
+        "pass": (_("OK"), "status-ok"),
+        "oom": (_("Kapazitaetsgrenze"), "status-timeout"),
+        "timeout": (_("Zeitueberschreitung"), "status-timeout"),
+        "failed": (_("Fehler"), "status-failed"),
+        "partial": (_("Teilweise"), "status-timeout"),
+        "unknown": (_("unbekannt"), "status-failed"),
+    }
+    for row in capability.get("curve") or []:
+        result = str(row.get("result") or "unknown")
+        label, cls = labels.get(result, (result, "status-failed"))
+        rows_html.append(
+            "<tr>"
+            f"<td class='num'>{esc(row.get('populated_context'))}</td>"
+            f"<td class='num'>{fnum(row.get('prefill_tps'))}</td>"
+            f"<td class='num'>{fnum(row.get('decode_tps'))}</td>"
+            f"<td class='num'>{fnum(row.get('combined_tps'))}</td>"
+            f"<td><span class='{cls}'>{esc(label)}</span></td>"
+            "</tr>"
+        )
+
+    if not rows_html:
+        return f"<h3>{_('Kontext-Kapazitaet')}</h3>{summary}"
+
+    return (
+        f"<h3>{_('Kontext-Kapazitaet')}</h3>{summary}"
+        f"<div class='table-wrap'><table><thead><tr>"
+        f"<th class='num'>{_('Kontexttiefe')}</th>"
+        f"<th class='num'>{_('Prefill Tokens/s')}</th>"
+        f"<th class='num'>{_('Decode Tokens/s')}</th>"
+        f"<th class='num'>{_('Kombiniert Tokens/s')}</th>"
+        f"<th>{_('Ergebnis')}</th>"
+        f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table></div>"
+    )
+
+
 def _telemetry_table(profile: dict[str, Any]) -> str:
     rows = []
     for kind, result in profile.get("benchmarks", {}).items():
@@ -353,6 +407,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
                 f"Threads: <code>{esc(s.get('threads', 'auto'))}</code></p>"
             )
             body.append(_bench_table(profile))
+            body.append(_context_capability_block(profile.get("context_capability")))
             body.append(f"<h3>{_('Hardware-Telemetrie')}</h3>")
             body.append(_telemetry_table(profile))
         if m.get("endpoint"):

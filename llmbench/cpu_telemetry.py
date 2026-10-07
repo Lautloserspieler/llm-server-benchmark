@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import psutil
 
@@ -218,10 +218,11 @@ class LinuxRaplCpuProvider(PsutilCpuProvider):
     ) -> None:
         super().__init__()
         self._rapl = _RaplEnergyReader(powercap_root, clock)
+        self.rapl_available = False
 
     def initialize(self) -> bool:
         super().initialize()
-        self._rapl.initialize()
+        self.rapl_available = self._rapl.initialize()
         return True
 
     def sample_cpu(self) -> CpuSample:
@@ -242,7 +243,9 @@ def get_cpu_telemetry_provider() -> CpuTelemetryProvider:
     if os.name == "posix" and Path("/sys/class/powercap").exists():
         provider = LinuxRaplCpuProvider()
         provider.initialize()
-        return provider
+        if provider.rapl_available:
+            return provider
+        provider.shutdown()
 
     provider = PsutilCpuProvider()
     provider.initialize()

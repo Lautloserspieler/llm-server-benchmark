@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import namedtuple
 
+import llmbench.cpu_telemetry as cpu_telemetry
 from llmbench.cpu_telemetry import (
     LinuxRaplCpuProvider,
     PsutilCpuProvider,
@@ -10,7 +11,7 @@ from llmbench.cpu_telemetry import (
 
 
 def test_rapl_reader_derives_package_power_from_energy_delta(tmp_path):
-    zone = tmp_path / "intel-rapl:0"
+    zone = tmp_path / "package0"
     zone.mkdir()
     (zone / "name").write_text("package-0\n", encoding="utf-8")
     energy = zone / "energy_uj"
@@ -27,7 +28,7 @@ def test_rapl_reader_derives_package_power_from_energy_delta(tmp_path):
 
 
 def test_rapl_reader_handles_energy_counter_wrap(tmp_path):
-    zone = tmp_path / "intel-rapl:0"
+    zone = tmp_path / "package0"
     zone.mkdir()
     (zone / "name").write_text("package-0\n", encoding="utf-8")
     energy = zone / "energy_uj"
@@ -44,12 +45,12 @@ def test_rapl_reader_handles_energy_counter_wrap(tmp_path):
 
 
 def test_rapl_reader_ignores_non_package_domains(tmp_path):
-    package = tmp_path / "intel-rapl:0"
+    package = tmp_path / "package0"
     package.mkdir()
     (package / "name").write_text("package-0\n", encoding="utf-8")
     (package / "energy_uj").write_text("1000\n", encoding="utf-8")
 
-    dram = tmp_path / "intel-rapl:1"
+    dram = tmp_path / "dram0"
     dram.mkdir()
     (dram / "name").write_text("dram\n", encoding="utf-8")
     (dram / "energy_uj").write_text("2000\n", encoding="utf-8")
@@ -69,11 +70,13 @@ def test_psutil_cpu_provider_collects_frequency_and_prefers_cpu_temperature(monk
         lambda: Freq(4210.0, 800.0, 4500.0),
     )
     monkeypatch.setattr(
-        "llmbench.cpu_telemetry.psutil.sensors_temperatures",
+        cpu_telemetry.psutil,
+        "sensors_temperatures",
         lambda **_kwargs: {
             "nvme": [Temp("Composite", 55.0, 80.0, 90.0)],
             "k10temp": [Temp("Tctl", 73.5, 95.0, 100.0)],
         },
+        raising=False,
     )
 
     provider = PsutilCpuProvider()
@@ -91,7 +94,8 @@ def test_psutil_cpu_provider_gracefully_handles_missing_temperature_api(monkeypa
         lambda: Freq(3500.0, 800.0, 4500.0),
     )
     monkeypatch.delattr(
-        "llmbench.cpu_telemetry.psutil.sensors_temperatures",
+        cpu_telemetry.psutil,
+        "sensors_temperatures",
         raising=False,
     )
 
@@ -113,7 +117,7 @@ def test_linux_rapl_provider_combines_psutil_metrics_with_power(monkeypatch, tmp
         classmethod(lambda _cls: 70.0),
     )
 
-    zone = tmp_path / "intel-rapl:0"
+    zone = tmp_path / "package0"
     zone.mkdir()
     (zone / "name").write_text("package-0\n", encoding="utf-8")
     energy = zone / "energy_uj"

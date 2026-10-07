@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from .bootstrap import BOOTSTRAP_GPU_LAYERS_MARKER
+
 # Werte, die das Messergebnis beeinflussen. Nur diese gehen in den
 # Konfigurations-Fingerabdruck ein, der zwei Serverlaeufe vergleichbar macht.
 FINGERPRINT_KEYS = (
@@ -345,6 +347,10 @@ def default_config() -> dict[str, Any]:
 def load_config(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {} if p.exists() else {}
+    if not isinstance(raw, dict):
+        raw = {}
+    raw = dict(raw)
+    markers = raw.pop(BOOTSTRAP_GPU_LAYERS_MARKER, None)
     cfg_dict = deep_merge(DEFAULT_CONFIG, raw)
 
     # Nur ein in der Datei ausdruecklich gesetztes project.language ueberschreibt
@@ -363,13 +369,33 @@ def load_config(path: str | Path) -> dict[str, Any]:
     # Preserve evidence from the unmerged document.  Once DEFAULT_CONFIG has
     # been merged, equal scalar values cannot tell a user request from a
     # supplied default.
-    origins: dict[tuple[str, str], str] = {}
-    for model in (raw.get("models") or []) if isinstance(raw, dict) else []:
+    defaulted: set[tuple[str, str]] = set()
+    profiles_by_key: dict[tuple[str, str], Any] = {}
+    for model in raw.get("models") or []:
+        if not isinstance(model, dict):
+            continue
+        model_name = str(model.get("name") or "")
+        for profile in model.get("profiles") or []:
+            if isinstance(profile, dict):
+                profiles_by_key[(model_name, str(profile.get("name") or ""))] = profile.get("gpu_layers")
+    if isinstance(markers, list):
+        for marker in markers:
+            if not isinstance(marker, dict) or type(marker.get("gpu_layers")) is not int:
+                continue
+            key = (str(marker.get("model") or ""), str(marker.get("profile") or ""))
+            # The marker only describes a bootstrap default when every part still
+            # matches the raw profile. A hand-edited or stale record is ignored.
+            if profiles_by_key.get(key) == marker["gpu_layers"] and type(profiles_by_key.get(key)) is int:
+                defaulted.add(key)
+
+    origins: dict[tuple[str, str], Any] = {}
+    for model in raw.get("models") or []:
         if not isinstance(model, dict):
             continue
         for profile in model.get("profiles") or []:
             if isinstance(profile, dict) and "gpu_layers" in profile:
-                origins[(str(model.get("name") or ""), str(profile.get("name") or ""))] = "requested"
+                key = (str(model.get("name") or ""), str(profile.get("name") or ""))
+                origins[key] = "defaulted" if key in defaulted else "requested"
     cfg_dict["_gpu_layers_origins"] = origins
     return cfg_dict
 

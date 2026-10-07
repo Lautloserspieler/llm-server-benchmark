@@ -17,7 +17,7 @@ from .report import generate_run_html
 from .result_schema import encode_v3
 from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
-from .tuner import tune_gpu_layers
+from .tuner import tune_gpu_layers_selection
 from .backends import backend_name, get_backend
 from .i18n import _
 from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
@@ -208,23 +208,42 @@ def run_suite(
             reporter.note(f"Auto-Tuning fuer {model['name']} ...")
             endpoint_cfg_tune = dict(cfg.get("endpoint", {}))
             endpoint_cfg_tune.update(model.get("endpoint", {}) or {})
-            best_layers = tune_gpu_layers(
+            selection = tune_gpu_layers_selection(
                 cfg["tools"]["llama_server"],
                 meta["path"],
                 endpoint_cfg_tune,
                 cfg["benchmark"],
                 model_dir,
             )
+            best_layers = selection.layers
             reporter.note(f"Optimal layers gefunden: {best_layers}")
+            origins = cfg.get("_gpu_layers_origins")
+            if not isinstance(origins, dict):
+                origins = {}
+                cfg["_gpu_layers_origins"] = origins
             if model.get("profiles"):
                 original_name = str(model["profiles"][0].get("name") or "")
                 # Auto-tuning replaces the configured setting with an observed
                 # runtime choice; it must not inherit an earlier user request.
-                (cfg.get("_gpu_layers_origins") or {}).pop((str(model.get("name") or ""), original_name), None)
+                origins.pop((str(model.get("name") or ""), original_name), None)
                 model["profiles"][0]["gpu_layers"] = best_layers
                 model["profiles"][0]["name"] = f"Auto-Tuned ({best_layers})"
             else:
                 model["profiles"] = [{"name": f"Auto-Tuned ({best_layers})", "gpu_layers": best_layers}]
+            if selection.successful:
+                profile_name = str(model["profiles"][0]["name"])
+                origins[(str(model.get("name") or ""), profile_name)] = {
+                    "source": "calculated",
+                    "evidence": {
+                        "method": "derived_calculation",
+                        "provider": "llmbench",
+                        "metadata": {
+                            "selected_gpu_layers": best_layers,
+                            "selected_tps": selection.selected_tps,
+                            "successful_candidates": selection.successful_candidates,
+                        },
+                    },
+                }
 
         model_result: dict[str, Any] = {"model": meta, "profiles": []}
         if not meta["exists"]:

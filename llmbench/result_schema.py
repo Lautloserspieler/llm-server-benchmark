@@ -231,7 +231,7 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], str] | None = None) -> dict[str, Any]:
+def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], Any] | None = None) -> dict[str, Any]:
     """Copy a live scalar summary into schema v3 without changing the live run."""
     data = copy.deepcopy(summary)
     if data.get("schema_version") == 3:
@@ -252,10 +252,24 @@ def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], str] |
             if "gpu_layers" in settings:
                 value = settings["gpu_layers"]
                 origin = gpu_origins.get((model_name, str(profile.get("name") or "")))
-                if origin == "requested":
+                origin_source = origin if isinstance(origin, str) else origin.get("source") if isinstance(origin, dict) else None
+                if origin_source == "requested":
                     settings["gpu_layers"] = envelope(value, "requested", unit="layers", evidence={"method": "user_configuration"})
-                elif origin == "defaulted":
+                elif origin_source == "defaulted":
                     settings["gpu_layers"] = envelope(value, "defaulted", unit="layers", evidence={"method": "configuration_default", "provider": "llmbench"})
+                elif origin_source == "calculated" and isinstance(origin, dict):
+                    evidence = origin.get("evidence")
+                    metadata = evidence.get("metadata") if isinstance(evidence, dict) else None
+                    if (
+                        isinstance(evidence, dict)
+                        and evidence.get("method") == "derived_calculation"
+                        and evidence.get("provider") == "llmbench"
+                        and isinstance(metadata, dict)
+                        and metadata.get("selected_gpu_layers") == value
+                    ):
+                        settings["gpu_layers"] = envelope(value, "calculated", unit="layers", evidence=evidence)
+                    else:
+                        settings["gpu_layers"] = envelope(value, None, unit="layers", status="unknown", reason="invalid_calculation_origin")
                 else:
                     settings["gpu_layers"] = envelope(value, None, unit="layers", status="unknown", reason="config_origin_unknown")
             if backend_id == "llama_cpp":

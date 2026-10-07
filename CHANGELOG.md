@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Ergebnisschema v3: Herkunft
+
+- Neue Ergebnisartefakte verwenden Schema-Version 3 und speichern Nachweise für angeforderte,
+  voreingestellte, erkannte, berechnete, gemessene und verifizierte Werte. Die erste Migration
+  umfasst konfigurierte GPU-Layer, erkannte physische CPU-Kerne und gemessenen llama.cpp-Durchsatz.
+- Leser, Berichte, Vergleich und CSV-Export bleiben mit Schema-v2-Ergebnissen kompatibel.
+  HTML/PDF enthalten einen kompakten Herkunftsabschnitt; CSV erhält skalare Herkunftsspalten.
+- Danke an @enmanuelmag für Roadmap und Review-Richtung.
+
 ### Ubuntu-Referenzlauf: CPU-Isolation, Kapazitaetsstatus und Long-Context-Recovery
 
 - CPU-only llama.cpp-Profile erzwingen jetzt neben `gpu_layers: 0` auch

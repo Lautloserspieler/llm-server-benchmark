@@ -9,6 +9,7 @@ from typing import Any
 from .llama_bench import flatten_bench_rows
 from .i18n import _
 from .report import CSS, esc, fms, fnum
+from .result_schema import scalar_summary
 from .utils import read_json, write_json
 
 
@@ -16,7 +17,7 @@ def load_summary(value: str | Path) -> dict[str, Any]:
     p = Path(value)
     if p.is_dir():
         p = p / "summary.json"
-    return read_json(p)
+    return scalar_summary(read_json(p))
 
 
 def _server(summary: dict[str, Any]) -> str:
@@ -54,6 +55,7 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
     Ohne diese Pruefung stellt der Bericht beliebige Zahlen nebeneinander und
     sieht dabei genauso ueberzeugend aus wie ein korrekter Vergleich.
     """
+    summaries = [scalar_summary(summary) for summary in summaries]
     issues: list[dict[str, str]] = []
 
     old = [_server(s) for s in summaries if int(s.get("schema_version") or 1) < 2]
@@ -201,6 +203,7 @@ def _config_diff_details(summaries: list[dict[str, Any]]) -> str:
 
 
 def _records(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    summary = scalar_summary(summary)
     out = []
     for m in summary.get("models", []):
         model_name = m.get("model", {}).get("name")

@@ -568,6 +568,50 @@ results/
 
 Die Rohdateien bewahren Befehle, stdout/stderr und Telemetrie auf. `summary.json` enthält die aggregierten Daten, die für Berichte und Vergleiche verwendet werden.
 
+### Ergebnisschema v3 und Herkunft
+
+Neue Läufe schreiben `summary.json` mit `schema_version: 3`. Die Referenzfelder bewahren
+ihren JSON-Wert zusammen mit der Herkunft: Profil-`gpu_layers` (Einheit `layers`), erkannte
+CPU-`physical_cores` (Einheit `cores`) und llama.cpp-`avg_ts` (Einheit `tokens/s`). `source`
+ist `requested`, `defaulted`, `detected`, `calculated`, `measured` oder `verified`. Eine
+fehlende Herkunft ist mit `status: unknown` beziehungsweise `unavailable` und einem Grund
+explizit; `null` steht niemals für `0` oder `false`. Optionales `evidence.method`, `reference`
+und `provider` beschreiben das Verfahren ohne Vertrauensbewertung.
+
+llmbench liest v2-Ergebnisse unverändert weiter und zeigt ihre fehlende Herkunft als unknown.
+Ergebnisse aus zukünftigen Schemaversionen werden mit einem Hinweis auf ein nötiges Update
+abgelehnt. HTML/PDF enthalten eine kompakte Herkunftstabelle; `benchmarks.csv` behält skalare
+Metriken und ergänzt `configured_gpu_layers`, `gpu_layers_source` und `avg_ts_source`.
+Die beiden `*_source`-Spalten enthalten bei bekannter Herkunft deren Kennung, sonst den
+expliziten Zustand `unknown` oder `unavailable`.
+
+`llmbench bootstrap` markiert die von ihm erzeugten Profile privat und wertgebunden,
+damit ihre `gpu_layers`-Werte als `defaulted` ausgegeben werden; ein explizit in YAML
+eingetragener Wert bleibt `requested`. Wählt Auto-Tuning eine positive, endliche Messung,
+ist der finale `gpu_layers`-Wert `calculated` und enthält die gewählte TPS sowie die Zahl
+erfolgreicher Kandidaten. Ein Fallback ohne erfolgreiche Messung bleibt `unknown` und
+beansprucht keine berechnete Herkunft.
+
+Ein Envelope ist bewusst eigenständig:
+
+```json
+"avg_ts": {
+  "value": 80.5,
+  "unit": "tokens/s",
+  "source": "measured",
+  "evidence": {"method": "benchmark_measurement"}
+}
+```
+
+Standardmethoden sind `user_configuration`, `configuration_default`,
+`hardware_introspection`, `backend_runtime_introspection`, `backend_log_parsing`,
+`model_metadata`, `derived_calculation`, `benchmark_measurement` und
+`experimental_validation`; eigene Methoden verwenden `custom:vendor/procedure`. Der v3-
+Backend-Deskriptor ist `{ "id", "name"?, "config" }`. Er kennzeichnet das gewählte
+Benchmark-Backend, nicht die Implementierung hinter einem externen Endpoint. `requested`
+setzt einen expliziten YAML-Wert voraus, ein nachweislich geliefertes Preset ist `defaulted`;
+llmbench leitet beides nicht aus gleichen Werten oder Profilnamen ab.
+
 ---
 
 ## Berichte

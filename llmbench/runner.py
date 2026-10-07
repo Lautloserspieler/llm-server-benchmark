@@ -14,9 +14,10 @@ from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html
+from .result_schema import encode_v3
 from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
-from .tuner import tune_gpu_layers
+from .tuner import tune_gpu_layers_selection
 from .backends import backend_name, get_backend
 from .i18n import _
 from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
@@ -24,6 +25,11 @@ from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, u
 BENCH_KINDS = ("prompt", "generation", "long_context")
 SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
 HARDWARE_TARGETS = ("cpu", "gpu", "gpu_overload", "both")
+
+
+def _write_summary(path: Path, summary: dict[str, Any], cfg: dict[str, Any]) -> None:
+    """Persist a copied v3 artifact while the active benchmark stays scalar."""
+    write_json(path, encode_v3(summary, cfg.get("_gpu_layers_origins")))
 
 
 def filter_profiles_by_hardware(profiles: list[dict[str, Any]], hardware_target: str) -> list[dict[str, Any]]:
@@ -202,19 +208,42 @@ def run_suite(
             reporter.note(f"Auto-Tuning fuer {model['name']} ...")
             endpoint_cfg_tune = dict(cfg.get("endpoint", {}))
             endpoint_cfg_tune.update(model.get("endpoint", {}) or {})
-            best_layers = tune_gpu_layers(
+            selection = tune_gpu_layers_selection(
                 cfg["tools"]["llama_server"],
                 meta["path"],
                 endpoint_cfg_tune,
                 cfg["benchmark"],
                 model_dir,
             )
+            best_layers = selection.layers
             reporter.note(f"Optimal layers gefunden: {best_layers}")
+            origins = cfg.get("_gpu_layers_origins")
+            if not isinstance(origins, dict):
+                origins = {}
+                cfg["_gpu_layers_origins"] = origins
             if model.get("profiles"):
+                original_name = str(model["profiles"][0].get("name") or "")
+                # Auto-tuning replaces the configured setting with an observed
+                # runtime choice; it must not inherit an earlier user request.
+                origins.pop((str(model.get("name") or ""), original_name), None)
                 model["profiles"][0]["gpu_layers"] = best_layers
                 model["profiles"][0]["name"] = f"Auto-Tuned ({best_layers})"
             else:
                 model["profiles"] = [{"name": f"Auto-Tuned ({best_layers})", "gpu_layers": best_layers}]
+            if selection.successful:
+                profile_name = str(model["profiles"][0]["name"])
+                origins[(str(model.get("name") or ""), profile_name)] = {
+                    "source": "calculated",
+                    "evidence": {
+                        "method": "derived_calculation",
+                        "provider": "llmbench",
+                        "metadata": {
+                            "selected_gpu_layers": best_layers,
+                            "selected_tps": selection.selected_tps,
+                            "successful_candidates": selection.successful_candidates,
+                        },
+                    },
+                }
 
         model_result: dict[str, Any] = {"model": meta, "profiles": []}
         if not meta["exists"]:
@@ -223,7 +252,7 @@ def run_suite(
             summary["models"].append(model_result)
             summary["warnings"].append(model_result["error"])
             reporter.note(model_result["error"])
-            write_json(run_dir / "summary.partial.json", summary)
+            _write_summary(run_dir / "summary.partial.json", summary, cfg)
             continue
 
         profiles = filter_profiles_by_hardware(model.get("profiles") or [], hardware_target)
@@ -235,7 +264,7 @@ def run_suite(
             summary["warnings"].append(msg)
             reporter.note(msg)
             summary["models"].append(model_result)
-            write_json(run_dir / "summary.partial.json", summary)
+            _write_summary(run_dir / "summary.partial.json", summary, cfg)
             continue
 
         quality_gate_cfg = model.get("quality_gate") or {}
@@ -263,7 +292,7 @@ def run_suite(
                     reporter.note("Warnung: Quality Gate fehlgeschlagen. Modell wird uebersprungen.")
                     model_result["status"] = "skipped_quality_gate"
                     summary["models"].append(model_result)
-                    write_json(run_dir / "summary.partial.json", summary)
+                    _write_summary(run_dir / "summary.partial.json", summary, cfg)
                     if proc is not None:
                         backend.stop_server(proc)
                     continue
@@ -448,7 +477,7 @@ def run_suite(
                     backend.stop_server(proc)
 
         summary["models"].append(model_result)
-        write_json(run_dir / "summary.partial.json", summary)
+        _write_summary(run_dir / "summary.partial.json", summary, cfg)
 
     summary["tools"]["llama_cpp_build_ids"] = sorted(build_ids)
     if len(build_ids) > 1:
@@ -457,14 +486,15 @@ def run_suite(
             + ", ".join(sorted(build_ids))
         )
     summary["finished_at"] = utc_now_iso()
-    write_json(run_dir / "summary.json", summary)
-    _write_csv(run_dir / "benchmarks.csv", summary)
-    generate_run_html(summary, run_dir / "report.html")
+    _write_summary(run_dir / "summary.json", summary, cfg)
+    artifact_summary = encode_v3(summary, cfg.get("_gpu_layers_origins"))
+    _write_csv(run_dir / "benchmarks.csv", artifact_summary)
+    generate_run_html(artifact_summary, run_dir / "report.html")
     try:
-        generate_run_pdf(summary, run_dir / "report.pdf")
+        generate_run_pdf(artifact_summary, run_dir / "report.pdf")
     except Exception as exc:
         summary["warnings"].append(f"PDF-Bericht konnte nicht erzeugt werden: {exc}")
-        write_json(run_dir / "summary.json", summary)
+        _write_summary(run_dir / "summary.json", summary, cfg)
         reporter.note(f"PDF-Bericht uebersprungen: {exc}")
     reporter.run_finished()
     if plain or not console.is_terminal:
@@ -477,6 +507,9 @@ def run_suite(
 def print_summary_table(summary: dict[str, Any]) -> None:
     """Einfache Ergebnisuebersicht als Klartext: Fallback fuer --plain und
     fuer Umleitung in eine Datei/ein Log, wo Farben und Rahmen stoeren wuerden."""
+    from .result_schema import scalar_summary
+
+    summary = scalar_summary(summary)
     rows: list[tuple[str, str, str, str, str]] = []
     for m in summary.get("models", []):
         model_name = str(m.get("model", {}).get("name") or "?")
@@ -535,18 +568,27 @@ def print_summary_table(summary: dict[str, Any]) -> None:
 
 
 def _write_csv(path: Path, summary: dict[str, Any]) -> None:
+    from .result_schema import scalar_summary
+
+    persisted = summary
+    summary = scalar_summary(summary)
     fields = [
         "server_name", "model", "profile", "kind", "status", "test", "avg_ts", "stddev_ts",
         "n_prompt", "n_gen", "n_depth", "n_threads", "n_gpu_layers", "backend",
-        "gpu_info", "cpu_info", "build_commit", "config_fingerprint",
+        "gpu_info", "cpu_info", "build_commit", "config_fingerprint", "configured_gpu_layers",
+        "gpu_layers_source", "avg_ts_source",
     ]
     static = {"server_name", "model", "profile", "kind", "status", "config_fingerprint"}
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
-        for m in summary.get("models", []):
+        for model_index, m in enumerate(summary.get("models", [])):
             model_name = m.get("model", {}).get("name")
-            for profile in m.get("profiles", []):
+            for profile_index, profile in enumerate(m.get("profiles", [])):
+                raw_profile = ((persisted.get("models") or [])[model_index].get("profiles") or [])[profile_index]
+                layers = (raw_profile.get("settings") or {}).get("gpu_layers")
+                layers_value = layers.get("value") if isinstance(layers, dict) else layers
+                layers_source = (layers.get("source") or layers.get("status")) if isinstance(layers, dict) else ("unknown" if layers is not None else "")
                 for kind, result in profile.get("benchmarks", {}).items():
                     base = {
                         "server_name": summary.get("server_name"),
@@ -558,10 +600,19 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
                     }
                     rows = flatten_bench_rows(result)
                     if not rows:
-                        w.writerow({**base, "test": result.get("error")})
+                        w.writerow({
+                            **base, "test": result.get("error"), "configured_gpu_layers": layers_value,
+                            "gpu_layers_source": layers_source or "", "avg_ts_source": "",
+                        })
                         continue
-                    for row in rows:
+                    for row_index, row in enumerate(rows):
+                        raw_rows = (((raw_profile.get("benchmarks") or {}).get(kind) or {}).get("rows") or [])
+                        raw_row = raw_rows[row_index] if row_index < len(raw_rows) else {}
+                        raw_avg = raw_row.get("avg_ts")
                         w.writerow({
                             **base,
-                            **{k: row.get(k) for k in fields if k not in static},
+                            **{k: row.get(k) for k in fields if k not in static | {"configured_gpu_layers", "gpu_layers_source", "avg_ts_source"}},
+                            "configured_gpu_layers": layers_value,
+                            "gpu_layers_source": layers_source or "",
+                            "avg_ts_source": (raw_avg.get("source") or raw_avg.get("status") or "") if isinstance(raw_avg, dict) else ("unknown" if raw_avg is not None else ""),
                         })

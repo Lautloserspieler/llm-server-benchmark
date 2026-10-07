@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from llmbench.compare import check_consistency, compare_summaries
+from llmbench.result_schema import encode_v3
 
 
 def make_summary(
@@ -62,6 +63,13 @@ def _levels(issues, level):
 
 def test_identical_runs_produce_no_issues():
     assert check_consistency([make_summary("A"), make_summary("B")]) == []
+
+
+def test_v2_and_v3_compare_by_scalar_settings_not_evidence():
+    v2 = make_summary("A")
+    v3 = encode_v3(make_summary("B"), {("M", "Full-GPU"): "requested"})
+    v3["models"][0]["profiles"][0]["settings"]["gpu_layers"]["evidence"]["reference"] = "run-local path"
+    assert check_consistency([v2, v3]) == []
 
 
 def test_different_benchmark_settings_are_an_error():

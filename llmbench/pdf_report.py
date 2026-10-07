@@ -9,12 +9,14 @@ der Lauf gueltig - es entfaellt nur der PDF-Bericht.
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
+from .result_schema import provenance_rows, scalar_summary
 
 INK = "#16212b"
 MUTED = "#5d6b78"
@@ -266,6 +268,8 @@ def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: 
 
 def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
     _require_reportlab()
+    value_provenance = provenance_rows(summary)
+    summary = scalar_summary(summary)
 
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
@@ -311,6 +315,27 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
     story.append(Spacer(1, 4))
     story.append(_table([["Merkmal", "Wert"]] + _provenance_rows(summary),
                         [width * 0.28, width * 0.72], numeric_from=99))
+
+    if value_provenance:
+        story.append(Paragraph(_("Wert-Provenienz"), styles["h2"]))
+        rows = [[_("Feld"), _("Wert"), _("Quelle"), _("Evidenz")]]
+        for item in value_provenance:
+            evidence = item.get("evidence") or {}
+            detail = " · ".join(str(evidence[key]) for key in ("method", "reference", "provider") if evidence.get(key))
+            origin = item.get("source") or item.get("status") or "unknown"
+            origin_label = {
+                "requested": _("angefordert"), "defaulted": _("voreingestellt"),
+                "detected": _("erkannt"), "calculated": _("berechnet"),
+                "measured": _("gemessen"), "verified": _("verifiziert"),
+                "unknown": _("unbekannt"), "unavailable": _("nicht verfuegbar"),
+            }.get(str(origin), str(origin))
+            rows.append([
+                escape(str(item.get("path") or "")),
+                escape(f"{item.get('value')} {item.get('unit') or ''}".strip()),
+                escape(origin_label),
+                escape(detail or str(item.get("reason") or "")),
+            ])
+        story.append(_table(rows, [width * 0.38, width * 0.20, width * 0.16, width * 0.26], numeric_from=99))
 
     warnings = summary.get("warnings") or []
     if warnings:

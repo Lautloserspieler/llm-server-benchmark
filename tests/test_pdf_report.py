@@ -6,6 +6,7 @@ pytest.importorskip("reportlab")
 pypdf = pytest.importorskip("pypdf")
 
 from llmbench.pdf_report import generate_run_pdf  # noqa: E402
+from llmbench.result_schema import encode_v3  # noqa: E402
 
 
 def _summary(with_endpoint: bool = True, failing: bool = False) -> dict:
@@ -69,6 +70,12 @@ def test_pdf_is_created_and_readable(tmp_path: Path):
     out = generate_run_pdf(_summary(), tmp_path / "report.pdf")
     assert out.exists() and out.stat().st_size > 3000
     assert pypdf.PdfReader(str(out)).pages
+
+
+def test_v3_pdf_executes_and_includes_provenance(tmp_path: Path):
+    text = _text(generate_run_pdf(encode_v3(_summary(), {("qwen-27b-q4_0", "Full-GPU"): "requested"}), tmp_path / "v3.pdf"))
+    assert "Wert-Provenienz" in text
+    assert "gemessen" in text
 
 
 def test_pdf_contains_server_hardware_and_results(tmp_path: Path):

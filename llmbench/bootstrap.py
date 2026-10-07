@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 SHARD_RE = re.compile(r"^(?P<prefix>.+)-(?P<index>\d{5})-of-(?P<count>\d{5})\.gguf$", re.IGNORECASE)
+BOOTSTRAP_GPU_LAYERS_MARKER = "_llmbench_bootstrap_gpu_layers"
 
 
 def _exe_suffix() -> str:
@@ -244,6 +245,17 @@ def _default_model_entry(path: Path, root: Path, name: str) -> dict[str, Any]:
     }
 
 
+def _bootstrap_gpu_layers_records(model: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return durable provenance records for profiles created by bootstrap."""
+    model_name = str(model.get("name") or "")
+    return [
+        {"model": model_name, "profile": str(profile["name"]), "gpu_layers": profile["gpu_layers"]}
+        for profile in model.get("profiles") or []
+        if isinstance(profile, dict) and isinstance(profile.get("name"), str)
+        and type(profile.get("gpu_layers")) is int
+    ]
+
+
 def bootstrap_config(
     config_path: str | Path,
     root: str | Path,
@@ -293,6 +305,9 @@ def bootstrap_config(
         cfg = yaml.safe_load(template.read_text(encoding="utf-8")) or {}
     else:
         cfg = {}
+
+    existing_markers = cfg.get(BOOTSTRAP_GPU_LAYERS_MARKER)
+    markers = [dict(marker) for marker in existing_markers if isinstance(marker, dict)] if isinstance(existing_markers, list) else []
 
     cfg.setdefault("project", {})
     cfg["project"].setdefault("name", "Firmenweiter LLM Server Benchmark")
@@ -374,12 +389,18 @@ def bootstrap_config(
         if key in known_paths:
             continue
         name = unique_model_name(model_file, known_names)
-        existing.append(_default_model_entry(model_file, root, name))
+        entry = _default_model_entry(model_file, root, name)
+        existing.append(entry)
+        markers.extend(_bootstrap_gpu_layers_records(entry))
         known_paths.add(key)
         known_names.add(name.lower())
         added += 1
 
     cfg["models"] = existing
+    if markers:
+        cfg[BOOTSTRAP_GPU_LAYERS_MARKER] = markers
+    else:
+        cfg.pop(BOOTSTRAP_GPU_LAYERS_MARKER, None)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120),

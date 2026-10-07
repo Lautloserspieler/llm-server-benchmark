@@ -35,6 +35,33 @@ def test_encode_v3_keeps_raw_summary_and_wraps_reference_values():
     assert rows[1]["avg_ts"]["status"] == "unavailable"
 
 
+def test_encode_v3_preserves_bound_auto_tune_calculation_evidence():
+    result = encode_v3(_summary(), {("M", "GPU"): {
+        "source": "calculated",
+        "evidence": {
+            "method": "derived_calculation",
+            "provider": "llmbench",
+            "metadata": {"selected_gpu_layers": -1, "selected_tps": 42.5, "successful_candidates": 3},
+        },
+    }})
+    layers = result["models"][0]["profiles"][0]["settings"]["gpu_layers"]
+    assert layers["source"] == "calculated"
+    assert layers["evidence"]["metadata"]["selected_tps"] == 42.5
+
+
+def test_encode_v3_rejects_unbound_auto_tune_calculation_as_unknown():
+    result = encode_v3(_summary(), {("M", "GPU"): {
+        "source": "calculated",
+        "evidence": {
+            "method": "derived_calculation", "provider": "llmbench",
+            "metadata": {"selected_gpu_layers": 1},
+        },
+    }})
+    layers = result["models"][0]["profiles"][0]["settings"]["gpu_layers"]
+    assert layers["source"] is None
+    assert layers["reason"] == "invalid_calculation_origin"
+
+
 def test_projection_is_reusable_and_keeps_scalar_computations_safe():
     projected = scalar_summary(encode_v3(_summary()))
     assert projected["backend"] == "llama_cpp"

@@ -586,6 +586,13 @@ adding `configured_gpu_layers`, `gpu_layers_source`, and `avg_ts_source` columns
 Those two `*_source` columns use a source identifier when known and `unknown` or
 `unavailable` when the explicit state applies.
 
+`llmbench bootstrap` records the profiles it creates with a private, value-bound
+marker, so their `gpu_layers` values are emitted as `defaulted`; a value explicitly
+written in YAML remains `requested`. When auto-tuning selects a positive, finite
+measurement, its final `gpu_layers` value is `calculated` with the selected TPS and
+successful-candidate count. A tuning fallback without a successful measurement remains
+`unknown` rather than claiming calculated provenance.
+
 An envelope is intentionally self-contained:
 
 ```json

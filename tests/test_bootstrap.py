@@ -32,6 +32,13 @@ def test_bootstrap_discovers_gguf_and_preserves_existing(tmp_path: Path):
     cfg = yaml.safe_load((root / "benchmark.yaml").read_text(encoding="utf-8"))
     assert {m["name"] for m in cfg["models"]} == {"A", "B"}
     assert all(m["profiles"][0]["gpu_layers"] == -1 for m in cfg["models"])
+    assert {
+        (record["model"], record["profile"], record["gpu_layers"])
+        for record in cfg["_llmbench_bootstrap_gpu_layers"]
+    } == {
+        (model["name"], profile["name"], profile["gpu_layers"])
+        for model in cfg["models"] for profile in model["profiles"]
+    }
 
     result2 = bootstrap_config(
         root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models"

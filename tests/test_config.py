@@ -219,3 +219,23 @@ def test_load_config_records_only_explicit_gpu_layer_origin(tmp_path):
     )
     cfg = load_config(path)
     assert cfg["_gpu_layers_origins"] == {("M", "GPU"): "requested"}
+
+
+def test_load_config_consumes_only_matching_bootstrap_default_marker(tmp_path):
+    path = tmp_path / "benchmark.yaml"
+    path.write_text(
+        "_llmbench_bootstrap_gpu_layers:\n"
+        "  - model: M\n    profile: GPU\n    gpu_layers: -1\n"
+        "  - model: M\n    profile: stale\n    gpu_layers: 99\n"
+        "models:\n  - name: M\n    path: model.gguf\n    profiles:\n"
+        "      - name: GPU\n        gpu_layers: -1\n"
+        "      - name: Manual\n        gpu_layers: 0\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+
+    assert "_llmbench_bootstrap_gpu_layers" not in cfg
+    assert cfg["_gpu_layers_origins"] == {
+        ("M", "GPU"): "defaulted",
+        ("M", "Manual"): "requested",
+    }

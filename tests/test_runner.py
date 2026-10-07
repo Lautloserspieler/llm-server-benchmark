@@ -7,6 +7,7 @@ from llmbench.backends import DEFAULT_BACKEND, backend_name, get_backend
 from llmbench.backends.base import BenchmarkBackend
 from llmbench.backends.llama_cpp import LlamaCppBackend
 from llmbench.runner import BENCH_KINDS, SOAK_LABELS, _resolve_endpoint_profile, count_tests, filter_profiles_by_hardware, run_suite
+from llmbench.tuner import TuneSelection, tune_gpu_layers, tune_gpu_layers_selection
 
 
 def _cfg(models, soak_enabled=True):
@@ -291,6 +292,66 @@ def test_run_suite_writes_matching_v3_partial_and_final_artifacts(suite_env, mon
         assert artifact["hardware"]["cpu"]["physical_cores"]["source"] == "detected"
         assert artifact["models"][0]["profiles"][0]["settings"]["gpu_layers"]["status"] == "unknown"
         assert artifact["models"][0]["profiles"][0]["benchmarks"]["generation"]["rows"][0]["avg_ts"]["source"] == "measured"
+
+
+def test_auto_tune_records_calculated_origin_only_after_success(suite_env, monkeypatch):
+    suite_env["benchmark"]["auto_tune"] = True
+    suite_env["_gpu_layers_origins"] = {("M", "Full-GPU"): "requested"}
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
+    monkeypatch.setattr(
+        "llmbench.runner.tune_gpu_layers_selection",
+        lambda *_args: TuneSelection(30, 42.5, 3),
+    )
+
+    run_dir = run_suite(suite_env, plain=True)
+    layers = _read_summary(run_dir)["models"][0]["profiles"][0]["settings"]["gpu_layers"]
+
+    assert layers["value"] == 30
+    assert layers["source"] == "calculated"
+    assert layers["evidence"] == {
+        "method": "derived_calculation", "provider": "llmbench",
+        "metadata": {"selected_gpu_layers": 30, "selected_tps": 42.5, "successful_candidates": 3},
+    }
+
+
+def test_auto_tune_fallback_does_not_fabricate_calculated_origin(suite_env, monkeypatch):
+    suite_env["benchmark"]["auto_tune"] = True
+    suite_env["_gpu_layers_origins"] = {("M", "Full-GPU"): "requested"}
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: _RecordingBackend())
+    monkeypatch.setattr(
+        "llmbench.runner.tune_gpu_layers_selection",
+        lambda *_args: TuneSelection(0, None, 0),
+    )
+
+    run_dir = run_suite(suite_env, plain=True)
+    layers = _read_summary(run_dir)["models"][0]["profiles"][0]["settings"]["gpu_layers"]
+
+    assert layers["value"] == 0
+    assert layers["source"] is None
+    assert layers["status"] == "unknown"
+
+
+def test_tune_selection_keeps_earlier_success_when_later_candidate_fails(tmp_path, monkeypatch):
+    samples = iter([(12.0, None), (24.0, None), (None, None)])
+    monkeypatch.setattr("llmbench.tuner.collect_hardware", lambda: {})
+    monkeypatch.setattr("llmbench.tuner.total_gpu_vram_bytes", lambda _hw: 0)
+    monkeypatch.setattr("llmbench.tuner._measure_performance", lambda *_args: next(samples))
+
+    selection = tune_gpu_layers_selection("server", "model", {}, {}, tmp_path, max_layers=20, step=10)
+
+    assert selection == TuneSelection(10, 24.0, 2)
+    assert selection.successful is True
+
+
+def test_tune_gpu_layers_keeps_legacy_integer_return_type(tmp_path, monkeypatch):
+    monkeypatch.setattr("llmbench.tuner.collect_hardware", lambda: {})
+    monkeypatch.setattr("llmbench.tuner.total_gpu_vram_bytes", lambda _hw: 0)
+    monkeypatch.setattr("llmbench.tuner._measure_performance", lambda *_args: (5.0, None))
+
+    selected = tune_gpu_layers("server", "model", {}, {}, tmp_path, max_layers=0)
+
+    assert selected == 0
+    assert type(selected) is int
 
 
 def test_run_suite_records_configured_backend_name(suite_env, monkeypatch):

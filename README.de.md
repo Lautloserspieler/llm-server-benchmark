@@ -585,6 +585,13 @@ Metriken und ergänzt `configured_gpu_layers`, `gpu_layers_source` und `avg_ts_s
 Die beiden `*_source`-Spalten enthalten bei bekannter Herkunft deren Kennung, sonst den
 expliziten Zustand `unknown` oder `unavailable`.
 
+`llmbench bootstrap` markiert die von ihm erzeugten Profile privat und wertgebunden,
+damit ihre `gpu_layers`-Werte als `defaulted` ausgegeben werden; ein explizit in YAML
+eingetragener Wert bleibt `requested`. Wählt Auto-Tuning eine positive, endliche Messung,
+ist der finale `gpu_layers`-Wert `calculated` und enthält die gewählte TPS sowie die Zahl
+erfolgreicher Kandidaten. Ein Fallback ohne erfolgreiche Messung bleibt `unknown` und
+beansprucht keine berechnete Herkunft.
+
 Ein Envelope ist bewusst eigenständig:
 
 ```json

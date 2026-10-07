@@ -13,6 +13,16 @@
   HTML/PDF now include a compact provenance section and CSV has scalar provenance columns.
 - Thanks to @enmanuelmag for the provenance roadmap and review direction.
 
+### Verified context capability and depth curve
+
+- Long-context results now derive a per-profile `maximum_verified_context` only from depths
+  where prompt processing and text generation both completed.
+- Schema v3 records that maximum with `source: verified`, unit `tokens`, and
+  `experimental_validation` evidence.
+- The normalized capability data retains requested/completed depths, the first failed depth,
+  capacity/OOM versus timeout boundaries, and the available prefill/decode curve.
+- HTML, PDF, and terminal reports show the verified maximum and context-depth table.
+
 ### Ubuntu reference run: CPU isolation, capacity status, and long-context recovery
 
 - CPU-only llama.cpp profiles now enforce `device none` in addition to `gpu_layers: 0`.

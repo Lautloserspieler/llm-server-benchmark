@@ -432,3 +432,16 @@ def test_existing_vulkan_is_rejected_when_cuda_is_desired(tmp_path: Path, monkey
     state.write_text('{"tag":"b1","backend":"vulkan"}', encoding="utf-8")
     monkeypatch.setattr(lcs, "probe", lambda _path: (True, "ok"))
     assert lcs._existing_install_ok(llama_dir, state, lambda _m: None, "cuda") is False
+
+def test_long_context_failure_metadata_keeps_requested_boundary_without_rows():
+    meta = llama_bench._long_context_failure_metadata(
+        [],
+        {"context_depths": [32768, 65536, 131072]},
+        "CUDA out of memory",
+    )
+
+    assert meta["completed_context_depths"] == []
+    assert meta["requested_context_depths"] == [32768, 65536, 131072]
+    assert meta["failed_context_depth"] == 32768
+    assert meta["limit_status"] == "skipped_capacity"
+    assert meta["capacity_limited"] is True

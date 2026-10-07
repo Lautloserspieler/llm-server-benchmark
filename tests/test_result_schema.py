@@ -148,3 +148,62 @@ def test_vllm_keeps_unmigrated_throughput_scalar_and_valid():
     result = encode_v3(legacy)
     assert result["models"][0]["profiles"][0]["benchmarks"]["generation"]["rows"][0]["avg_ts"] == 0.0
     validate_summary(result)
+
+def test_v3_context_capability_uses_verified_provenance_and_projects_to_scalar():
+    raw = _summary()
+    raw["models"][0]["profiles"][0]["context_capability"] = {
+        "maximum_verified_context": 131072,
+        "completed_context_depths": [0, 131072],
+        "requested_context_depths": [0, 131072, 262144],
+        "first_failed_context": 262144,
+        "limit_status": "skipped_capacity",
+        "curve": [
+            {
+                "populated_context": 131072,
+                "prefill_tps": 1200.0,
+                "decode_tps": 55.0,
+                "combined_tps": None,
+                "result": "pass",
+            },
+            {
+                "populated_context": 262144,
+                "prefill_tps": None,
+                "decode_tps": None,
+                "combined_tps": None,
+                "result": "oom",
+            },
+        ],
+    }
+
+    encoded = encode_v3(raw)
+    maximum = encoded["models"][0]["profiles"][0]["context_capability"]["maximum_verified_context"]
+    assert maximum == {
+        "value": 131072,
+        "source": "verified",
+        "unit": "tokens",
+        "evidence": {"method": "experimental_validation"},
+    }
+    validate_summary(encoded)
+
+    projected = scalar_summary(encoded)
+    assert projected["models"][0]["profiles"][0]["context_capability"]["maximum_verified_context"] == 131072
+
+
+def test_v3_context_curve_rejects_negative_depth():
+    raw = _summary()
+    raw["models"][0]["profiles"][0]["context_capability"] = {
+        "maximum_verified_context": 0,
+        "completed_context_depths": [0],
+        "requested_context_depths": [0],
+        "first_failed_context": None,
+        "limit_status": None,
+        "curve": [{
+            "populated_context": -1,
+            "prefill_tps": 1.0,
+            "decode_tps": 1.0,
+            "combined_tps": None,
+            "result": "pass",
+        }],
+    }
+    with pytest.raises(ResultSchemaError, match="populated_context"):
+        encode_v3(raw)

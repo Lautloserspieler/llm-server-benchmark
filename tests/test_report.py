@@ -189,3 +189,28 @@ def test_report_marks_soak_capacity_limit_without_calling_it_failure(tmp_path: P
     html = out.read_text(encoding="utf-8")
     assert "Kapazitaetsgrenze" in html
     assert "VRAM" in html
+
+def test_html_report_shows_context_capability_boundary(tmp_path: Path):
+    summary = _summary()
+    summary["models"][0]["profiles"][0]["context_capability"] = {
+        "maximum_verified_context": 131072,
+        "completed_context_depths": [0, 131072],
+        "requested_context_depths": [0, 131072, 262144],
+        "first_failed_context": 262144,
+        "limit_status": "skipped_capacity",
+        "curve": [
+            {"populated_context": 131072, "prefill_tps": 1200.0, "decode_tps": 55.73,
+             "combined_tps": None, "result": "pass"},
+            {"populated_context": 262144, "prefill_tps": None, "decode_tps": None,
+             "combined_tps": None, "result": "oom"},
+        ],
+    }
+
+    out = tmp_path / "context.html"
+    generate_run_html(summary, out)
+    html = out.read_text(encoding="utf-8")
+
+    assert "Kontext-Kapazitaet" in html
+    assert "131072" in html
+    assert "262144" in html
+    assert "Kapazitaetsgrenze" in html

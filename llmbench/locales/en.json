@@ -277,5 +277,14 @@
   "nein": "no",
   "root-Rechte fehlen.": "root rights missing.",
   "Teilweise": "Partial",
-  "Kapazitaetsgrenze": "Capacity limit"
+  "Kapazitaetsgrenze": "Capacity limit",
+  "Kontext-Kapazitaet": "Context Capability",
+  "Maximal verifizierter Kontext": "Maximum Verified Context",
+  "Erste fehlgeschlagene Kontextstufe": "First Failed Context Depth",
+  "Kontexttiefe": "Context Depth",
+  "Prefill Tokens/s": "Prefill Tokens/s",
+  "Decode Tokens/s": "Decode Tokens/s",
+  "Kombiniert Tokens/s": "Combined Tokens/s",
+  "Ergebnis": "Result",
+  "Tokens": "tokens"
 }

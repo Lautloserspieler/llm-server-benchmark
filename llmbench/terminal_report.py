@@ -163,6 +163,54 @@ def _bench_table(profile: dict[str, Any]) -> Table:
     return table
 
 
+def _context_capability_group(capability: dict[str, Any] | None) -> RenderableType | None:
+    if not capability:
+        return None
+
+    maximum = capability.get("maximum_verified_context")
+    failed = capability.get("first_failed_context")
+    head = (
+        f"{_('Maximal verifizierter Kontext')}: "
+        f"{maximum if maximum is not None else '—'} {_('Tokens')}"
+    )
+    if failed is not None:
+        head += (
+            f" · {_('Erste fehlgeschlagene Kontextstufe')}: "
+            f"{failed} {_('Tokens')}"
+        )
+
+    table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
+    table.add_column(_("Kontexttiefe"), justify="right")
+    table.add_column(_("Prefill Tokens/s"), justify="right")
+    table.add_column(_("Decode Tokens/s"), justify="right")
+    table.add_column(_("Kombiniert Tokens/s"), justify="right")
+    table.add_column(_("Ergebnis"))
+
+    labels = {
+        "pass": _("OK"),
+        "oom": _("Kapazitaetsgrenze"),
+        "timeout": _("Zeitueberschreitung"),
+        "failed": _("Fehler"),
+        "partial": _("Teilweise"),
+        "unknown": _("unbekannt"),
+    }
+    for row in capability.get("curve") or []:
+        result = str(row.get("result") or "unknown")
+        table.add_row(
+            str(row.get("populated_context") if row.get("populated_context") is not None else "—"),
+            fnum(row.get("prefill_tps")),
+            fnum(row.get("decode_tps")),
+            fnum(row.get("combined_tps")),
+            labels.get(result, result),
+        )
+
+    return Group(
+        Text(_("Kontext-Kapazitaet"), style="bold"),
+        Text(head, style="dim"),
+        table,
+    )
+
+
 def _telemetry_table(profile: dict[str, Any]) -> Table:
     table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
     table.add_column(_("Bereich"))
@@ -293,6 +341,9 @@ def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
                 style="bold",
             ))
             renderables.append(_bench_table(profile))
+            context_group = _context_capability_group(profile.get("context_capability"))
+            if context_group is not None:
+                renderables.append(context_group)
             renderables.append(Text(_("Hardware-Telemetrie"), style="bold"))
             renderables.append(_telemetry_table(profile))
 

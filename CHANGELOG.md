@@ -13,6 +13,17 @@
   HTML/PDF enthalten einen kompakten Herkunftsabschnitt; CSV erhält skalare Herkunftsspalten.
 - Danke an @enmanuelmag für Roadmap und Review-Richtung.
 
+### Verifizierte Kontext-Kapazitaet und Tiefenkurve
+
+- Long-Context-Ergebnisse leiten pro Profil ein `maximum_verified_context` nur aus Tiefen ab,
+  bei denen Prompt Processing und Text Generation beide vollstaendig abgeschlossen wurden.
+- Schema v3 speichert dieses Maximum mit `source: verified`, Einheit `tokens` und
+  `experimental_validation` als Nachweis.
+- Die normalisierte Kapazitaetsstruktur bewahrt angeforderte/abgeschlossene Tiefen, die erste
+  fehlgeschlagene Tiefe, OOM-/Kapazitaetsgrenzen getrennt von Timeouts sowie die verfuegbare
+  Prefill-/Decode-Kurve.
+- HTML-, PDF- und Terminal-Berichte zeigen das verifizierte Maximum und die Kontexttiefen-Tabelle.
+
 ### Ubuntu-Referenzlauf: CPU-Isolation, Kapazitaetsstatus und Long-Context-Recovery
 
 - CPU-only llama.cpp-Profile erzwingen jetzt neben `gpu_layers: 0` auch

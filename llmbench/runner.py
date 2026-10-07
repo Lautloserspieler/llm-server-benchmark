@@ -8,6 +8,7 @@ from typing import Any
 
 from . import __version__
 from .config import config_fingerprint, public_config, resolve_path
+from .context_capability import build_context_capability
 from .endpoint import run_endpoint_load, run_sanity_check
 from .hardware import collect_hardware
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
@@ -363,6 +364,8 @@ def run_suite(
                         summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
                         reporter.note(warn)
                     profile_result["benchmarks"][kind] = result
+                    if kind == "long_context":
+                        profile_result["context_capability"] = build_context_capability(result)
             finally:
                 try:
                     backend.end_profile()

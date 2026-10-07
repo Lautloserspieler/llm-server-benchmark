@@ -70,7 +70,7 @@ def test_psutil_cpu_provider_collects_frequency_and_prefers_cpu_temperature(monk
     )
     monkeypatch.setattr(
         "llmbench.cpu_telemetry.psutil.sensors_temperatures",
-        lambda _fahrenheit=False: {
+        lambda **_kwargs: {
             "nvme": [Temp("Composite", 55.0, 80.0, 90.0)],
             "k10temp": [Temp("Tctl", 73.5, 95.0, 100.0)],
         },

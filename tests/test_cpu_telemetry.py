@@ -70,7 +70,7 @@ def test_psutil_cpu_provider_collects_frequency_and_prefers_cpu_temperature(monk
     )
     monkeypatch.setattr(
         "llmbench.cpu_telemetry.psutil.sensors_temperatures",
-        lambda fahrenheit=False: {
+        lambda _fahrenheit=False: {
             "nvme": [Temp("Composite", 55.0, 80.0, 90.0)],
             "k10temp": [Temp("Tctl", 73.5, 95.0, 100.0)],
         },
@@ -110,7 +110,7 @@ def test_linux_rapl_provider_combines_psutil_metrics_with_power(monkeypatch, tmp
     )
     monkeypatch.setattr(
         "llmbench.cpu_telemetry.PsutilCpuProvider._temperature_c",
-        classmethod(lambda cls: 70.0),
+        classmethod(lambda _cls: 70.0),
     )
 
     zone = tmp_path / "intel-rapl:0"

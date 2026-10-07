@@ -94,6 +94,8 @@ class MactopObserver:
                 self.process.kill()
                 self.process.wait(timeout=5)
         except OSError:
+            # The sidecar may already have exited or its process handle may
+            # be unavailable.  Cleanup must never mask the benchmark result.
             pass
         finally:
             self._close_files()

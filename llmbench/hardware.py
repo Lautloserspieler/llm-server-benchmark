@@ -231,6 +231,8 @@ def _nvidia_memory_domains(gpus: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 bus_width = pynvml.nvmlDeviceGetMemoryBusWidth(handle)
                 max_clock = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_MEM)
             except Exception:
+                # Per-device NVML enrichment is optional: retain the domain
+                # and mark its theoretical bandwidth unknown when it fails.
                 pass
             inputs: dict[str, Any] = {}
             if isinstance(bus_width, int) and bus_width > 0:

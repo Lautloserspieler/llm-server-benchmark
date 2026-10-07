@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: "Fragen / Questions"
-    url: "https://github.com/Lautloserspieler/llm-server-benchmark/discussions"
-    about: "Für allgemeine Fragen bitte Discussions statt eines Issues verwenden. / For general questions, please use Discussions instead of an issue."
+  - name: "Questions / Fragen"
+    url: "https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/q-a"
+    about: "Ask general questions and get help in Discussions. / Allgemeine Fragen und Hilfe bitte in Discussions."
+  - name: "Benchmark Results"
+    url: "https://github.com/Lautloserspieler/llm-server-benchmark/discussions/84"
+    about: "Share benchmark results using the community template. / Benchmark-Ergebnisse mit der Community-Vorlage teilen."
+  - name: "Ideas"
+    url: "https://github.com/Lautloserspieler/llm-server-benchmark/discussions/categories/ideas"
+    about: "Discuss early ideas before opening a formal feature request. / Frühe Ideen diskutieren, bevor ein formaler Feature Request erstellt wird."

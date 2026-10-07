@@ -343,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--skip-endpoint", action="store_true")
     run.add_argument(
+        "--collect-memory-bandwidth",
+        action="store_true",
+        help="Collect optional runtime memory-bandwidth telemetry when a supported observer is installed.",
+    )
+    run.add_argument(
         "--plain",
         action="store_true",
         help="Nur einfache Textausgabe (keine Live-Statuszeile, keine farbige Ergebnisuebersicht).",
@@ -635,6 +640,7 @@ def main(argv: list[str] | None = None) -> int:
                 reporter=make_reporter(force_plain=args.plain),
                 hardware_target=args.hardware,
                 plain=args.plain,
+                collect_memory_bandwidth=args.collect_memory_bandwidth,
             )
             print(f"\nBenchmark abgeschlossen: {out}")
             pdf = out / "report.pdf"

@@ -91,6 +91,29 @@ def _hardware_cards(summary: dict[str, Any]) -> Table:
     return grid
 
 
+def _memory_bandwidth_panel(summary: dict[str, Any]) -> Panel | None:
+    hardware = summary.get("hardware") or {}
+    domains = hardware.get("memory_domains") or []
+    rows = []
+    for domain in domains:
+        item = (domain.get("bandwidth") or {}).get("theoretical") or {}
+        if isinstance(item, dict):
+            value = item.get("value")
+            text = f"{fnum(value)} GB/s" if value is not None else str(item.get("reason") or item.get("status") or "unavailable")
+        else:
+            text = f"{fnum(item)} GB/s" if item is not None else "unavailable"
+        rows.append(f"{domain.get('id')}: theoretical/spec {text}")
+    for row in (summary.get("telemetry") or {}).get("memory_bandwidth") or []:
+        item = row.get("observed_during_benchmark") or {}
+        if isinstance(item, dict):
+            value = item.get("value")
+            text = f"{fnum(value)} GB/s" if value is not None else str(item.get("reason") or "unavailable")
+        else:
+            text = f"{fnum(item)} GB/s" if item is not None else "unavailable"
+        rows.append(f"{row.get('domain_id')}: observed runtime traffic (experimental) {text}")
+    return Panel("\n".join(rows), title="Memory bandwidth", border_style="blue") if rows else None
+
+
 def _warnings_panel(summary: dict[str, Any]) -> Panel | None:
     warnings = summary.get("warnings") or []
     if not warnings:
@@ -310,9 +333,13 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> RenderableType | None:
 
 
 def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
-    summary = scalar_summary(summary)
     """Baut die renderbaren Abschnitte des Laufberichts fuer das Terminal."""
+    persisted_summary = summary
+    summary = scalar_summary(summary)
     renderables: list[RenderableType] = [_header(summary), _hardware_cards(summary)]
+    bandwidth = _memory_bandwidth_panel(persisted_summary)
+    if bandwidth is not None:
+        renderables.append(bandwidth)
     warnings_panel = _warnings_panel(summary)
     if warnings_panel is not None:
         renderables.append(warnings_panel)

@@ -87,6 +87,49 @@ def _gpu_text(hw: dict[str, Any]) -> str:
     return "<br>".join(parts)
 
 
+def _memory_bandwidth_block(summary: dict[str, Any]) -> str:
+    """Render capacity and run observations separately; they are not comparable."""
+    hardware = summary.get("hardware") or {}
+    domains = hardware.get("memory_domains") or []
+    telemetry = (summary.get("telemetry") or {}).get("memory_bandwidth") or []
+    if not domains and not telemetry:
+        return ""
+    rows: list[str] = []
+    for domain in domains:
+        bandwidth = domain.get("bandwidth") or {}
+        theoretical = bandwidth.get("theoretical") or {}
+        operating = bandwidth.get("provider_operating") or {}
+        def value(item: Any) -> str:
+            if not isinstance(item, dict):
+                return f"{fnum(item)} GB/s" if item is not None else "unavailable"
+            if item.get("value") is not None:
+                return f"{fnum(item.get('value'))} GB/s"
+            return esc(item.get("status") or item.get("reason") or "unavailable")
+        rows.append(
+            f"<tr><td>{esc(domain.get('id'))}</td><td>{esc(domain.get('vendor'))}</td>"
+            f"<td>{value(theoretical)}</td><td>{value(operating)}</td></tr>"
+        )
+    capacity = "" if not rows else (
+        "<h3>Memory bandwidth capacity</h3><div class='table-wrap'><table><thead><tr>"
+        "<th>Domain</th><th>Vendor</th><th>Theoretical/spec</th><th>Provider operating ceiling</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
+    )
+    observed: list[str] = []
+    for row in telemetry:
+        item = row.get("observed_during_benchmark") or {}
+        if isinstance(item, dict):
+            text = f"{fnum(item.get('value'))} GB/s" if item.get("value") is not None else esc(item.get("reason") or "unavailable")
+        else:
+            text = f"{fnum(item)} GB/s" if item is not None else "unavailable"
+        observed.append(f"<tr><td>{esc(row.get('domain_id'))}</td><td>{esc(row.get('scope'))}</td><td>{text}</td></tr>")
+    runtime = "" if not observed else (
+        "<h3>Run telemetry (experimental)</h3><p class='muted'>Observed system traffic is not process-exclusive or effective bandwidth.</p>"
+        "<div class='table-wrap'><table><thead><tr><th>Domain</th><th>Scope</th><th>Observed traffic</th>"
+        "</tr></thead><tbody>" + "".join(observed) + "</tbody></table></div>"
+    )
+    return "<h2>Memory bandwidth</h2>" + capacity + runtime
+
+
 def _warnings_block(summary: dict[str, Any]) -> str:
     warnings = summary.get("warnings") or []
     if not warnings:
@@ -370,6 +413,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             f"<div class='v'>{v if k == _('GPU') else esc(v)}</div></div>"
         )
     body.append("</div>")
+    body.append(_memory_bandwidth_block(summary))
     body.append(_warnings_block(summary))
     body.append(
         f"<div class='notice'>{_('Tokens/s aus <code>llama-bench</code> messen die Inferenzkernleistung ')}"

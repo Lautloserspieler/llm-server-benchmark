@@ -355,6 +355,25 @@ llmbench run --duration medium
 llmbench run --duration long
 ```
 
+### Optionale Memory-Bandwidth-Telemetrie
+
+Hardware-Snapshots bewahren Memory-Bandwidth-Kapazitaeten pro Domain, sofern ein
+Provider sie sicher liefern kann. NVIDIA speichert erkannte Bus-/Clock-Eingaben
+ohne einen Transfer-Rate-Multiplikator zu raten; AMD-Providerwerte bleiben
+explizit an den aktuellen Memory-Clock gebunden; Apple-Theoriewerte erfordern
+einen exakten Match im gebuendelten Katalog mit offiziellen Quellen.
+
+Optionale Runtime-Beobachtungen werden so gesammelt:
+
+```bash
+llmbench run --collect-memory-bandwidth
+```
+
+Auf unterstuetzten Apple-Silicon-Hosts startet dies einen bereits installierten
+`mactop`-Sidecar und speichert dessen JSON-Trace beim Lauf. Es installiert keine
+Software, blockiert einen Benchmark bei Nichtverfuegbarkeit nicht und meldet
+System-/SoC-Traffic statt prozessexklusiver oder universeller "effective bandwidth".
+
 ---
 
 ## Modus für volle Leistung

@@ -82,7 +82,7 @@ def validate_envelope(item: Any, path: str, *, kind: str, unit: str | None = Non
         if kind == "integer":
             _number(value, path, integer=True, positive=positive)
         elif kind == "number":
-            _number(value, path)
+            _number(value, path, positive=positive)
         elif kind == "string" and not isinstance(value, str):
             _fail(path, "value must be a string")
         elif kind == "boolean" and not isinstance(value, bool):
@@ -174,6 +174,45 @@ def _walk_v3(summary: dict[str, Any]) -> None:
         _fail("hardware.cpu", "must be an object")
     if "physical_cores" in cpu:
         validate_envelope(cpu["physical_cores"], "hardware.cpu.physical_cores", kind="integer", unit="cores", positive=True)
+    domains = hardware.get("memory_domains", [])
+    if not isinstance(domains, list):
+        _fail("hardware.memory_domains", "must be an array")
+    domain_ids: set[str] = set()
+    for index, domain in enumerate(domains):
+        path = f"hardware.memory_domains[{index}]"
+        if not isinstance(domain, dict):
+            _fail(path, "must be an object")
+        identifier = domain.get("id")
+        if not isinstance(identifier, str) or not identifier:
+            _fail(path, "requires a non-empty id")
+        if identifier in domain_ids:
+            _fail(path, "id must be unique")
+        domain_ids.add(identifier)
+        if not isinstance(domain.get("kind"), str) or not domain["kind"]:
+            _fail(path, "requires a kind")
+        if not isinstance(domain.get("vendor"), str) or not domain["vendor"]:
+            _fail(path, "requires a vendor")
+        bandwidth = domain.get("bandwidth", {})
+        if not isinstance(bandwidth, dict):
+            _fail(f"{path}.bandwidth", "must be an object")
+        for key in ("theoretical", "provider_operating"):
+            if key in bandwidth:
+                validate_envelope(bandwidth[key], f"{path}.bandwidth.{key}", kind="number", unit="GB/s", positive=True)
+    telemetry = summary.get("telemetry", {})
+    if telemetry is not None and not isinstance(telemetry, dict):
+        _fail("telemetry", "must be an object")
+    bandwidth_rows = (telemetry or {}).get("memory_bandwidth", [])
+    if not isinstance(bandwidth_rows, list):
+        _fail("telemetry.memory_bandwidth", "must be an array")
+    for index, row in enumerate(bandwidth_rows):
+        path = f"telemetry.memory_bandwidth[{index}]"
+        if not isinstance(row, dict) or not isinstance(row.get("domain_id"), str):
+            _fail(path, "requires a domain_id")
+        if row["domain_id"] not in domain_ids:
+            _fail(path, "references an unknown memory domain")
+        observed = row.get("observed_during_benchmark")
+        if observed is not None:
+            validate_envelope(observed, f"{path}.observed_during_benchmark", kind="number", unit="GB/s", positive=True)
     models = summary.get("models", [])
     if not isinstance(models, list):
         _fail("models", "must be an array")
@@ -292,6 +331,16 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
                             rows.append({"path": f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}/{context}: avg_ts", "value": row["avg_ts"], "source": None, "status": "unknown", "reason": "legacy_provenance_missing", "unit": "tokens/s"})
         return rows
     add("hardware.cpu.physical_cores", cpu.get("physical_cores"))
+    for domain in (summary.get("hardware") or {}).get("memory_domains") or []:
+        if isinstance(domain, dict):
+            for name, item in (domain.get("bandwidth") or {}).items():
+                add(f"hardware.memory_domains.{domain.get('id', '?')}.bandwidth.{name}", item)
+    for row in (summary.get("telemetry") or {}).get("memory_bandwidth") or []:
+        if isinstance(row, dict):
+            add(
+                f"telemetry.memory_bandwidth.{row.get('domain_id', '?')}.observed_during_benchmark",
+                row.get("observed_during_benchmark"),
+            )
     for model in summary.get("models") or []:
         for profile in model.get("profiles") or []:
             add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: gpu_layers", (profile.get("settings") or {}).get("gpu_layers"))

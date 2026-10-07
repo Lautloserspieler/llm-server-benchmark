@@ -78,6 +78,21 @@ def test_v3_pdf_executes_and_includes_provenance(tmp_path: Path):
     assert "gemessen" in text
 
 
+def test_v3_pdf_shows_runtime_memory_bandwidth_telemetry(tmp_path: Path):
+    summary = _summary()
+    summary["hardware"]["memory_domains"] = [{
+        "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+        "bandwidth": {"theoretical": {"value": 410.0, "source": "detected", "unit": "GB/s"}},
+    }]
+    summary["telemetry"] = {"memory_bandwidth": [{
+        "domain_id": "apple:unified:0", "scope": "system_soc_dram",
+        "observed_during_benchmark": {"value": 120.0, "source": "measured", "unit": "GB/s"},
+    }]}
+    text = _text(generate_run_pdf(encode_v3(summary), tmp_path / "bandwidth-v3.pdf"))
+    assert "Memory bandwidth runtime telemetry" in text
+    assert "120.00 GB/s" in text
+
+
 def test_pdf_contains_server_hardware_and_results(tmp_path: Path):
     text = _text(generate_run_pdf(_summary(), tmp_path / "r.pdf"))
     assert "SRV-WERKSTATT" in text

@@ -8,6 +8,7 @@ from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
 from .result_schema import provenance_rows, scalar_summary
+from .telemetry_reporting import system_power_rows
 
 
 def _kv_cache_block(kv_cache: dict[str, Any] | None) -> str:
@@ -287,6 +288,28 @@ def _telemetry_table(profile: dict[str, Any]) -> str:
     )
 
 
+def _system_power_table(profile: dict[str, Any]) -> str:
+    rows = system_power_rows(profile)
+    if not rows:
+        return ""
+    body = "".join(
+        "<tr>"
+        f"<td>{esc(kind)}</td>"
+        f"<td>{esc(component)}</td>"
+        f"<td>{esc(metric)}</td>"
+        f"<td class='num'>{esc(value)}</td>"
+        "</tr>"
+        for kind, component, metric, value in rows
+    )
+    return (
+        f"<h4>{_('System Power & Thermals')}</h4>"
+        "<div class='table-wrap'><table><thead><tr>"
+        f"<th>{_('Bereich')}</th><th>{_('Komponente')}</th>"
+        f"<th>{_('Messwert')}</th><th class='num'>{_('Wert')}</th>"
+        f"</tr></thead><tbody>{body}</tbody></table></div>"
+    )
+
+
 def _endpoint_table(ep: dict[str, Any]) -> str:
     if not ep:
         return ""
@@ -484,6 +507,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             body.append(_kv_cache_block(raw_profile.get("kv_cache")))
             body.append(f"<h3>{_('Hardware-Telemetrie')}</h3>")
             body.append(_telemetry_table(profile))
+            body.append(_system_power_table(profile))
         if m.get("endpoint"):
             body.append(f"<h3>{_('Endpoint-/Multi-User-Test')}</h3>")
             body.append(_endpoint_table(m["endpoint"]))

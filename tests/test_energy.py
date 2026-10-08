@@ -81,3 +81,29 @@ def test_efficiency_is_omitted_when_energy_is_missing_or_result_is_partial():
     }
     apply_energy_efficiency(partial, default_repetitions=3)
     assert "efficiency" not in partial
+
+
+
+def test_exact_backend_workload_tokens_override_configured_token_count():
+    result = {
+        "kind": "prompt",
+        "status": "ok",
+        "rows": [
+            {
+                "n_prompt": 512,
+                "repetitions": 3,
+                "workload_tokens": 1605,
+            }
+        ],
+        "telemetry": {
+            "power": {
+                "coverage": ["gpu:0"],
+                "component_energy_j": 321.0,
+            }
+        },
+    }
+
+    apply_energy_efficiency(result, default_repetitions=3)
+
+    assert result["efficiency"]["workload_tokens"] == 1605
+    assert result["efficiency"]["tokens_per_joule"] == 5.0

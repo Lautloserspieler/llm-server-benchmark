@@ -49,7 +49,9 @@ def _integrate_power(
     previous_power: float | None = None
     intervals = 0
     for sample in samples:
-        ts = sample.get("ts")
+        ts = sample.get("monotonic_ts")
+        if ts is None:
+            ts = sample.get("ts")
         value = getter(sample)
         if ts is None or value is None:
             previous_ts = None
@@ -199,7 +201,9 @@ class ResourceMonitor:
         sample["frequency_mhz"] = current.frequency_mhz
         sample["temperature_c"] = current.temperature_c
         sample["package_power_w"] = current.package_power_w
-        sample["package_energy_delta_j"] = current.package_energy_delta_j
+        sample["package_energy_delta_j"] = getattr(
+            current, "package_energy_delta_j", None
+        )
         return sample
 
     def _sample(self) -> dict[str, Any]:
@@ -222,6 +226,7 @@ class ResourceMonitor:
 
         return {
             "ts": time.time(),
+            "monotonic_ts": time.monotonic(),
             # Keep the existing flat fields for backward compatibility.
             "cpu_percent": cpu_percent,
             "ram_used_bytes": vm.used,

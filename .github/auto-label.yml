@@ -47,6 +47,7 @@
       - any-glob-to-any-file:
           - 'llmbench/hardware.py'
           - 'llmbench/telemetry.py'
+          - 'llmbench/cpu_telemetry.py'
           - 'llmbench/capacity.py'
 
 "reports":

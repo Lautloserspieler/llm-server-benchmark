@@ -298,5 +298,22 @@
   "Decode Tokens/s": "Decode Tokens/s",
   "Kombiniert Tokens/s": "Combined Tokens/s",
   "Ergebnis": "Result",
-  "Tokens": "tokens"
+  "Tokens": "tokens",
+  "Auslastung Ø / Max": "Utilization avg / max",
+  "Frequenz Ø / Min / Max": "Frequency avg / min / max",
+  "Temperatur Ø / Max": "Temperature avg / max",
+  "Paketleistung Ø / Max": "Package power avg / max",
+  "Energie": "Energy",
+  "Temperatur Max": "Temperature max",
+  "Leistung Ø / Max": "Power avg / max",
+  "Gemessene Komponenten": "Measured components",
+  "Messumfang": "Measurement coverage",
+  "Wall-Power": "Wall power",
+  "Leistung": "Power",
+  "Effizienz": "Efficiency",
+  "Tokens/Joule": "Tokens/Joule",
+  "Wh / 1k Tokens": "Wh / 1k tokens",
+  "System Power & Thermals": "System Power & Thermals",
+  "Komponente": "Component",
+  "Messwert": "Metric"
 }

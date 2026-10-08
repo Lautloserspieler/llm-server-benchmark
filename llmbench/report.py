@@ -302,7 +302,7 @@ def _system_power_table(profile: dict[str, Any]) -> str:
         for kind, component, metric, value in rows
     )
     return (
-        f"<h4>{_('System Power & Thermals')}</h4>"
+        f"<h4>{esc(_('System Power & Thermals'))}</h4>"
         "<div class='table-wrap'><table><thead><tr>"
         f"<th>{_('Bereich')}</th><th>{_('Komponente')}</th>"
         f"<th>{_('Messwert')}</th><th class='num'>{_('Wert')}</th>"

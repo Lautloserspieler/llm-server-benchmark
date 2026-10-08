@@ -7,6 +7,7 @@ pypdf = pytest.importorskip("pypdf")
 
 from llmbench.pdf_report import generate_run_pdf  # noqa: E402
 from llmbench.result_schema import encode_v3  # noqa: E402
+from llmbench.kv_cache import KvCacheObservation, normalize_kv_cache  # noqa: E402
 
 
 def _summary(with_endpoint: bool = True, failing: bool = False) -> dict:
@@ -91,6 +92,17 @@ def test_v3_pdf_shows_runtime_memory_bandwidth_telemetry(tmp_path: Path):
     text = _text(generate_run_pdf(encode_v3(summary), tmp_path / "bandwidth-v3.pdf"))
     assert "Memory bandwidth runtime telemetry" in text
     assert "120.00 GB/s" in text
+
+
+def test_v3_pdf_shows_kv_core_without_backend_details(tmp_path: Path):
+    summary = encode_v3(_summary())
+    cache = normalize_kv_cache("llama_cpp", [KvCacheObservation("k_dtype", "q8_0", provider="llama.cpp")])
+    cache["backend_details"] = {"llama_cpp": {"private": {"value": "hidden", "source": "detected"}}}
+    summary["models"][0]["profiles"][0]["kv_cache"] = cache
+    text = _text(generate_run_pdf(summary, tmp_path / "kv.pdf"))
+    assert "Effektive KV-Cache-Konfiguration" in text
+    assert "q8_0" in text
+    assert "private" not in text and "hidden" not in text
 
 
 def test_pdf_contains_server_hardware_and_results(tmp_path: Path):

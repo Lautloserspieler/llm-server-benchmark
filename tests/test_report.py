@@ -3,7 +3,8 @@ from pathlib import Path
 
 from llmbench.report import fms, fnum, generate_run_html
 from llmbench.runner import _write_csv
-from llmbench.result_schema import encode_v3
+from llmbench.result_schema import encode_v3, envelope, scalar_summary
+from llmbench.kv_cache import KvCacheObservation, normalize_kv_cache
 
 
 def _summary(bench_status: str = "ok") -> dict:
@@ -232,3 +233,34 @@ def test_html_report_shows_context_capability_boundary(tmp_path: Path):
     assert "131072" in html
     assert "262144" in html
     assert "Kapazitaetsgrenze" in html
+
+
+def test_kv_cache_reports_common_core_but_not_backend_details(tmp_path: Path):
+    summary = encode_v3(_summary())
+    cache = normalize_kv_cache("llama_cpp", [
+        KvCacheObservation("k_dtype", "q8_0", provider="llama.cpp"),
+        KvCacheObservation("v_dtype", "f16", provider="llama.cpp"),
+    ])
+    cache["backend_details"] = {"llama_cpp": {"private_block_size": envelope(16, "detected")}}
+    summary["models"][0]["profiles"][0]["kv_cache"] = cache
+
+    html_path = tmp_path / "report.html"
+    generate_run_html(summary, html_path)
+    html = html_path.read_text(encoding="utf-8")
+    assert "Effektive KV-Cache-Konfiguration" in html
+    assert "q8_0" in html
+    assert "private_block_size" not in html
+
+    csv_path = tmp_path / "benchmarks.csv"
+    _write_csv(csv_path, summary)
+    row = next(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
+    assert row["kv_cache_k_dtype"] == "q8_0"
+    assert row["kv_cache_k_dtype_source"] == "detected"
+    assert "private_block_size" not in row
+
+
+def test_legacy_and_v3_scalar_projection_keep_kv_cache_additive() -> None:
+    legacy = _summary()
+    assert scalar_summary(legacy) == legacy
+    v3 = encode_v3(_summary())
+    assert "kv_cache" not in scalar_summary(v3)["models"][0]["profiles"][0]

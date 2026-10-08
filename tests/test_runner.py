@@ -254,6 +254,45 @@ def test_run_suite_wraps_kind_loop_in_begin_and_end_profile(suite_env, monkeypat
     ]
 
 
+def test_run_suite_collects_kv_before_teardown_and_keeps_collection_failures_nonfatal(suite_env, monkeypatch):
+    class KvBackend(_RecordingBackend):
+        def collect_kv_cache_observations(self, *_args):
+            phase = _args[-1]
+            self.events.append(f"kv:{phase}")
+            if phase == "startup":
+                raise RuntimeError("metrics URL contains a secret but must not leak")
+            return [{
+                "field": "prefix_caching", "value": True, "source": "detected",
+                "method": "backend_runtime_introspection", "provider": "test", "phase": phase,
+            }]
+
+    backend = KvBackend()
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)
+    run_dir = run_suite(suite_env, plain=True)
+
+    assert backend.events[-2:] == ["kv:benchmark", "end"]
+    assert "kv:startup" in backend.events
+    summary = _read_summary(run_dir)
+    profile = summary["models"][0]["profiles"][0]
+    assert profile["benchmarks"]["generation"]["status"] == "ok"
+    assert profile["kv_cache"]["prefix_caching"]["value"] is True
+    assert "secret" not in "\n".join(summary["warnings"])
+
+
+def test_run_suite_keeps_benchmark_when_kv_normalization_fails(suite_env, monkeypatch):
+    backend = _RecordingBackend()
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "llmbench.runner.normalize_kv_cache",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad adapter value")),
+    )
+    run_dir = run_suite(suite_env, plain=True)
+    summary = _read_summary(run_dir)
+    profile = summary["models"][0]["profiles"][0]
+    assert profile["benchmarks"]["prompt"]["status"] == "ok"
+    assert profile["kv_cache"]["effective_max_context"]["status"] == "unknown"
+
+
 def test_run_suite_calls_end_profile_even_when_a_benchmark_raises(suite_env, monkeypatch):
     backend = _RecordingBackend(fail_on_kind="generation")
     monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)

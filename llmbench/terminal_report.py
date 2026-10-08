@@ -21,6 +21,7 @@ from .report import fms, fnum
 from .utils import human_bytes
 from .i18n import _
 from .result_schema import scalar_summary
+from .telemetry_reporting import system_power_rows
 
 STATUS_STYLES = {
     "ok": "bold green",
@@ -297,6 +298,24 @@ def _telemetry_table(profile: dict[str, Any]) -> Table:
     return table
 
 
+def _system_power_table(profile: dict[str, Any]) -> Table | None:
+    rows = system_power_rows(profile)
+    if not rows:
+        return None
+    table = Table(
+        title=_("System Power & Thermals"),
+        box=box.SIMPLE_HEAVY,
+        header_style="bold",
+    )
+    table.add_column(_("Bereich"))
+    table.add_column(_("Komponente"))
+    table.add_column(_("Messwert"))
+    table.add_column(_("Wert"), justify="right")
+    for kind, component, metric, value in rows:
+        table.add_row(kind, component, metric, value)
+    return table
+
+
 def _endpoint_group(ep: dict[str, Any]) -> RenderableType | None:
     if not ep:
         return None
@@ -412,6 +431,9 @@ def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
                 renderables.append(kv_table)
             renderables.append(Text(_("Hardware-Telemetrie"), style="bold"))
             renderables.append(_telemetry_table(profile))
+            power_table = _system_power_table(profile)
+            if power_table is not None:
+                renderables.append(power_table)
 
         if m.get("endpoint"):
             renderables.append(Text(f"\n{_('Endpoint-/Multi-User-Test')}", style="bold"))

@@ -201,3 +201,66 @@ def test_terminal_report_shows_context_capability_boundary():
     assert "131072" in text
     assert "262144" in text
     assert "Kapazitaetsgrenze" in text
+
+
+def test_terminal_report_shows_full_system_power_thermals_and_efficiency():
+    summary = _summary()
+    bench = summary["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    bench["telemetry"].update({
+        "cpu": {
+            "avg_util_percent": 63.2,
+            "max_util_percent": 91.4,
+            "avg_frequency_mhz": 4210.0,
+            "min_frequency_mhz": 3800.0,
+            "max_frequency_mhz": 4500.0,
+            "avg_temperature_c": 71.8,
+            "max_temperature_c": 79.3,
+            "avg_package_power_w": 103.5,
+            "max_package_power_w": 137.8,
+            "energy_j": 28440.0,
+            "energy_wh": 7.9,
+            "energy_source": "hardware_energy_counter",
+        },
+        "gpus": [{
+            "index": 0,
+            "avg_util_gpu_percent": 97.0,
+            "max_util_gpu_percent": 99.0,
+            "avg_power_w": 421.7,
+            "max_power_w": 448.2,
+            "max_temperature_c": 68.0,
+            "energy_j": 114840.0,
+            "energy_wh": 31.9,
+        }],
+        "power": {
+            "scope": "measured_components",
+            "coverage": ["cpu_package", "gpu:0"],
+            "avg_component_power_w": 525.2,
+            "max_component_power_w": 586.0,
+            "component_energy_j": 143280.0,
+            "component_energy_wh": 39.8,
+            "wall_power_w": None,
+            "wall_energy_j": None,
+            "wall_energy_wh": None,
+        },
+    })
+    bench["efficiency"] = {
+        "power_scope": "measured_components",
+        "power_coverage": ["cpu_package", "gpu:0"],
+        "token_scope": "generated_tokens",
+        "workload_tokens": 23070,
+        "tokens_per_joule": 0.161,
+        "joules_per_1k_tokens": 6211.5,
+        "wh_per_1k_tokens": 1.72,
+    }
+
+    text = _render(encode_v3(summary))
+
+    assert "System Power & Thermals" in text
+    assert "4.21 GHz" in text
+    assert "103.50 W" in text
+    assert "7.900 Wh" in text
+    assert "421.70 W" in text
+    assert "39.800 Wh" in text
+    assert "cpu_package, gpu:0" in text
+    assert "0.1610 tokens/J" in text
+    assert "1.7200 Wh/1k tokens" in text

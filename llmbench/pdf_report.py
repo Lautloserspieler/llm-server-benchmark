@@ -17,6 +17,7 @@ from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
 from .result_schema import provenance_rows, scalar_summary
+from .telemetry_reporting import system_power_rows
 
 INK = "#16212b"
 MUTED = "#5d6b78"
@@ -554,6 +555,17 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                     width * 0.13, width * 0.07, width * 0.14, width * 0.13,
                     width * 0.14, width * 0.13, width * 0.13, width * 0.13,
                 ]))
+            power_rows = system_power_rows(profile)
+            if power_rows:
+                block.append(Spacer(1, 6))
+                block.append(Paragraph(_("System Power & Thermals"), styles["mutedKeep"]))
+                power_table = [[_("Bereich"), _("Komponente"), _("Messwert"), _("Wert")]]
+                power_table.extend([list(row) for row in power_rows])
+                block.append(_table(
+                    power_table,
+                    [width * 0.16, width * 0.20, width * 0.32, width * 0.32],
+                    numeric_from=99,
+                ))
             story.extend(block)
 
         endpoint = model.get("endpoint")

@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### System telemetry: reporting complete
+
+- Terminal, HTML, and PDF reports now expose CPU utilization, frequency, temperature,
+  package power and CPU energy together with GPU power, temperature, and energy.
+- Measured CPU/GPU components are shown under the explicit `measured_components` scope
+  with coverage, average/peak power, and energy, and are never labelled as wall power.
+- Prompt and generation tests show Tokens/Joule and Wh/1k tokens where available;
+  missing sensors are reported as unavailable rather than zero.
+
 ### Effective KV-cache introspection
 
 - Schema-v3 results now retain a provenance-aware effective KV-cache configuration

@@ -41,7 +41,15 @@ METHODS = {
 # no route means ``unavailable``.  It is intentionally conservative.
 BACKEND_SUPPORT: dict[str, set[str]] = {
     "llama_cpp": {"effective_max_context", "k_dtype", "v_dtype", "runtime_version", "residency"},
-    "vllm": {"kv_dtype", "prefix_caching", "memory_budget_fraction", "memory_allocation", "token_capacity", "runtime_version"},
+    "vllm": {"kv_dtype", "prefix_caching", "memory_allocation", "runtime_version"},
+}
+
+# Native observations with backend-specific semantics.  They are deliberately
+# not generic comparison fields and their keys use a restricted catalog.
+BACKEND_DETAIL_FIELDS: dict[tuple[str, str], tuple[str, str | None]] = {
+    ("llama_cpp", "build_number"): ("integer", None),
+    ("vllm", "gpu_kv_cache_size_tokens"): ("integer", "tokens"),
+    ("vllm", "executor_gpu_memory_budget_fraction"): ("number", "fraction"),
 }
 
 
@@ -55,6 +63,7 @@ class KvCacheObservation:
     provider: str = "runtime"
     phase: str = "benchmark"
     metadata: Mapping[str, Any] | None = None
+    backend_detail_key: str | None = None
 
 
 def _safe_text(value: Any, *, limit: int = 120) -> str | None:
@@ -70,6 +79,10 @@ def _safe_text(value: Any, *, limit: int = 120) -> str | None:
 
 def _safe_value(field: str, value: Any) -> Any | None:
     kind, _unit = KV_CACHE_FIELDS[field]
+    return _safe_typed_value(kind, field, value)
+
+
+def _safe_typed_value(kind: str, name: str, value: Any) -> Any | None:
     if kind == "integer":
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return None
@@ -84,7 +97,7 @@ def _safe_value(field: str, value: Any) -> Any | None:
     value = _safe_text(value)
     if value is None:
         return None
-    if field == "residency" and value not in RESIDENCIES:
+    if name == "residency" and value not in RESIDENCIES:
         return None
     return value
 
@@ -131,17 +144,24 @@ def normalize_kv_cache(
 ) -> dict[str, Any]:
     """Normalize observations without ever raising for malformed adapter data."""
     grouped: dict[str, list[KvCacheObservation]] = {field: [] for field in KV_CACHE_FIELDS}
+    details: dict[str, list[KvCacheObservation]] = {}
     for candidate in observations:
         try:
             observation = candidate if isinstance(candidate, KvCacheObservation) else KvCacheObservation(**dict(candidate))
-            if observation.field not in KV_CACHE_FIELDS or observation.source not in SOURCES:
+            if observation.source not in SOURCES:
                 continue
-            expected_unit = KV_CACHE_FIELDS[observation.field][1]
-            if observation.unit != expected_unit:
-                continue
-            if _safe_value(observation.field, observation.value) is None:
-                continue
-            grouped[observation.field].append(observation)
+            if observation.backend_detail_key is not None:
+                spec = BACKEND_DETAIL_FIELDS.get((backend_id, observation.backend_detail_key))
+                if spec is None or observation.unit != spec[1]:
+                    continue
+                if _safe_typed_value(spec[0], observation.backend_detail_key, observation.value) is not None:
+                    details.setdefault(observation.backend_detail_key, []).append(observation)
+            elif observation.field in KV_CACHE_FIELDS:
+                expected_unit = KV_CACHE_FIELDS[observation.field][1]
+                if observation.unit != expected_unit:
+                    continue
+                if _safe_value(observation.field, observation.value) is not None:
+                    grouped[observation.field].append(observation)
         except (TypeError, ValueError):
             continue
 
@@ -176,6 +196,35 @@ def normalize_kv_cache(
                 envelope["unit"] = unit
             envelope["evidence"] = _evidence(item)
             result[field] = envelope
+    if not start_failed and details:
+        backend_details: dict[str, dict[str, Any]] = {}
+        for key, candidates in details.items():
+            kind, unit = BACKEND_DETAIL_FIELDS[(backend_id, key)]
+            direct = [item for item in candidates if item.source == "detected"]
+            selected = direct or [item for item in candidates if item.source == "calculated"]
+            detail_values: list[Any] = []
+            for item in selected:
+                value = _safe_typed_value(kind, key, item.value)
+                if value not in detail_values:
+                    detail_values.append(value)
+            detail_item: dict[str, Any]
+            if len(detail_values) > 1:
+                conflict = [
+                    {"value": _safe_typed_value(kind, key, item.value), **_evidence(item)}
+                    for item in selected[:8]
+                    if _safe_typed_value(kind, key, item.value) is not None
+                ]
+                detail_item = _unknown(
+                    "unknown", "conflicting_runtime_observations", unit=unit,
+                    evidence={"method": "backend_runtime_introspection", "metadata": {"observations": conflict}},
+                )
+            else:
+                chosen = next(item for item in selected if _safe_typed_value(kind, key, item.value) == detail_values[0])
+                detail_item = {"value": detail_values[0], "source": chosen.source, "evidence": _evidence(chosen)}
+                if unit is not None:
+                    detail_item["unit"] = unit
+            backend_details.setdefault(backend_id, {})[key] = detail_item
+        result["backend_details"] = backend_details
     return result
 
 

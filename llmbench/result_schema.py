@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from typing import Any
 
 
@@ -193,8 +194,8 @@ def _validate_kv_cache(item: Any, path: str) -> None:
             if not isinstance(backend, str) or not backend or not isinstance(entries, dict):
                 _fail(f"{path}.backend_details", "requires backend object namespaces")
             for name, entry in entries.items():
-                if not isinstance(name, str):
-                    _fail(f"{path}.backend_details.{backend}", "field names must be strings")
+                if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name):
+                    _fail(f"{path}.backend_details.{backend}", "field names must be bounded identifiers")
                 # Backend detail semantics are private, but it is still an envelope.
                 detail_path = f"{path}.backend_details.{backend}.{name}"
                 if not isinstance(entry, dict):

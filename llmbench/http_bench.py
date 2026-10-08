@@ -282,6 +282,7 @@ def _row(
     n_gen: int,
     n_depth: int,
     backend_name: str,
+    workload_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Ergebniszeile im Format, das flatten_bench_rows() liest.
 
@@ -307,6 +308,7 @@ def _row(
         "gpu_info": None,
         "samples_ts": samples,
         "repetitions": len(samples),
+        "workload_tokens": workload_tokens,
     }
 
 
@@ -347,6 +349,7 @@ async def _run_prompt_kind(
     request_id = 0
     for n in bench_cfg["prompt_tokens"]:
         samples: list[float] = []
+        workload_tokens = 0
         for rep in range(reps):
             prompt = build_filler_prompt(int(n), _nonce(f"pp{n}", rep))
             cfg = _completion_cfg(bench_cfg, max_tokens=1)
@@ -361,8 +364,11 @@ async def _run_prompt_kind(
             tokens = res["prompt_tokens"] or int(n)
             if ttft and ttft > 0:
                 samples.append(tokens / ttft)
-        rows.append(_row(f"pp{n}", samples, n_prompt=int(n), n_gen=0, n_depth=0,
-                         backend_name=backend_name))
+                workload_tokens += int(tokens)
+        rows.append(_row(
+            f"pp{n}", samples, n_prompt=int(n), n_gen=0, n_depth=0,
+            backend_name=backend_name, workload_tokens=workload_tokens,
+        ))
     return rows
 
 
@@ -381,6 +387,7 @@ async def _run_generation_kind(
     request_id = 0
     for n in bench_cfg["generation_tokens"]:
         samples: list[float] = []
+        workload_tokens = 0
         for rep in range(reps):
             prompt = f"{_nonce(f'tg{n}', rep)} {_SHORT_PROMPT}"
             # ignore_eos und min_tokens zusammen: das erste erlaubt dem Modell
@@ -402,8 +409,11 @@ async def _run_generation_kind(
             gen_seconds = res["duration_seconds"] - ttft
             if gen_seconds > 0 and produced:
                 samples.append(produced / gen_seconds)
-        rows.append(_row(f"tg{n}", samples, n_prompt=0, n_gen=int(n), n_depth=0,
-                         backend_name=backend_name))
+                workload_tokens += int(produced)
+        rows.append(_row(
+            f"tg{n}", samples, n_prompt=0, n_gen=int(n), n_depth=0,
+            backend_name=backend_name, workload_tokens=workload_tokens,
+        ))
     return rows
 
 

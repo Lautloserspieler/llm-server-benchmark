@@ -47,10 +47,15 @@ def parse_llama_kv_cache_output(stdout: str, stderr: str, *, phase: str = "bench
                 value = row.get(source_key)
                 if isinstance(value, str) and value:
                     observations.append(KvCacheObservation(field, value, method="backend_log_parsing", provider="llama.cpp", phase=phase))
-            for source_key in ("build_commit", "build_number"):
-                value = row.get(source_key)
-                if value is not None and str(value).strip():
-                    observations.append(KvCacheObservation("runtime_version", str(value), method="backend_log_parsing", provider="llama.cpp", phase=phase))
+            commit = row.get("build_commit")
+            if isinstance(commit, str) and commit.strip():
+                observations.append(KvCacheObservation("runtime_version", commit, method="backend_log_parsing", provider="llama.cpp", phase=phase))
+            build_number = row.get("build_number")
+            if isinstance(build_number, int) and not isinstance(build_number, bool) and build_number >= 0:
+                observations.append(KvCacheObservation(
+                    "build_number", build_number, method="backend_log_parsing", provider="llama.cpp",
+                    phase=phase, backend_detail_key="build_number",
+                ))
     # Fixture-backed explicit forms.  Do not infer these values from -c/-ctk/-ctv.
     joined = "\n".join(texts)
     patterns = (

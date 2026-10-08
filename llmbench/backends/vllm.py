@@ -99,7 +99,11 @@ def parse_vllm_cache_metrics(text: str, *, phase: str = "benchmark") -> list[KvC
                 value = float(budget)
             except ValueError:
                 continue
-            observations.append(KvCacheObservation("memory_budget_fraction", value, unit="fraction", method="backend_runtime_introspection", provider=provider, phase=phase))
+            observations.append(KvCacheObservation(
+                "executor_gpu_memory_budget_fraction", value, unit="fraction",
+                method="backend_runtime_introspection", provider=provider, phase=phase,
+                backend_detail_key="executor_gpu_memory_budget_fraction",
+            ))
     return observations
 
 
@@ -107,11 +111,15 @@ def parse_vllm_cache_logs(text: str, *, phase: str = "benchmark") -> list[KvCach
     """Parse explicit vLLM startup/cache lines; never requested serve args."""
     observations: list[KvCacheObservation] = []
     for pattern, field, unit in (
-        (r"GPU KV cache size:\s*([0-9][0-9,]*)\s+tokens", "token_capacity", "tokens"),
         (r"KV cache memory(?: allocation)?:\s*([0-9][0-9,]*)\s*(?:bytes|B)", "memory_allocation", "bytes"),
+        (r"GPU KV cache size:\s*([0-9][0-9,]*)\s+tokens", "gpu_kv_cache_size_tokens", "tokens"),
     ):
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            observations.append(KvCacheObservation(field, int(match.group(1).replace(",", "")), unit=unit, method="backend_log_parsing", provider="vllm", phase=phase))
+            observations.append(KvCacheObservation(
+                field, int(match.group(1).replace(",", "")), unit=unit,
+                method="backend_log_parsing", provider="vllm", phase=phase,
+                backend_detail_key="gpu_kv_cache_size_tokens" if field == "gpu_kv_cache_size_tokens" else None,
+            ))
     for match in re.finditer(r"\bvLLM\s+(?:API server )?version\s+([A-Za-z0-9._+-]+)", text, flags=re.IGNORECASE):
         observations.append(KvCacheObservation("runtime_version", match.group(1), method="backend_log_parsing", provider="vllm", phase=phase))
     return observations

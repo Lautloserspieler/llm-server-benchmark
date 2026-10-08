@@ -13,6 +13,10 @@
   fail an otherwise valid benchmark.
 - Terminal, HTML, PDF, and CSV show the comparable KV-cache core while
   backend-specific details remain in the JSON artifact.
+- llama.cpp uses `build_commit` as the common runtime version and retains
+  `build_number` as a native detail. vLLM retains native cache tokens and its
+  executor-wide GPU memory budget only as details, not comparable KV capacity or
+  KV memory usage; total-device VRAM telemetry is unchanged.
 
 ### Memory-bandwidth characterization
 

@@ -618,6 +618,25 @@ Metriken und ergänzt `configured_gpu_layers`, `gpu_layers_source` und `avg_ts_s
 Die beiden `*_source`-Spalten enthalten bei bekannter Herkunft deren Kennung, sonst den
 expliziten Zustand `unknown` oder `unavailable`.
 
+### Effektive KV-Cache-Konfiguration
+
+Bei lokalen `llama.cpp`- und vLLM-Läufen kann jedes Profil zusätzlich ein
+`kv_cache`-Objekt enthalten. Es speichert ausschließlich vom Runtime bestätigte
+oder deterministisch berechnete Werte; angeforderte YAML-/CLI-Einstellungen
+werden nie als effektive Werte kopiert. Jedes gemeinsame Feld ist ein
+Schema-v3-Envelope mit Herkunft oder dem expliziten Zustand
+`unknown`/`unavailable`. Nicht verfügbare Parser oder Metriken lassen einen
+ansonsten gültigen Benchmark nicht fehlschlagen.
+
+Die aktuell ausgelieferten nativen Details bleiben bewusst JSON-spezifisch:
+llama.cpp bewahrt `build_number` neben der kanonischen
+`build_commit`-Runtime-Version auf; vLLM bewahrt
+`gpu_kv_cache_size_tokens` und `executor_gpu_memory_budget_fraction` auf.
+Letzteres ist ein executor-weites Konfigurationsbudget für Gewichte,
+Aktivierungen und KV-Cache, keine reine KV-Speichernutzung. Keiner der beiden
+vLLM-Werte ist ein backendübergreifender Kapazitätsvergleich. Beobachtete
+Gesamt-VRAM-Telemetrie pro Gerät bleibt getrennt und unverändert.
+
 `llmbench bootstrap` markiert die von ihm erzeugten Profile privat und wertgebunden,
 damit ihre `gpu_layers`-Werte als `defaulted` ausgegeben werden; ein explizit in YAML
 eingetragener Wert bleibt `requested`. Wählt Auto-Tuning eine positive, endliche Messung,

@@ -13,6 +13,10 @@
   lassen einen ansonsten gueltigen Benchmark nicht fehlschlagen.
 - Terminal, HTML, PDF und CSV zeigen den vergleichbaren KV-Cache-Kern; spezifische
   Backend-Details bleiben im JSON-Artefakt.
+- llama.cpp verwendet `build_commit` als gemeinsame Runtime-Version und bewahrt
+  `build_number` als natives Detail. vLLM speichert native Cache-Tokenzahl und
+  executor-weites GPU-Speicherbudget nur als Details, nicht als vergleichbare
+  KV-Kapazität oder KV-Speichernutzung; Gesamt-VRAM-Telemetrie bleibt unverändert.
 
 ### Memory-Bandwidth-Charakterisierung
 

@@ -636,6 +636,14 @@ diagnostic evidence, and an unavailable parser/metrics endpoint never fails an
 otherwise valid benchmark. Terminal, HTML, PDF, and CSV expose the comparable
 common core; backend-specific details, when present, remain JSON-only.
 
+The shipped native details are intentionally narrower than the common core:
+llama.cpp retains `build_number` alongside the canonical `build_commit` runtime
+version; vLLM retains `gpu_kv_cache_size_tokens` and
+`executor_gpu_memory_budget_fraction`. The latter is an executor-wide
+configuration budget shared by weights, activations, and KV cache, not KV-only
+memory usage; neither native vLLM value is a cross-backend capacity comparison.
+Observed per-device total VRAM telemetry remains separate and unchanged.
+
 `llmbench bootstrap` records the profiles it creates with a private, value-bound
 marker, so their `gpu_layers` values are emitted as `defaulted`; a value explicitly
 written in YAML remains `requested`. When auto-tuning selects a positive, finite

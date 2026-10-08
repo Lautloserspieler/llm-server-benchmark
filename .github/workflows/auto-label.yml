@@ -1,7 +1,10 @@
 name: 01 - Auto-Label PRs
 
+# pull_request_target is required for PRs from forks: GitHub deliberately
+# downgrades GITHUB_TOKEN to read-only on pull_request events. This workflow
+# only applies labels and never checks out or executes code from the PR.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:

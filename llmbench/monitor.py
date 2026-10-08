@@ -5,6 +5,7 @@ import os
 import statistics
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,6 +32,51 @@ def _agg(items: list[dict[str, Any]], key: str) -> tuple[float | None, float | N
     if not values:
         return None, None
     return statistics.fmean(values), max(values)
+
+
+def _integrate_power(
+    samples: list[dict[str, Any]],
+    getter: Callable[[dict[str, Any]], Any],
+) -> tuple[float | None, float]:
+    """Integrate sampled power using real timestamps and trapezoids.
+
+    Missing values break an interval instead of being treated as zero or
+    interpolated across an unknown gap.
+    """
+    energy_j = 0.0
+    covered_seconds = 0.0
+    previous_ts: float | None = None
+    previous_power: float | None = None
+    intervals = 0
+    for sample in samples:
+        ts = sample.get("monotonic_ts")
+        if ts is None:
+            ts = sample.get("ts")
+        value = getter(sample)
+        if ts is None or value is None:
+            previous_ts = None
+            previous_power = None
+            continue
+        try:
+            current_ts = float(ts)
+            current_power = float(value)
+        except (TypeError, ValueError):
+            previous_ts = None
+            previous_power = None
+            continue
+        if current_power < 0:
+            previous_ts = None
+            previous_power = None
+            continue
+        if previous_ts is not None and previous_power is not None:
+            elapsed = current_ts - previous_ts
+            if elapsed > 0:
+                energy_j += ((previous_power + current_power) / 2.0) * elapsed
+                covered_seconds += elapsed
+                intervals += 1
+        previous_ts = current_ts
+        previous_power = current_power
+    return (energy_j if intervals else None), covered_seconds
 
 
 def strip_samples(telemetry: dict[str, Any] | None) -> dict[str, Any]:
@@ -144,6 +190,7 @@ class ResourceMonitor:
             "frequency_mhz": None,
             "temperature_c": None,
             "package_power_w": None,
+            "package_energy_delta_j": None,
         }
         if not self._cpu_provider:
             return sample
@@ -154,19 +201,44 @@ class ResourceMonitor:
         sample["frequency_mhz"] = current.frequency_mhz
         sample["temperature_c"] = current.temperature_c
         sample["package_power_w"] = current.package_power_w
+        sample["package_energy_delta_j"] = getattr(
+            current, "package_energy_delta_j", None
+        )
         return sample
 
     def _sample(self) -> dict[str, Any]:
         vm = psutil.virtual_memory()
         cpu_percent = psutil.cpu_percent(interval=None)
+        cpu_sample = self._cpu_sample(float(cpu_percent))
+        gpu_samples = self._gpu_sample()
+
+        component_power: list[float] = []
+        coverage: list[str] = []
+        cpu_power = cpu_sample.get("package_power_w")
+        if cpu_power is not None:
+            component_power.append(float(cpu_power))
+            coverage.append("cpu_package")
+        for gpu in gpu_samples:
+            gpu_power = gpu.get("power_w")
+            if gpu_power is not None:
+                component_power.append(float(gpu_power))
+                coverage.append(f"gpu:{gpu.get('index', 0)}")
+
         return {
             "ts": time.time(),
+            "monotonic_ts": time.monotonic(),
             # Keep the existing flat fields for backward compatibility.
             "cpu_percent": cpu_percent,
             "ram_used_bytes": vm.used,
             "ram_percent": vm.percent,
-            "cpu": self._cpu_sample(float(cpu_percent)),
-            "gpus": self._gpu_sample(),
+            "cpu": cpu_sample,
+            "gpus": gpu_samples,
+            "power": {
+                "scope": "measured_components",
+                "component_power_w": sum(component_power) if component_power else None,
+                "wall_power_w": None,
+                "coverage": coverage,
+            },
         }
 
     def _run(self) -> None:
@@ -239,6 +311,26 @@ class ResourceMonitor:
             for item in cpu_items
             if item.get("package_power_w") is not None
         ]
+        direct_cpu_energy = [
+            float(item["package_energy_delta_j"])
+            for item in cpu_items
+            if item.get("package_energy_delta_j") is not None
+            and float(item["package_energy_delta_j"]) >= 0
+        ]
+        integrated_cpu_energy, cpu_energy_seconds = _integrate_power(
+            self._samples,
+            lambda sample: (sample.get("cpu") or {}).get("package_power_w"),
+        )
+        cpu_energy_source: str | None
+        if direct_cpu_energy:
+            cpu_energy_j: float | None = sum(direct_cpu_energy)
+            cpu_energy_source = "hardware_energy_counter"
+        else:
+            cpu_energy_j = integrated_cpu_energy
+            cpu_energy_source = (
+                "sampled_power_integration" if integrated_cpu_energy is not None else None
+            )
+
         cpu_summary = {
             "avg_util_percent": statistics.fmean(cpu),
             "max_util_percent": max(cpu),
@@ -255,6 +347,12 @@ class ResourceMonitor:
                 statistics.fmean(package_power_values) if package_power_values else None
             ),
             "max_package_power_w": max(package_power_values) if package_power_values else None,
+            "energy_j": cpu_energy_j,
+            "energy_wh": (cpu_energy_j / 3600.0) if cpu_energy_j is not None else None,
+            "energy_source": cpu_energy_source,
+            "energy_coverage_seconds": (
+                cpu_energy_seconds if cpu_energy_source == "sampled_power_integration" else None
+            ),
             "telemetry_source": getattr(
                 self._cpu_provider, "TELEMETRY_SOURCE", "psutil"
             ),
@@ -272,6 +370,19 @@ class ResourceMonitor:
             total_mem = next(
                 (x.get("memory_total_bytes") for x in items if x.get("memory_total_bytes")), None
             )
+            def gpu_power(
+                sample: dict[str, Any],
+                gpu_index: int = idx,
+            ) -> Any:
+                gpus = sample.get("gpus", [])
+                if len(gpus) <= gpu_index:
+                    return None
+                return gpus[gpu_index].get("power_w")
+
+            gpu_energy_j, gpu_energy_seconds = _integrate_power(
+                self._samples,
+                gpu_power,
+            )
             gpu_summaries.append(
                 {
                     "index": idx,
@@ -283,8 +394,62 @@ class ResourceMonitor:
                     "avg_power_w": avg_power,
                     "max_power_w": max_power,
                     "max_temperature_c": max_temp,
+                    "energy_j": gpu_energy_j,
+                    "energy_wh": (
+                        gpu_energy_j / 3600.0 if gpu_energy_j is not None else None
+                    ),
+                    "energy_source": (
+                        "sampled_power_integration" if gpu_energy_j is not None else None
+                    ),
+                    "energy_coverage_seconds": gpu_energy_seconds,
                 }
             )
+
+        component_power_values = [
+            float((sample.get("power") or {})["component_power_w"])
+            for sample in self._samples
+            if (sample.get("power") or {}).get("component_power_w") is not None
+        ]
+        power_coverage = sorted({
+            component
+            for sample in self._samples
+            for component in ((sample.get("power") or {}).get("coverage") or [])
+        })
+        component_energies = [
+            value
+            for value in [
+                cpu_summary.get("energy_j"),
+                *(gpu.get("energy_j") for gpu in gpu_summaries),
+            ]
+            if value is not None
+        ]
+        component_energy_j = (
+            sum(float(value) for value in component_energies)
+            if component_energies
+            else None
+        )
+        power_summary = {
+            "scope": "measured_components",
+            "coverage": power_coverage,
+            "avg_component_power_w": (
+                statistics.fmean(component_power_values)
+                if component_power_values
+                else None
+            ),
+            "max_component_power_w": (
+                max(component_power_values) if component_power_values else None
+            ),
+            "component_energy_j": component_energy_j,
+            "component_energy_wh": (
+                component_energy_j / 3600.0
+                if component_energy_j is not None
+                else None
+            ),
+            # A real wall-power provider may populate these in a later phase.
+            "wall_power_w": None,
+            "wall_energy_j": None,
+            "wall_energy_wh": None,
+        }
 
         foreign = self._foreign_processes()
         warnings: list[str] = []
@@ -317,6 +482,8 @@ class ResourceMonitor:
             "cpu": cpu_summary,
             "cpu_telemetry_source": cpu_summary["telemetry_source"],
             "gpus": gpu_summaries,
+            "power": power_summary,
+            "sample_interval_seconds": self.interval,
             "baseline": self._baseline,
             "foreign_gpu_processes": foreign,
             "warnings": warnings,

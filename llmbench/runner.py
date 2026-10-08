@@ -10,6 +10,7 @@ from . import __version__
 from .config import config_fingerprint, public_config, resolve_path
 from .context_capability import build_context_capability
 from .endpoint import run_endpoint_load, run_sanity_check
+from .energy import apply_energy_efficiency
 from .hardware import collect_hardware
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
@@ -384,6 +385,12 @@ def _run_suite(
                                 "error": str(exc),
                                 "traceback": traceback.format_exc(),
                             }
+                    apply_energy_efficiency(
+                        result,
+                        default_repetitions=max(
+                            1, int(cfg["benchmark"].get("repetitions", 1))
+                        ),
+                    )
                     reporter.test_finished(
                         result.get("status", "failed"),
                         flatten_bench_rows(result),

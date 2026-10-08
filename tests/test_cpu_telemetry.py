@@ -25,6 +25,7 @@ def test_rapl_reader_derives_package_power_from_energy_delta(tmp_path):
 
     energy.write_text("56000000\n", encoding="utf-8")
     assert reader.sample_power_w() == 110.0
+    assert reader.last_energy_delta_j == 55.0
 
 
 def test_rapl_reader_handles_energy_counter_wrap(tmp_path):
@@ -42,6 +43,7 @@ def test_rapl_reader_handles_energy_counter_wrap(tmp_path):
 
     energy.write_text("5000000\n", encoding="utf-8")
     assert reader.sample_power_w() == 10.0
+    assert reader.last_energy_delta_j == 10.0
 
 
 def test_rapl_reader_ignores_non_package_domains(tmp_path):
@@ -134,3 +136,4 @@ def test_linux_rapl_provider_combines_psutil_metrics_with_power(monkeypatch, tmp
     assert sample.frequency_mhz == 4000.0
     assert sample.temperature_c == 70.0
     assert sample.package_power_w == 125.0
+    assert sample.package_energy_delta_j == 125.0

@@ -16,6 +16,7 @@ class CpuSample:
     frequency_mhz: float | None
     temperature_c: float | None
     package_power_w: float | None
+    package_energy_delta_j: float | None = None
 
 
 class CpuTelemetryProvider(abc.ABC):
@@ -52,6 +53,7 @@ class _RaplEnergyReader:
         self._zones: list[tuple[Path, float | None]] = []
         self._previous_energy_uj: list[float] | None = None
         self._previous_ts: float | None = None
+        self.last_energy_delta_j: float | None = None
 
     def initialize(self) -> bool:
         self._zones = []
@@ -90,6 +92,7 @@ class _RaplEnergyReader:
             return None
 
     def sample_power_w(self) -> float | None:
+        self.last_energy_delta_j = None
         if not self._zones:
             return None
 
@@ -127,11 +130,13 @@ class _RaplEnergyReader:
 
         self._previous_energy_uj = values
         self._previous_ts = now
-        return (delta_uj / 1_000_000.0) / elapsed
+        self.last_energy_delta_j = delta_uj / 1_000_000.0
+        return self.last_energy_delta_j / elapsed
 
     def shutdown(self) -> None:
         self._previous_energy_uj = None
         self._previous_ts = None
+        self.last_energy_delta_j = None
 
 
 class PsutilCpuProvider(CpuTelemetryProvider):
@@ -200,6 +205,7 @@ class PsutilCpuProvider(CpuTelemetryProvider):
             frequency_mhz=self._frequency_mhz(),
             temperature_c=self._temperature_c(),
             package_power_w=None,
+            package_energy_delta_j=None,
         )
 
     def shutdown(self) -> None:
@@ -227,10 +233,12 @@ class LinuxRaplCpuProvider(PsutilCpuProvider):
 
     def sample_cpu(self) -> CpuSample:
         base = super().sample_cpu()
+        package_power_w = self._rapl.sample_power_w()
         return CpuSample(
             frequency_mhz=base.frequency_mhz,
             temperature_c=base.temperature_c,
-            package_power_w=self._rapl.sample_power_w(),
+            package_power_w=package_power_w,
+            package_energy_delta_j=self._rapl.last_energy_delta_j,
         )
 
     def shutdown(self) -> None:

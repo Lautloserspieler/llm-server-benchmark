@@ -243,3 +243,89 @@ def test_v3_context_curve_rejects_negative_depth():
     }
     with pytest.raises(ResultSchemaError, match="populated_context"):
         encode_v3(raw)
+
+
+
+def test_v3_energy_and_efficiency_metrics_preserve_measurement_scope_and_provenance():
+    raw = _summary()
+    benchmark = raw["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    benchmark["status"] = "ok"
+    benchmark["telemetry"] = {
+        "telemetry_source": "nvml",
+        "cpu_telemetry_source": "psutil+powercap",
+        "cpu": {
+            "avg_package_power_w": 100.0,
+            "max_package_power_w": 125.0,
+            "energy_j": 200.0,
+            "energy_wh": 200.0 / 3600.0,
+            "energy_source": "hardware_energy_counter",
+        },
+        "gpus": [{
+            "index": 0,
+            "energy_j": 800.0,
+            "energy_wh": 800.0 / 3600.0,
+            "energy_source": "sampled_power_integration",
+        }],
+        "power": {
+            "scope": "measured_components",
+            "coverage": ["cpu_package", "gpu:0"],
+            "avg_component_power_w": 500.0,
+            "max_component_power_w": 600.0,
+            "component_energy_j": 1000.0,
+            "component_energy_wh": 1000.0 / 3600.0,
+            "wall_power_w": None,
+            "wall_energy_j": None,
+            "wall_energy_wh": None,
+        },
+    }
+    benchmark["efficiency"] = {
+        "power_scope": "measured_components",
+        "power_coverage": ["cpu_package", "gpu:0"],
+        "token_scope": "generated_tokens",
+        "workload_tokens": 512,
+        "tokens_per_joule": 0.512,
+        "joules_per_1k_tokens": 1953.125,
+        "wh_per_1k_tokens": 1953.125 / 3600.0,
+    }
+
+    encoded = encode_v3(raw)
+    encoded_benchmark = encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]
+
+    cpu = encoded_benchmark["telemetry"]["cpu"]
+    assert cpu["energy_j"]["source"] == "measured"
+    assert cpu["energy_j"]["evidence"]["method"] == "hardware_energy_counter"
+
+    gpu = encoded_benchmark["telemetry"]["gpus"][0]
+    assert gpu["energy_j"]["source"] == "calculated"
+
+    power = encoded_benchmark["telemetry"]["power"]
+    assert power["component_energy_j"]["source"] == "calculated"
+    assert power["component_energy_j"]["evidence"]["metadata"]["scope"] == "measured_components"
+    assert power["wall_power_w"]["status"] == "unavailable"
+
+    efficiency = encoded_benchmark["efficiency"]
+    assert efficiency["tokens_per_joule"]["source"] == "calculated"
+    assert efficiency["tokens_per_joule"]["unit"] == "tokens/J"
+
+    validate_summary(encoded)
+    projected = scalar_summary(encoded)
+    projected_benchmark = projected["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    assert projected_benchmark["telemetry"]["power"]["component_energy_j"] == 1000.0
+    assert projected_benchmark["efficiency"]["tokens_per_joule"] == 0.512
+
+
+def test_v3_efficiency_rejects_wall_power_claim_disguised_as_component_scope():
+    raw = _summary()
+    benchmark = raw["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    benchmark["efficiency"] = {
+        "power_scope": "wall_power",
+        "power_coverage": [],
+        "token_scope": "generated_tokens",
+        "workload_tokens": 128,
+        "tokens_per_joule": 1.0,
+        "joules_per_1k_tokens": 1000.0,
+        "wh_per_1k_tokens": 1000.0 / 3600.0,
+    }
+
+    with pytest.raises(ResultSchemaError, match="power_scope"):
+        encode_v3(raw)

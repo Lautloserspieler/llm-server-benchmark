@@ -1,6 +1,7 @@
 """VllmBackend gegen gemockte docker_backend-Funktionen. Kein echtes Docker."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -156,6 +157,45 @@ def test_begin_profile_clears_stale_container_first(docker, tmp_path: Path):
     backend = _backend()
     backend.begin_profile("/models/M", {}, {}, tmp_path)
     assert docker.stopped[0] == "llmbench-vllm"
+
+
+def test_kv_collection_uses_live_metrics_and_logs_without_requested_auto_dtype(docker, tmp_path: Path, monkeypatch):
+    docker.existing = True
+    backend = _backend()
+    backend.container_id = "CONTAINERID"
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *_a, **_k: SimpleNamespace(
+            status_code=200,
+            text='vllm:cache_config_info{cache_dtype="auto",enable_prefix_caching="true",gpu_memory_utilization="0.8"} 1\n',
+        ),
+    )
+    monkeypatch.setattr(
+        "llmbench.backends.vllm.docker_backend.container_logs",
+        lambda *_a, **_k: "GPU KV cache size: 8192 tokens\nvLLM version 0.26.0",
+    )
+
+    observed = backend.collect_kv_cache_observations("M", {}, {}, tmp_path, "startup")
+    values = {item.field: item.value for item in observed}
+    assert values["prefix_caching"] is True
+    assert values["executor_gpu_memory_budget_fraction"] == 0.8
+    assert values["gpu_kv_cache_size_tokens"] == 8192
+    assert values["runtime_version"] == "0.26.0"
+    assert "kv_dtype" not in values
+    assert "memory_budget_fraction" not in values
+    assert "token_capacity" not in values
+
+
+def test_kv_collection_ignores_metrics_and_log_failures(docker, tmp_path: Path, monkeypatch):
+    docker.existing = True
+    backend = _backend()
+    backend.container_id = "CONTAINERID"
+    monkeypatch.setattr("httpx.get", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("unreachable")))
+    monkeypatch.setattr(
+        "llmbench.backends.vllm.docker_backend.container_logs",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("unavailable")),
+    )
+    assert backend.collect_kv_cache_observations("M", {}, {}, tmp_path, "benchmark") == []
 
 
 @pytest.mark.usefixtures("docker")

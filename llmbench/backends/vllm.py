@@ -10,6 +10,7 @@ die ``llama_cpp_setup.py::target_platform()`` fuer llama.cpp braucht.
 from __future__ import annotations
 
 import contextlib
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -18,6 +19,7 @@ from .base import BenchmarkBackend
 from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
 from ..http_bench import run_http_bench
+from ..kv_cache import KvCacheObservation
 from ..utils import auth_headers
 
 # Innerhalb des Containers lauscht vLLM immer auf diesem Port; nach aussen wird
@@ -37,6 +39,90 @@ HF_CACHE_MOUNT = "/root/.cache/huggingface"
 SHM_SIZE = "8g"
 
 STARTUP_TIMEOUT_SECONDS = 1800.0
+
+
+def _prometheus_labels(text: str) -> dict[str, str] | None:
+    """Parse Prometheus labels without splitting escaped commas/quotes."""
+    labels: dict[str, str] = {}
+    index = 0
+    while index < len(text):
+        while index < len(text) and text[index] in " ,":
+            index += 1
+        match = re.match(r"([A-Za-z_][A-Za-z0-9_]*)=\"", text[index:])
+        if not match:
+            return None
+        key = match.group(1)
+        index += match.end()
+        value: list[str] = []
+        while index < len(text):
+            char = text[index]
+            if char == "\\" and index + 1 < len(text):
+                escaped = text[index + 1]
+                value.append({"n": "\n", "\\": "\\", '"': '"'}.get(escaped, escaped))
+                index += 2
+                continue
+            if char == '"':
+                index += 1
+                break
+            value.append(char)
+            index += 1
+        else:
+            return None
+        labels[key] = "".join(value)
+    return labels
+
+
+def parse_vllm_cache_metrics(text: str, *, phase: str = "benchmark") -> list[KvCacheObservation]:
+    """Extract documented ``vllm:cache_config_info`` values from metrics text."""
+    observations: list[KvCacheObservation] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(r"vllm:cache_config_info\{(.*)\}\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)", line)
+        if not match:
+            continue
+        labels = _prometheus_labels(match.group(1))
+        if labels is None:
+            continue
+        provider = "vllm"
+        cache_dtype = labels.get("cache_dtype")
+        # ``auto`` is a selector, never evidence of a resolved effective dtype.
+        if cache_dtype and cache_dtype.lower() != "auto":
+            observations.append(KvCacheObservation("kv_dtype", cache_dtype, method="backend_runtime_introspection", provider=provider, phase=phase))
+        prefix = labels.get("enable_prefix_caching")
+        if prefix is not None and prefix.lower() in {"true", "false"}:
+            observations.append(KvCacheObservation("prefix_caching", prefix.lower() == "true", method="backend_runtime_introspection", provider=provider, phase=phase))
+        budget = labels.get("gpu_memory_utilization")
+        if budget is not None:
+            try:
+                value = float(budget)
+            except ValueError:
+                continue
+            observations.append(KvCacheObservation(
+                "executor_gpu_memory_budget_fraction", value, unit="fraction",
+                method="backend_runtime_introspection", provider=provider, phase=phase,
+                backend_detail_key="executor_gpu_memory_budget_fraction",
+            ))
+    return observations
+
+
+def parse_vllm_cache_logs(text: str, *, phase: str = "benchmark") -> list[KvCacheObservation]:
+    """Parse explicit vLLM startup/cache lines; never requested serve args."""
+    observations: list[KvCacheObservation] = []
+    for pattern, field, unit in (
+        (r"KV cache memory(?: allocation)?:\s*([0-9][0-9,]*)\s*(?:bytes|B)", "memory_allocation", "bytes"),
+        (r"GPU KV cache size:\s*([0-9][0-9,]*)\s+tokens", "gpu_kv_cache_size_tokens", "tokens"),
+    ):
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            observations.append(KvCacheObservation(
+                field, int(match.group(1).replace(",", "")), unit=unit,
+                method="backend_log_parsing", provider="vllm", phase=phase,
+                backend_detail_key="gpu_kv_cache_size_tokens" if field == "gpu_kv_cache_size_tokens" else None,
+            ))
+    for match in re.finditer(r"\bvLLM\s+(?:API server )?version\s+([A-Za-z0-9._+-]+)", text, flags=re.IGNORECASE):
+        observations.append(KvCacheObservation("runtime_version", match.group(1), method="backend_log_parsing", provider="vllm", phase=phase))
+    return observations
 
 
 def _looks_like_path(model_path: str) -> bool:
@@ -223,6 +309,36 @@ class VllmBackend(BenchmarkBackend):
 
     def end_profile(self) -> None:
         self._stop()
+
+    def collect_kv_cache_observations(
+        self,
+        model_path: str,  # noqa: ARG002
+        profile: dict[str, Any],  # noqa: ARG002
+        bench_cfg: dict[str, Any],  # noqa: ARG002
+        out_dir: Path,  # noqa: ARG002
+        phase: str,
+    ) -> list[KvCacheObservation]:
+        """Best-effort local metrics/log capture while our container is alive."""
+        if self.container_id is None or not docker_backend.container_exists(self.container_name):
+            return []
+        observations: list[KvCacheObservation] = []
+        try:
+            import httpx
+
+            response = httpx.get(
+                f"{self.base_url.rstrip('/')}/metrics",
+                headers=self._headers(), timeout=2.0, follow_redirects=False,
+            )
+            if response.status_code == 200:
+                observations.extend(parse_vllm_cache_metrics(response.text[:512_000], phase=phase))
+        except Exception:
+            # A metrics endpoint is optional and must never affect benchmark status.
+            pass
+        with contextlib.suppress(Exception):
+            observations.extend(parse_vllm_cache_logs(
+                docker_backend.container_logs(self.container_name, tail=400), phase=phase,
+            ))
+        return observations
 
     # ------------------------------------------------------------ Messungen
 

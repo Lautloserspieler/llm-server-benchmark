@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -16,10 +18,54 @@ from ..endpoint import (
     wait_health,
 )
 from ..llama_bench import run_llama_bench
+from ..kv_cache import KvCacheObservation
 
 
 VRAM_RELEASE_TIMEOUT_SECONDS = 12.0
 VRAM_RELEASE_TOLERANCE_MIB = 96.0
+
+
+def parse_llama_kv_cache_output(stdout: str, stderr: str, *, phase: str = "benchmark") -> list[KvCacheObservation]:
+    """Parse only explicit llama.cpp JSON/log values from captured output.
+
+    ``llama-bench`` normally reports JSON rows (including ``type_k``/``type_v``
+    and build identity).  A few stable runtime log forms are accepted as a
+    fallback.  Command arguments are deliberately not an input here.
+    """
+    observations: list[KvCacheObservation] = []
+    texts = [stdout, stderr]
+    for text in texts:
+        try:
+            decoded = json.loads(text)
+        except (TypeError, ValueError):
+            decoded = None
+        rows = decoded if isinstance(decoded, list) else [decoded] if isinstance(decoded, dict) else []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for source_key, field in (("type_k", "k_dtype"), ("type_v", "v_dtype")):
+                value = row.get(source_key)
+                if isinstance(value, str) and value:
+                    observations.append(KvCacheObservation(field, value, method="backend_log_parsing", provider="llama.cpp", phase=phase))
+            commit = row.get("build_commit")
+            if isinstance(commit, str) and commit.strip():
+                observations.append(KvCacheObservation("runtime_version", commit, method="backend_log_parsing", provider="llama.cpp", phase=phase))
+            build_number = row.get("build_number")
+            if isinstance(build_number, int) and not isinstance(build_number, bool) and build_number >= 0:
+                observations.append(KvCacheObservation(
+                    "build_number", build_number, method="backend_log_parsing", provider="llama.cpp",
+                    phase=phase, backend_detail_key="build_number",
+                ))
+    # Fixture-backed explicit forms.  Do not infer these values from -c/-ctk/-ctv.
+    joined = "\n".join(texts)
+    patterns = (
+        (r"(?:n_ctx_per_seq|context per sequence)\s*[=:]\s*(\d+)", "effective_max_context", "tokens"),
+        (r"KV cache size\s*[=:]\s*(\d+)\s*(?:tokens|cells)", "token_capacity", "tokens"),
+    )
+    for pattern, field, unit in patterns:
+        for match in re.finditer(pattern, joined, flags=re.IGNORECASE):
+            observations.append(KvCacheObservation(field, int(match.group(1)), unit=unit, method="backend_log_parsing", provider="llama.cpp", phase=phase))
+    return observations
 
 
 def _available_cpu_threads() -> int:
@@ -185,6 +231,8 @@ class LlamaCppBackend(BenchmarkBackend):
     def __init__(self, llama_bench_exe: str, llama_server_exe: str):
         self.llama_bench_exe = llama_bench_exe
         self.llama_server_exe = llama_server_exe
+        self._kv_artifacts: set[Path] = set()
+        self._kv_profile_dir: Path | None = None
 
     def run_benchmark(
         self,
@@ -195,6 +243,12 @@ class LlamaCppBackend(BenchmarkBackend):
         bench_cfg: dict[str, Any],
         on_progress=None,
     ) -> dict[str, Any]:
+        profile_dir = Path(out_dir)
+        if self._kv_profile_dir != profile_dir:
+            # Profile directories are normally unique.  Explicitly reset when
+            # a backend object is reused so old artifacts are never collected.
+            self._kv_profile_dir = profile_dir
+            self._kv_artifacts = set()
         capacity_issue = profile_vram_issue_for_path(model_path, profile)
         if capacity_issue:
             return {
@@ -221,6 +275,10 @@ class LlamaCppBackend(BenchmarkBackend):
             )
         finally:
             _wait_for_vram_release(baseline_mib)
+
+        artifact = Path(out_dir) / f"raw_{kind}.json"
+        if artifact.is_file():
+            self._kv_artifacts.add(artifact)
 
         if overload_attempt and _looks_like_capacity_failure(result):
             original_status = result.get("status")
@@ -253,6 +311,33 @@ class LlamaCppBackend(BenchmarkBackend):
             result = dict(result)
             result["runtime_adjustments"] = adjustments
         return result
+
+    def collect_kv_cache_observations(
+        self,
+        model_path: str,  # noqa: ARG002
+        profile: dict[str, Any],  # noqa: ARG002
+        bench_cfg: dict[str, Any],  # noqa: ARG002
+        out_dir: Path,
+        phase: str,
+    ) -> list[KvCacheObservation]:
+        if phase != "benchmark":
+            return []
+        observations: list[KvCacheObservation] = []
+        # Only paths recorded by this instance/profile are read.  A skipped
+        # launch may leave an older raw_*.json at out_dir and must not borrow it.
+        for artifact in sorted(self._kv_artifacts):
+            if artifact.parent != Path(out_dir):
+                continue
+            try:
+                raw = json.loads(artifact.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(raw, dict):
+                continue
+            observations.extend(parse_llama_kv_cache_output(
+                str(raw.get("stdout") or ""), str(raw.get("stderr") or ""), phase=phase,
+            ))
+        return observations
 
     def start_server(
         self,

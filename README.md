@@ -619,6 +619,31 @@ adding `configured_gpu_layers`, `gpu_layers_source`, and `avg_ts_source` columns
 Those two `*_source` columns use a source identifier when known and `unknown` or
 `unavailable` when the explicit state applies.
 
+### Effective KV-cache configuration
+
+For local `llama.cpp` and vLLM runs, new profile results also contain an optional
+`kv_cache` object. It records only runtime-confirmed or deterministic calculated
+values, such as effective per-sequence context, K/V dtype, allocation/capacity,
+prefix caching, memory budget, runtime version, and cache residency. Each common
+field is a v3 envelope with its own source or explicit `unknown`/`unavailable`
+state; requested YAML/CLI values are never copied in as effective values.
+
+Runtime support is deliberately partial and version-dependent. A vLLM
+`cache_dtype=auto`, CPU model offload, or an automatic Flash Attention selector
+does not prove a resolved KV-cache dtype, host residency, or attention backend.
+Conflicting direct observations remain visible as `unknown` with sanitized
+diagnostic evidence, and an unavailable parser/metrics endpoint never fails an
+otherwise valid benchmark. Terminal, HTML, PDF, and CSV expose the comparable
+common core; backend-specific details, when present, remain JSON-only.
+
+The shipped native details are intentionally narrower than the common core:
+llama.cpp retains `build_number` alongside the canonical `build_commit` runtime
+version; vLLM retains `gpu_kv_cache_size_tokens` and
+`executor_gpu_memory_budget_fraction`. The latter is an executor-wide
+configuration budget shared by weights, activations, and KV cache, not KV-only
+memory usage; neither native vLLM value is a cross-backend capacity comparison.
+Observed per-device total VRAM telemetry remains separate and unchanged.
+
 `llmbench bootstrap` records the profiles it creates with a private, value-bound
 marker, so their `gpu_layers` values are emitted as `defaulted`; a value explicitly
 written in YAML remains `requested`. When auto-tuning selects a positive, finite

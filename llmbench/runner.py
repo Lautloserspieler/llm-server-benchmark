@@ -12,6 +12,7 @@ from .context_capability import build_context_capability
 from .endpoint import run_endpoint_load, run_sanity_check
 from .energy import apply_energy_efficiency
 from .hardware import collect_hardware
+from .kv_cache import empty_kv_cache, normalize_kv_cache
 from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
@@ -350,6 +351,7 @@ def _run_suite(
             # HTTP-Backends starten ihren Server hier einmal pro Profil statt
             # dreimal, einmal je Testart. Fuer llama.cpp ist der Hook ein no-op.
             begin_error: str | None = None
+            kv_observations: list[Any] = []
             try:
                 backend.begin_profile(meta["path"], profile, cfg["benchmark"], profile_dir)
             except Exception as exc:
@@ -358,6 +360,18 @@ def _run_suite(
                     f"{model['name']}/{profile['name']}: Backend konnte nicht gestartet werden: {exc}"
                 )
                 reporter.note(f"Backend-Start fehlgeschlagen: {exc}")
+
+            if begin_error is None:
+                try:
+                    kv_observations.extend(backend.collect_kv_cache_observations(
+                        meta["path"], profile, cfg["benchmark"], profile_dir, "startup",
+                    ))
+                except Exception:
+                    # Introspection is diagnostic-only.  Do not leak exception text
+                    # because it can contain local URLs, headers, or credentials.
+                    summary["warnings"].append(
+                        f"{model['name']}/{profile['name']}: KV-Cache-Introspektion beim Start nicht verfuegbar."
+                    )
 
             try:
                 for kind in BENCH_KINDS:
@@ -407,6 +421,23 @@ def _run_suite(
                     if kind == "long_context":
                         profile_result["context_capability"] = build_context_capability(result)
             finally:
+                if begin_error is None:
+                    try:
+                        kv_observations.extend(backend.collect_kv_cache_observations(
+                            meta["path"], profile, cfg["benchmark"], profile_dir, "benchmark",
+                        ))
+                    except Exception:
+                        summary["warnings"].append(
+                            f"{model['name']}/{profile['name']}: KV-Cache-Introspektion nach dem Benchmark nicht verfuegbar."
+                        )
+                try:
+                    profile_result["kv_cache"] = normalize_kv_cache(
+                        backend_name(cfg), kv_observations, start_failed=begin_error is not None,
+                    )
+                except Exception:
+                    # The normalizer is defensive, but an artifact must still be
+                    # persisted if a future extension violates its contract.
+                    profile_result["kv_cache"] = empty_kv_cache(backend_name(cfg), start_failed=begin_error is not None)
                 try:
                     backend.end_profile()
                 except Exception as exc:
@@ -616,6 +647,7 @@ def print_summary_table(summary: dict[str, Any]) -> None:
 
 def _write_csv(path: Path, summary: dict[str, Any]) -> None:
     from .result_schema import scalar_summary
+    from .kv_cache import kv_cache_scalar_fields
 
     persisted = summary
     summary = scalar_summary(summary)
@@ -625,6 +657,12 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
         "gpu_info", "cpu_info", "build_commit", "config_fingerprint", "configured_gpu_layers",
         "gpu_layers_source", "avg_ts_source",
     ]
+    for name in (
+        "effective_max_context", "kv_dtype", "k_dtype", "v_dtype", "memory_allocation",
+        "token_capacity", "prefix_caching", "attention_backend", "memory_budget_fraction",
+        "runtime_version", "residency",
+    ):
+        fields.extend((f"kv_cache_{name}", f"kv_cache_{name}_source"))
     static = {"server_name", "model", "profile", "kind", "status", "config_fingerprint"}
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -636,6 +674,15 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
                 layers = (raw_profile.get("settings") or {}).get("gpu_layers")
                 layers_value = layers.get("value") if isinstance(layers, dict) else layers
                 layers_source = (layers.get("source") or layers.get("status")) if isinstance(layers, dict) else ("unknown" if layers is not None else "")
+                kv_values = kv_cache_scalar_fields(raw_profile.get("kv_cache"))
+                csv_kv_values = {
+                    f"kv_cache_{name}": kv_values.get(name)
+                    for name in kv_values if not name.endswith("_source")
+                }
+                csv_kv_values.update({
+                    f"kv_cache_{name}": value
+                    for name, value in kv_values.items() if name.endswith("_source")
+                })
                 for kind, result in profile.get("benchmarks", {}).items():
                     base = {
                         "server_name": summary.get("server_name"),
@@ -649,7 +696,7 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
                     if not rows:
                         w.writerow({
                             **base, "test": result.get("error"), "configured_gpu_layers": layers_value,
-                            "gpu_layers_source": layers_source or "", "avg_ts_source": "",
+                            "gpu_layers_source": layers_source or "", "avg_ts_source": "", **csv_kv_values,
                         })
                         continue
                     for row_index, row in enumerate(rows):
@@ -662,4 +709,5 @@ def _write_csv(path: Path, summary: dict[str, Any]) -> None:
                             "configured_gpu_layers": layers_value,
                             "gpu_layers_source": layers_source or "",
                             "avg_ts_source": (raw_avg.get("source") or raw_avg.get("status") or "") if isinstance(raw_avg, dict) else ("unknown" if raw_avg is not None else ""),
+                            **csv_kv_values,
                         })

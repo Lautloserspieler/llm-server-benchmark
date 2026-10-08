@@ -234,6 +234,40 @@ def _context_capability_group(capability: dict[str, Any] | None) -> RenderableTy
     )
 
 
+def _kv_cache_table(kv_cache: dict[str, Any] | None) -> Table | None:
+    if not kv_cache:
+        return None
+    labels = (
+        ("effective_max_context", _("Effektiver maximaler Kontext"), "tokens"),
+        ("kv_dtype", _("KV-Datentyp"), ""), ("k_dtype", _("K-Datentyp"), ""), ("v_dtype", _("V-Datentyp"), ""),
+        ("memory_allocation", _("KV-Zuweisung"), "bytes"), ("token_capacity", _("KV-Token-Kapazitaet"), "tokens"),
+        ("prefix_caching", _("Prefix-Caching"), ""), ("attention_backend", _("Attention-Backend"), ""),
+        ("memory_budget_fraction", _("Speicherbudget"), "fraction"), ("runtime_version", _("Runtime-Version"), ""),
+        ("residency", _("KV-Residenz"), ""),
+    )
+    table = Table(title=_("Effektive KV-Cache-Konfiguration"), box=box.SIMPLE, show_header=True)
+    table.add_column(_("Feld"))
+    table.add_column(_("Wert"))
+    table.add_column(_("Quelle"))
+    any_row = False
+    for key, label, unit in labels:
+        item = kv_cache.get(key)
+        value = item.get("value") if isinstance(item, dict) else item
+        has_value = value is not None
+        if value is None:
+            value = "—"
+        if key == "memory_allocation" and isinstance(value, (int, float)):
+            value = human_bytes(value)
+        elif key == "memory_budget_fraction" and has_value:
+            value = f"{float(value):.2%}"
+        elif unit:
+            value = f"{value} {unit}"
+        source = (item.get("source") or item.get("status") or item.get("reason") or "unknown") if isinstance(item, dict) else ""
+        table.add_row(label, str(value), str(source))
+        any_row = True
+    return table if any_row else None
+
+
 def _telemetry_table(profile: dict[str, Any]) -> Table:
     table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
     table.add_column(_("Bereich"))
@@ -345,7 +379,7 @@ def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
         renderables.append(warnings_panel)
     renderables.append(_provenance_table(summary))
 
-    for m in summary.get("models", []):
+    for model_index, m in enumerate(summary.get("models", [])):
         meta = m.get("model", {})
         renderables.append(Text(f"\n{meta.get('name')}", style="bold underline"))
         if m.get("status") == "failed":
@@ -360,7 +394,7 @@ def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
             style="dim",
         ))
 
-        for profile in m.get("profiles", []):
+        for profile_index, profile in enumerate(m.get("profiles", [])):
             s = profile.get("settings", {})
             renderables.append(Text(
                 f"\n{_('Profil')}: {profile.get('name')}  (GPU-Layer: {s.get('gpu_layers')} · "
@@ -371,6 +405,11 @@ def build_run_report(summary: dict[str, Any]) -> list[RenderableType]:
             context_group = _context_capability_group(profile.get("context_capability"))
             if context_group is not None:
                 renderables.append(context_group)
+            raw_profiles = ((persisted_summary.get("models") or [])[model_index].get("profiles") or [])
+            raw_profile = raw_profiles[profile_index] if profile_index < len(raw_profiles) else profile
+            kv_table = _kv_cache_table(raw_profile.get("kv_cache"))
+            if kv_table is not None:
+                renderables.append(kv_table)
             renderables.append(Text(_("Hardware-Telemetrie"), style="bold"))
             renderables.append(_telemetry_table(profile))
 

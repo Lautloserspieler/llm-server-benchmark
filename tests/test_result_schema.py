@@ -3,6 +3,7 @@ import copy
 import pytest
 
 from llmbench.result_schema import ResultSchemaError, encode_v3, envelope, scalar_summary, validate_envelope, validate_summary
+from llmbench.kv_cache import KvCacheObservation, normalize_kv_cache
 
 
 def _summary() -> dict:
@@ -312,6 +313,34 @@ def test_v3_energy_and_efficiency_metrics_preserve_measurement_scope_and_provena
     projected_benchmark = projected["models"][0]["profiles"][0]["benchmarks"]["generation"]
     assert projected_benchmark["telemetry"]["power"]["component_energy_j"] == 1000.0
     assert projected_benchmark["efficiency"]["tokens_per_joule"] == 0.512
+
+
+def test_v3_combines_energy_efficiency_and_native_kv_details_without_projection_leaks():
+    raw = _summary()
+    profile = raw["models"][0]["profiles"][0]
+    profile["kv_cache"] = normalize_kv_cache("vllm", [
+        KvCacheObservation("gpu_kv_cache_size_tokens", 8192, unit="tokens", backend_detail_key="gpu_kv_cache_size_tokens"),
+    ])
+    benchmark = profile["benchmarks"]["generation"]
+    benchmark.update({
+        "status": "ok",
+        "telemetry": {"power": {"scope": "measured_components", "coverage": ["gpu:0"], "component_energy_j": 100.0}},
+        "efficiency": {
+            "power_scope": "measured_components", "power_coverage": ["gpu:0"],
+            "token_scope": "generated_tokens", "workload_tokens": 128,
+            "tokens_per_joule": 1.28, "joules_per_1k_tokens": 781.25,
+            "wh_per_1k_tokens": 781.25 / 3600.0,
+        },
+    })
+    original = copy.deepcopy(raw)
+    encoded = encode_v3(raw)
+    assert raw == original
+    assert encoded["models"][0]["profiles"][0]["kv_cache"]["backend_details"]["vllm"]["gpu_kv_cache_size_tokens"]["value"] == 8192
+    assert encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]["efficiency"]["tokens_per_joule"]["source"] == "calculated"
+    assert encode_v3(encoded) == encoded
+    projected = scalar_summary(encoded)
+    assert projected["models"][0]["profiles"][0]["benchmarks"]["generation"]["telemetry"]["power"]["component_energy_j"] == 100.0
+    assert projected["models"][0]["profiles"][0]["kv_cache"]["backend_details"]["vllm"]["gpu_kv_cache_size_tokens"] == 8192
 
 
 def test_v3_efficiency_rejects_wall_power_claim_disguised_as_component_scope():

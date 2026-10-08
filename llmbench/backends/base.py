@@ -76,3 +76,18 @@ class BenchmarkBackend(abc.ABC):
 
     def end_profile(self) -> None:  # noqa: B027
         """Called once after all benchmark kinds of a profile. No-op by default."""
+
+    def collect_kv_cache_observations(  # noqa: B027
+        self,
+        model_path: str,  # noqa: ARG002
+        profile: dict[str, Any],  # noqa: ARG002
+        bench_cfg: dict[str, Any],  # noqa: ARG002
+        out_dir: Path,  # noqa: ARG002
+        phase: str,  # noqa: ARG002
+    ) -> list[Any]:
+        """Return runtime-effective KV-cache candidates for one profile.
+
+        The runner treats this as best-effort and normalizes candidates only
+        after a profile has finished.  Returning an empty list is intentional.
+        """
+        return []

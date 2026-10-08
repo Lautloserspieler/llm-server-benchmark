@@ -4,6 +4,7 @@ from rich.console import Console
 
 from llmbench.result_schema import encode_v3, envelope
 from llmbench.terminal_report import print_run_report
+from llmbench.kv_cache import KvCacheObservation, normalize_kv_cache
 
 
 def _summary(bench_status: str = "ok") -> dict:
@@ -93,6 +94,17 @@ def test_terminal_report_marks_failed_soak_run():
     ]
     text = _render(summary)
     assert "Server nicht erreichbar" in text
+
+
+def test_terminal_report_shows_kv_value_and_source_but_not_backend_details():
+    summary = encode_v3(_summary())
+    cache = normalize_kv_cache("llama_cpp", [KvCacheObservation("k_dtype", "q8_0", provider="llama.cpp")])
+    cache["backend_details"] = {"llama_cpp": {"private": envelope("hidden", "detected")}}
+    summary["models"][0]["profiles"][0]["kv_cache"] = cache
+    text = _render(summary)
+    assert "Effektive KV-Cache-Konfiguration" in text
+    assert "q8_0" in text and "detected" in text
+    assert "private" not in text and "hidden" not in text
 
 
 def test_terminal_report_shows_endpoint_results():

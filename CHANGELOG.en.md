@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+### Effective KV-cache introspection
+
+- Schema-v3 results now retain a provenance-aware effective KV-cache configuration
+  per benchmark profile. Requested settings remain separate.
+- llama.cpp and vLLM collect only explicit runtime, log, or metric observations;
+  missing or conflicting values remain visible as unknown/unavailable and never
+  fail an otherwise valid benchmark.
+- Terminal, HTML, PDF, and CSV show the comparable KV-cache core while
+  backend-specific details remain in the JSON artifact.
+- llama.cpp uses `build_commit` as the common runtime version and retains
+  `build_number` as a native detail. vLLM retains native cache tokens and its
+  executor-wide GPU memory budget only as details, not comparable KV capacity or
+  KV memory usage; total-device VRAM telemetry is unchanged.
+
 ### System telemetry: energy and efficiency
 
 - CPU energy uses available RAPL/powercap energy counters directly where

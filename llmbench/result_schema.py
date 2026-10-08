@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from typing import Any
 
 
@@ -156,6 +157,57 @@ def _validate_context_capability(item: Any, path: str) -> None:
         result = row.get("result")
         if not isinstance(result, str) or result not in CONTEXT_RESULTS:
             _fail(f"{row_path}.result", f"unsupported result {result!r}")
+
+
+def _validate_kv_cache(item: Any, path: str) -> None:
+    """Validate the additive effective KV-cache core for schema v3.
+
+    Generic envelopes intentionally support requested/defaulted values elsewhere
+    in v3.  Effective KV-cache values are stricter: only runtime detection or a
+    documented calculation may establish a non-null value.
+    """
+    from .kv_cache import KV_CACHE_FIELDS, RESIDENCIES
+
+    if not isinstance(item, dict):
+        _fail(path, "must be an object")
+    for field, (kind, unit) in KV_CACHE_FIELDS.items():
+        field_path = f"{path}.{field}"
+        if field not in item:
+            _fail(field_path, "is required")
+        value = item[field]
+        validate_envelope(value, field_path, kind=kind, unit=unit)
+        source = value.get("source") if isinstance(value, dict) else None
+        if source is not None and source not in {"detected", "calculated"}:
+            _fail(field_path, "effective KV-cache values require detected or calculated source")
+        if source is None and value.get("value") is not None:
+            _fail(field_path, "unknown/unavailable effective value must be null")
+        if field == "memory_budget_fraction" and value.get("value") is not None:
+            fraction = value["value"]
+            if not 0 <= float(fraction) <= 1:
+                _fail(field_path, "must be between 0 and 1")
+        if field == "residency" and value.get("value") is not None and value["value"] not in RESIDENCIES:
+            _fail(field_path, "unsupported residency")
+    details = item.get("backend_details")
+    if details is not None:
+        if not isinstance(details, dict):
+            _fail(f"{path}.backend_details", "must be an object")
+        for backend, entries in details.items():
+            if not isinstance(backend, str) or not backend or not isinstance(entries, dict):
+                _fail(f"{path}.backend_details", "requires backend object namespaces")
+            for name, entry in entries.items():
+                if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name):
+                    _fail(f"{path}.backend_details.{backend}", "field names must be bounded identifiers")
+                # Backend detail semantics are private, but it is still an envelope.
+                detail_path = f"{path}.backend_details.{backend}.{name}"
+                if not isinstance(entry, dict):
+                    _fail(detail_path, "must be an envelope")
+                detail_value = entry.get("value")
+                detail_kind = (
+                    "boolean" if isinstance(detail_value, bool) else
+                    "integer" if isinstance(detail_value, int) else
+                    "number" if isinstance(detail_value, float) else "string"
+                )
+                validate_envelope(entry, detail_path, kind=detail_kind, unit=entry.get("unit"))
 
 
 def _validate_energy_telemetry(item: Any, path: str) -> None:
@@ -505,6 +557,8 @@ def _walk_v3(summary: dict[str, Any]) -> None:
                     profile["context_capability"],
                     f"models[{mi}].profiles[{pi}].context_capability",
                 )
+            if "kv_cache" in profile:
+                _validate_kv_cache(profile["kv_cache"], f"models[{mi}].profiles[{pi}].kv_cache")
             all_benchmarks = profile.get("benchmarks", {})
             if not isinstance(all_benchmarks, dict):
                 _fail(f"models[{mi}].profiles[{pi}].benchmarks", "must be an object")
@@ -639,6 +693,9 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
                 f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: maximum_verified_context",
                 (profile.get("context_capability") or {}).get("maximum_verified_context"),
             )
+            for field, item in (profile.get("kv_cache") or {}).items():
+                if field != "backend_details":
+                    add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: kv_cache.{field}", item)
             for kind, benchmark in (profile.get("benchmarks") or {}).items():
                 telemetry = benchmark.get("telemetry") or {}
                 cpu_telemetry = telemetry.get("cpu") or {}

@@ -63,6 +63,16 @@ def apply_energy_efficiency(
     for row in result.get("rows") or []:
         if not isinstance(row, dict):
             continue
+
+        exact_workload = row.get("workload_tokens")
+        if (
+            isinstance(exact_workload, int)
+            and not isinstance(exact_workload, bool)
+            and exact_workload > 0
+        ):
+            workload_tokens += exact_workload
+            continue
+
         token_count = row.get(token_field)
         if isinstance(token_count, bool) or not isinstance(token_count, int) or token_count <= 0:
             continue

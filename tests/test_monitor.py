@@ -275,6 +275,7 @@ def test_cpu_sensor_failures_degrade_to_unavailable_values():
         "frequency_mhz": None,
         "temperature_c": None,
         "package_power_w": None,
+        "package_energy_delta_j": None,
     }
 
 
@@ -297,3 +298,96 @@ def test_start_and_stop_shuts_down_cpu_provider(monkeypatch):
     assert summary["cpu"]["max_temperature_c"] == 65.0
     assert summary["cpu"]["avg_package_power_w"] == 95.0
     assert cpu_provider.shutdown_called is True
+
+
+def test_summary_integrates_gpu_energy_and_uses_direct_cpu_energy():
+    monitor = ResourceMonitor()
+    monitor._cpu_provider = FakeCpuProvider(
+        CpuSample(frequency_mhz=4000.0, temperature_c=70.0, package_power_w=100.0)
+    )
+    monitor._samples = [
+        {
+            "ts": 10.0,
+            "cpu_percent": 50.0,
+            "ram_used_bytes": 1000,
+            "cpu": {
+                "util_percent": 50.0,
+                "frequency_mhz": 4000.0,
+                "temperature_c": 70.0,
+                "package_power_w": 90.0,
+                "package_energy_delta_j": 45.0,
+            },
+            "gpus": [_gpu(power=100.0).__dict__],
+            "power": {
+                "scope": "measured_components",
+                "component_power_w": 190.0,
+                "wall_power_w": None,
+                "coverage": ["cpu_package", "gpu:0"],
+            },
+        },
+        {
+            "ts": 12.0,
+            "cpu_percent": 60.0,
+            "ram_used_bytes": 1200,
+            "cpu": {
+                "util_percent": 60.0,
+                "frequency_mhz": 4100.0,
+                "temperature_c": 72.0,
+                "package_power_w": 110.0,
+                "package_energy_delta_j": 55.0,
+            },
+            "gpus": [_gpu(power=140.0).__dict__],
+            "power": {
+                "scope": "measured_components",
+                "component_power_w": 250.0,
+                "wall_power_w": None,
+                "coverage": ["cpu_package", "gpu:0"],
+            },
+        },
+    ]
+
+    summary = monitor.summary()
+
+    assert summary["cpu"]["energy_j"] == 100.0
+    assert summary["cpu"]["energy_source"] == "hardware_energy_counter"
+    assert summary["gpus"][0]["energy_j"] == 240.0
+    assert summary["gpus"][0]["energy_source"] == "sampled_power_integration"
+    assert summary["power"]["component_energy_j"] == 340.0
+    assert summary["power"]["avg_component_power_w"] == 220.0
+    assert summary["power"]["max_component_power_w"] == 250.0
+    assert summary["power"]["coverage"] == ["cpu_package", "gpu:0"]
+    assert summary["power"]["scope"] == "measured_components"
+    assert summary["power"]["wall_power_w"] is None
+    assert summary["power"]["wall_energy_wh"] is None
+
+
+def test_missing_power_is_not_treated_as_zero_or_bridged_across_gap():
+    monitor = ResourceMonitor()
+    monitor._samples = [
+        {
+            "ts": 0.0,
+            "cpu_percent": 1.0,
+            "ram_used_bytes": 1,
+            "cpu": {"package_power_w": None, "package_energy_delta_j": None},
+            "gpus": [_gpu(power=100.0).__dict__],
+        },
+        {
+            "ts": 1.0,
+            "cpu_percent": 1.0,
+            "ram_used_bytes": 1,
+            "cpu": {"package_power_w": None, "package_energy_delta_j": None},
+            "gpus": [_gpu(power=None).__dict__],
+        },
+        {
+            "ts": 2.0,
+            "cpu_percent": 1.0,
+            "ram_used_bytes": 1,
+            "cpu": {"package_power_w": None, "package_energy_delta_j": None},
+            "gpus": [_gpu(power=200.0).__dict__],
+        },
+    ]
+
+    summary = monitor.summary()
+
+    assert summary["gpus"][0]["energy_j"] is None
+    assert summary["power"]["component_energy_j"] is None

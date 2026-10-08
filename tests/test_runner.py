@@ -293,6 +293,29 @@ def test_run_suite_keeps_benchmark_when_kv_normalization_fails(suite_env, monkey
     assert profile["kv_cache"]["effective_max_context"]["status"] == "unknown"
 
 
+def test_run_suite_applies_energy_efficiency_before_persisting_kv_profile(suite_env, monkeypatch):
+    class EnergyKvBackend(_RecordingBackend):
+        def run_benchmark(self, *_args, **_kwargs):
+            kind = _args[2]
+            return {
+                "kind": kind, "status": "ok", "rows": [{"n_prompt": 10, "n_gen": 20, "avg_ts": 10.0}],
+                "telemetry": {"power": {"scope": "measured_components", "coverage": ["gpu:0"], "component_energy_j": 10.0}},
+            }
+
+        def collect_kv_cache_observations(self, *_args):
+            return [{"field": "prefix_caching", "value": True, "source": "detected", "provider": "test"}]
+
+    backend = EnergyKvBackend()
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)
+    run_dir = run_suite(suite_env, plain=True)
+    summary = _read_summary(run_dir)
+    profile = summary["models"][0]["profiles"][0]
+    generation = profile["benchmarks"]["generation"]
+    assert generation["efficiency"]["tokens_per_joule"]["value"] == 2.0
+    assert "efficiency" not in profile["benchmarks"]["long_context"]
+    assert profile["kv_cache"]["prefix_caching"]["value"] is True
+
+
 def test_run_suite_calls_end_profile_even_when_a_benchmark_raises(suite_env, monkeypatch):
     backend = _RecordingBackend(fail_on_kind="generation")
     monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)

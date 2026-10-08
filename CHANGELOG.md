@@ -18,6 +18,19 @@
   executor-weites GPU-Speicherbudget nur als Details, nicht als vergleichbare
   KV-Kapazität oder KV-Speichernutzung; Gesamt-VRAM-Telemetrie bleibt unverändert.
 
+### System-Telemetrie: Energie und Effizienz
+
+- CPU-Energie nutzt vorhandene RAPL-/Powercap-Energiezaehler direkt, wenn sie
+  verfuegbar sind; GPU-Energie wird aus gemessener Leistung und realen
+  Sample-Zeitstempeln integriert.
+- CPU- und GPU-Energie werden als `measured_components` zusammengefasst.
+  Diese Werte werden ausdruecklich nicht als Netz-/Wall-Power bezeichnet.
+- Prompt- und Generation-Benchmarks koennen konservative Effizienzwerte wie
+  Tokens/Joule und Wh/1k Tokens ausgeben, wenn Energie und Arbeitsmenge
+  eindeutig bestimmt sind. Long-Context bleibt vorerst ohne Effizienzclaim.
+- Schema v3 speichert Herkunft und Messumfang der neuen Energie- und
+  Effizienzwerte; fehlende Sensoren bleiben unavailable statt als 0 zu erscheinen.
+
 ### Memory-Bandwidth-Charakterisierung
 
 - Schema-v3-Hardwareartefakte stellen Memory-Domains getrennt von GPUs mit

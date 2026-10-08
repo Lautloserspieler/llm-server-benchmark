@@ -134,11 +134,20 @@ async def wait_health_async(
     Log-Auszug gemeldet, statt erst nach ``timeout_s`` mit einem nichtssagenden
     Verbindungsfehler.
     """
-    started = time.time()
+    started = time.monotonic()
     deadline = started + timeout_s
     last_error = ""
+
+    # Check before constructing the HTTP client as well. On slow Windows CI
+    # runners client initialization alone can consume a very short timeout;
+    # without this poll an already-dying server may be reported as a generic
+    # health timeout instead of with its real exit code.
+    code = _exited_code(proc)
+    if code is not None:
+        raise RuntimeError(server_exit_message(proc, code))
+
     async with httpx.AsyncClient() as client:
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             code = _exited_code(proc)
             if code is not None:
                 raise RuntimeError(server_exit_message(proc, code))
@@ -147,7 +156,7 @@ async def wait_health_async(
                     base_url.rstrip("/") + "/health", timeout=5, headers=headers or {}
                 )
                 if r.status_code == 200:
-                    return time.time() - started
+                    return time.monotonic() - started
                 last_error = f"HTTP {r.status_code}: {r.text[:200]}"
             except Exception as exc:
                 last_error = str(exc)

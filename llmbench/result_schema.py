@@ -18,6 +18,7 @@ METHODS = {
     "user_configuration", "configuration_default", "hardware_introspection",
     "backend_runtime_introspection", "backend_log_parsing", "model_metadata",
     "derived_calculation", "benchmark_measurement", "experimental_validation",
+    "hardware_energy_counter",
 }
 
 
@@ -209,6 +210,275 @@ def _validate_kv_cache(item: Any, path: str) -> None:
                 validate_envelope(entry, detail_path, kind=detail_kind, unit=entry.get("unit"))
 
 
+def _validate_energy_telemetry(item: Any, path: str) -> None:
+    if not isinstance(item, dict):
+        _fail(path, "must be an object")
+
+    cpu = item.get("cpu")
+    if cpu is not None:
+        if not isinstance(cpu, dict):
+            _fail(f"{path}.cpu", "must be an object")
+        for field, unit in (
+            ("avg_package_power_w", "W"),
+            ("max_package_power_w", "W"),
+            ("energy_j", "J"),
+            ("energy_wh", "Wh"),
+        ):
+            if field in cpu:
+                validate_envelope(
+                    cpu[field],
+                    f"{path}.cpu.{field}",
+                    kind="number",
+                    unit=unit,
+                )
+
+    gpus = item.get("gpus")
+    if gpus is not None:
+        if not isinstance(gpus, list):
+            _fail(f"{path}.gpus", "must be an array")
+        for index, gpu in enumerate(gpus):
+            if not isinstance(gpu, dict):
+                _fail(f"{path}.gpus[{index}]", "must be an object")
+            for field, unit in (
+                ("energy_j", "J"),
+                ("energy_wh", "Wh"),
+            ):
+                if field in gpu:
+                    validate_envelope(
+                        gpu[field],
+                        f"{path}.gpus[{index}].{field}",
+                        kind="number",
+                        unit=unit,
+                    )
+
+    power = item.get("power")
+    if power is not None:
+        if not isinstance(power, dict):
+            _fail(f"{path}.power", "must be an object")
+        if power.get("scope") not in {None, "measured_components"}:
+            _fail(f"{path}.power.scope", "unsupported measurement scope")
+        coverage = power.get("coverage", [])
+        if not isinstance(coverage, list) or not all(
+            isinstance(value, str) for value in coverage
+        ):
+            _fail(f"{path}.power.coverage", "must be an array of strings")
+        for field, unit in (
+            ("avg_component_power_w", "W"),
+            ("max_component_power_w", "W"),
+            ("component_energy_j", "J"),
+            ("component_energy_wh", "Wh"),
+            ("wall_power_w", "W"),
+            ("wall_energy_j", "J"),
+            ("wall_energy_wh", "Wh"),
+        ):
+            if field in power:
+                validate_envelope(
+                    power[field],
+                    f"{path}.power.{field}",
+                    kind="number",
+                    unit=unit,
+                )
+
+
+def _validate_efficiency(item: Any, path: str) -> None:
+    if not isinstance(item, dict):
+        _fail(path, "must be an object")
+    if item.get("power_scope") != "measured_components":
+        _fail(f"{path}.power_scope", "must be 'measured_components'")
+    if item.get("token_scope") not in {"prompt_tokens", "generated_tokens"}:
+        _fail(f"{path}.token_scope", "unsupported token scope")
+    coverage = item.get("power_coverage", [])
+    if not isinstance(coverage, list) or not all(
+        isinstance(value, str) for value in coverage
+    ):
+        _fail(f"{path}.power_coverage", "must be an array of strings")
+    for field, kind, unit in (
+        ("workload_tokens", "integer", "tokens"),
+        ("tokens_per_joule", "number", "tokens/J"),
+        ("joules_per_1k_tokens", "number", "J/1k tokens"),
+        ("wh_per_1k_tokens", "number", "Wh/1k tokens"),
+    ):
+        if field not in item:
+            _fail(f"{path}.{field}", "is required")
+        validate_envelope(
+            item[field],
+            f"{path}.{field}",
+            kind=kind,
+            unit=unit,
+            positive=True,
+        )
+
+
+def _encode_telemetry_energy_v3(telemetry: dict[str, Any]) -> None:
+    cpu = telemetry.get("cpu")
+    if isinstance(cpu, dict):
+        cpu_provider = str(
+            telemetry.get("cpu_telemetry_source")
+            or cpu.get("telemetry_source")
+            or "cpu"
+        )
+        power_evidence = {
+            "method": (
+                "hardware_energy_counter"
+                if cpu.get("energy_source") == "hardware_energy_counter"
+                else "hardware_introspection"
+            ),
+            "provider": cpu_provider,
+        }
+        for field in ("avg_package_power_w", "max_package_power_w"):
+            if field in cpu and not isinstance(cpu[field], dict):
+                value = cpu[field]
+                cpu[field] = (
+                    envelope(value, "measured", unit="W", evidence=power_evidence)
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit="W",
+                        status="unavailable",
+                        reason="cpu_power_sensor_not_available",
+                    )
+                )
+
+        energy_source = cpu.get("energy_source")
+        energy_origin = "measured" if energy_source == "hardware_energy_counter" else "calculated"
+        energy_method = (
+            "hardware_energy_counter"
+            if energy_source == "hardware_energy_counter"
+            else "derived_calculation"
+        )
+        for field, unit in (("energy_j", "J"), ("energy_wh", "Wh")):
+            if field in cpu and not isinstance(cpu[field], dict):
+                value = cpu[field]
+                cpu[field] = (
+                    envelope(
+                        value,
+                        energy_origin,
+                        unit=unit,
+                        evidence={"method": energy_method, "provider": cpu_provider},
+                    )
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit=unit,
+                        status="unavailable",
+                        reason="cpu_energy_not_available",
+                    )
+                )
+
+    gpu_provider = str(telemetry.get("telemetry_source") or "gpu")
+    for gpu in telemetry.get("gpus") or []:
+        if not isinstance(gpu, dict):
+            continue
+        for field, unit in (("energy_j", "J"), ("energy_wh", "Wh")):
+            if field in gpu and not isinstance(gpu[field], dict):
+                value = gpu[field]
+                gpu[field] = (
+                    envelope(
+                        value,
+                        "calculated",
+                        unit=unit,
+                        evidence={
+                            "method": "derived_calculation",
+                            "provider": gpu_provider,
+                        },
+                    )
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit=unit,
+                        status="unavailable",
+                        reason="gpu_power_samples_not_available",
+                    )
+                )
+
+    power = telemetry.get("power")
+    if isinstance(power, dict):
+        for field, unit in (
+            ("avg_component_power_w", "W"),
+            ("max_component_power_w", "W"),
+            ("component_energy_j", "J"),
+            ("component_energy_wh", "Wh"),
+        ):
+            if field in power and not isinstance(power[field], dict):
+                value = power[field]
+                power[field] = (
+                    envelope(
+                        value,
+                        "calculated",
+                        unit=unit,
+                        evidence={
+                            "method": "derived_calculation",
+                            "provider": "llmbench",
+                            "metadata": {
+                                "scope": "measured_components",
+                                "coverage": list(power.get("coverage") or []),
+                            },
+                        },
+                    )
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit=unit,
+                        status="unavailable",
+                        reason="component_power_not_available",
+                    )
+                )
+        for field, unit in (
+            ("wall_power_w", "W"),
+            ("wall_energy_j", "J"),
+            ("wall_energy_wh", "Wh"),
+        ):
+            if field in power and not isinstance(power[field], dict):
+                value = power[field]
+                power[field] = (
+                    envelope(
+                        value,
+                        "measured",
+                        unit=unit,
+                        evidence={
+                            "method": "hardware_introspection",
+                            "provider": "wall_power_provider",
+                        },
+                    )
+                    if value is not None
+                    else envelope(
+                        None,
+                        None,
+                        unit=unit,
+                        status="unavailable",
+                        reason="wall_power_provider_not_configured",
+                    )
+                )
+
+
+def _encode_efficiency_v3(efficiency: dict[str, Any]) -> None:
+    for field, unit in (
+        ("workload_tokens", "tokens"),
+        ("tokens_per_joule", "tokens/J"),
+        ("joules_per_1k_tokens", "J/1k tokens"),
+        ("wh_per_1k_tokens", "Wh/1k tokens"),
+    ):
+        if field in efficiency and not isinstance(efficiency[field], dict):
+            value = efficiency[field]
+            efficiency[field] = envelope(
+                value,
+                "calculated",
+                unit=unit,
+                evidence={
+                    "method": "derived_calculation",
+                    "provider": "llmbench",
+                    "metadata": {
+                        "power_scope": efficiency.get("power_scope"),
+                        "token_scope": efficiency.get("token_scope"),
+                    },
+                },
+            )
+
+
 def _walk_v3(summary: dict[str, Any]) -> None:
     backend = summary.get("backend")
     if not isinstance(backend, dict) or not isinstance(backend.get("id"), str) or not backend["id"]:
@@ -289,8 +559,29 @@ def _walk_v3(summary: dict[str, Any]) -> None:
                 )
             if "kv_cache" in profile:
                 _validate_kv_cache(profile["kv_cache"], f"models[{mi}].profiles[{pi}].kv_cache")
+            all_benchmarks = profile.get("benchmarks", {})
+            if not isinstance(all_benchmarks, dict):
+                _fail(f"models[{mi}].profiles[{pi}].benchmarks", "must be an object")
+            for kind, benchmark in all_benchmarks.items():
+                if not isinstance(benchmark, dict):
+                    _fail(
+                        f"models[{mi}].profiles[{pi}].benchmarks.{kind}",
+                        "must be an object",
+                    )
+                telemetry = benchmark.get("telemetry")
+                if telemetry is not None:
+                    _validate_energy_telemetry(
+                        telemetry,
+                        f"models[{mi}].profiles[{pi}].benchmarks.{kind}.telemetry",
+                    )
+                efficiency = benchmark.get("efficiency")
+                if efficiency is not None:
+                    _validate_efficiency(
+                        efficiency,
+                        f"models[{mi}].profiles[{pi}].benchmarks.{kind}.efficiency",
+                    )
             if backend.get("id") == "llama_cpp":
-                benchmarks = profile.get("benchmarks", {})
+                benchmarks = all_benchmarks
                 if not isinstance(benchmarks, dict):
                     _fail(f"models[{mi}].profiles[{pi}].benchmarks", "must be an object")
                 for kind, benchmark in benchmarks.items():
@@ -406,6 +697,49 @@ def provenance_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
                 if field != "backend_details":
                     add(f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}: kv_cache.{field}", item)
             for kind, benchmark in (profile.get("benchmarks") or {}).items():
+                telemetry = benchmark.get("telemetry") or {}
+                cpu_telemetry = telemetry.get("cpu") or {}
+                for field in (
+                    "avg_package_power_w",
+                    "max_package_power_w",
+                    "energy_j",
+                    "energy_wh",
+                ):
+                    add(
+                        f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}: cpu.{field}",
+                        cpu_telemetry.get(field),
+                    )
+                for gpu_index, gpu in enumerate(telemetry.get("gpus") or []):
+                    for field in ("energy_j", "energy_wh"):
+                        add(
+                            f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}: gpu[{gpu_index}].{field}",
+                            gpu.get(field) if isinstance(gpu, dict) else None,
+                        )
+                power = telemetry.get("power") or {}
+                for field in (
+                    "avg_component_power_w",
+                    "max_component_power_w",
+                    "component_energy_j",
+                    "component_energy_wh",
+                    "wall_power_w",
+                    "wall_energy_j",
+                    "wall_energy_wh",
+                ):
+                    add(
+                        f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}: power.{field}",
+                        power.get(field),
+                    )
+                efficiency = benchmark.get("efficiency") or {}
+                for field in (
+                    "workload_tokens",
+                    "tokens_per_joule",
+                    "joules_per_1k_tokens",
+                    "wh_per_1k_tokens",
+                ):
+                    add(
+                        f"{model.get('model', {}).get('name', '?')}/{profile.get('name', '?')}/{kind}: efficiency.{field}",
+                        efficiency.get(field),
+                    )
                 for index, row in enumerate(benchmark.get("rows") or []):
                     context = row.get("test") or f"row {index}"
                     if row.get("n_depth") is not None:
@@ -474,6 +808,13 @@ def encode_v3(summary: dict[str, Any], gpu_origins: dict[tuple[str, str], Any] |
                         reason="no_verified_context_depth",
                     )
                 )
+            for benchmark in (profile.get("benchmarks") or {}).values():
+                telemetry = benchmark.get("telemetry")
+                if isinstance(telemetry, dict):
+                    _encode_telemetry_energy_v3(telemetry)
+                efficiency = benchmark.get("efficiency")
+                if isinstance(efficiency, dict):
+                    _encode_efficiency_v3(efficiency)
             if backend_id == "llama_cpp":
                 for benchmark in (profile.get("benchmarks") or {}).values():
                     for row in benchmark.get("rows") or []:

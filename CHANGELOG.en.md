@@ -18,6 +18,19 @@
   executor-wide GPU memory budget only as details, not comparable KV capacity or
   KV memory usage; total-device VRAM telemetry is unchanged.
 
+### System telemetry: energy and efficiency
+
+- CPU energy uses available RAPL/powercap energy counters directly where
+  possible; GPU energy is integrated from measured power and real sample
+  timestamps.
+- CPU and GPU energy are combined under the explicit `measured_components`
+  scope and are never presented as whole-system wall power.
+- Prompt and generation benchmarks can expose conservative Tokens/Joule and
+  Wh/1k-token efficiency metrics when both energy and workload are known.
+  Long-context runs intentionally make no efficiency claim yet.
+- Schema v3 preserves provenance and measurement scope for the new energy and
+  efficiency values; unavailable sensors remain unavailable rather than zero.
+
 ### Memory-bandwidth characterization
 
 - Schema-v3 hardware artifacts now represent memory domains separately from GPUs,

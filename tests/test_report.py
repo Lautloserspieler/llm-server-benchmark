@@ -241,7 +241,10 @@ def test_kv_cache_reports_common_core_but_not_backend_details(tmp_path: Path):
         KvCacheObservation("k_dtype", "q8_0", provider="llama.cpp"),
         KvCacheObservation("v_dtype", "f16", provider="llama.cpp"),
     ])
-    cache["backend_details"] = {"llama_cpp": {"private_block_size": envelope(16, "detected")}}
+    cache["backend_details"] = {"vllm": {
+        "gpu_kv_cache_size_tokens": envelope(8192, "detected", unit="tokens"),
+        "executor_gpu_memory_budget_fraction": envelope(0.9, "detected", unit="fraction"),
+    }}
     summary["models"][0]["profiles"][0]["kv_cache"] = cache
 
     html_path = tmp_path / "report.html"
@@ -249,14 +252,16 @@ def test_kv_cache_reports_common_core_but_not_backend_details(tmp_path: Path):
     html = html_path.read_text(encoding="utf-8")
     assert "Effektive KV-Cache-Konfiguration" in html
     assert "q8_0" in html
-    assert "private_block_size" not in html
+    assert "gpu_kv_cache_size_tokens" not in html
+    assert "executor_gpu_memory_budget_fraction" not in html
 
     csv_path = tmp_path / "benchmarks.csv"
     _write_csv(csv_path, summary)
     row = next(csv.DictReader(csv_path.read_text(encoding="utf-8-sig").splitlines()))
     assert row["kv_cache_k_dtype"] == "q8_0"
     assert row["kv_cache_k_dtype_source"] == "detected"
-    assert "private_block_size" not in row
+    assert "gpu_kv_cache_size_tokens" not in row
+    assert "executor_gpu_memory_budget_fraction" not in row
 
 
 def test_legacy_and_v3_scalar_projection_keep_kv_cache_additive() -> None:

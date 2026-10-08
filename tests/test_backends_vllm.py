@@ -178,10 +178,12 @@ def test_kv_collection_uses_live_metrics_and_logs_without_requested_auto_dtype(d
     observed = backend.collect_kv_cache_observations("M", {}, {}, tmp_path, "startup")
     values = {item.field: item.value for item in observed}
     assert values["prefix_caching"] is True
-    assert values["memory_budget_fraction"] == 0.8
-    assert values["token_capacity"] == 8192
+    assert values["executor_gpu_memory_budget_fraction"] == 0.8
+    assert values["gpu_kv_cache_size_tokens"] == 8192
     assert values["runtime_version"] == "0.26.0"
     assert "kv_dtype" not in values
+    assert "memory_budget_fraction" not in values
+    assert "token_capacity" not in values
 
 
 def test_kv_collection_ignores_metrics_and_log_failures(docker, tmp_path: Path, monkeypatch):

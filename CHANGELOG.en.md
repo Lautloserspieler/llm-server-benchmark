@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### Effective KV-cache introspection
+
+- Schema-v3 results now retain a provenance-aware effective KV-cache configuration
+  per benchmark profile. Requested settings remain separate.
+- llama.cpp and vLLM collect only explicit runtime, log, or metric observations;
+  missing or conflicting values remain visible as unknown/unavailable and never
+  fail an otherwise valid benchmark.
+- Terminal, HTML, PDF, and CSV show the comparable KV-cache core while
+  backend-specific details remain in the JSON artifact.
+
 ### Memory-bandwidth characterization
 
 - Schema-v3 hardware artifacts now represent memory domains separately from GPUs,

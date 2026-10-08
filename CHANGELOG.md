@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### Effektive KV-Cache-Introspektion
+
+- Schema-v3-Ergebnisse speichern jetzt pro Benchmark-Profil eine herkunftsbehaftete,
+  effektive KV-Cache-Konfiguration. Angeforderte Einstellungen bleiben davon getrennt.
+- llama.cpp und vLLM erfassen nur explizite Runtime-/Log-/Metrikbeobachtungen;
+  fehlende oder widerspruechliche Werte bleiben sichtbar als unknown/unavailable und
+  lassen einen ansonsten gueltigen Benchmark nicht fehlschlagen.
+- Terminal, HTML, PDF und CSV zeigen den vergleichbaren KV-Cache-Kern; spezifische
+  Backend-Details bleiben im JSON-Artefakt.
+
 ### Memory-Bandwidth-Charakterisierung
 
 - Schema-v3-Hardwareartefakte stellen Memory-Domains getrennt von GPUs mit

@@ -321,6 +321,7 @@ class ResourceMonitor:
             self._samples,
             lambda sample: (sample.get("cpu") or {}).get("package_power_w"),
         )
+        cpu_energy_source: str | None
         if direct_cpu_energy:
             cpu_energy_j: float | None = sum(direct_cpu_energy)
             cpu_energy_source = "hardware_energy_counter"
@@ -369,13 +370,18 @@ class ResourceMonitor:
             total_mem = next(
                 (x.get("memory_total_bytes") for x in items if x.get("memory_total_bytes")), None
             )
+            def gpu_power(
+                sample: dict[str, Any],
+                gpu_index: int = idx,
+            ) -> Any:
+                gpus = sample.get("gpus", [])
+                if len(gpus) <= gpu_index:
+                    return None
+                return gpus[gpu_index].get("power_w")
+
             gpu_energy_j, gpu_energy_seconds = _integrate_power(
                 self._samples,
-                lambda sample, gpu_index=idx: (
-                    sample.get("gpus", [])[gpu_index].get("power_w")
-                    if len(sample.get("gpus", [])) > gpu_index
-                    else None
-                ),
+                gpu_power,
             )
             gpu_summaries.append(
                 {

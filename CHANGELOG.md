@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### System-Telemetrie: Reporting abgeschlossen
+
+- Terminal-, HTML- und PDF-Berichte zeigen jetzt CPU-Auslastung, Frequenz, Temperatur,
+  Paketleistung und CPU-Energie sowie GPU-Leistung, Temperatur und Energie.
+- Gemessene CPU-/GPU-Komponenten werden als `measured_components` mit Messumfang,
+  Durchschnitts-/Spitzenleistung und Energie dargestellt und nie als Wall-Power ausgegeben.
+- Prompt- und Generationstests zeigen, soweit berechenbar, Tokens/Joule und Wh/1k Tokens;
+  fehlende Sensorwerte erscheinen als nicht verfuegbar statt als 0.
+
 ### Effektive KV-Cache-Introspektion
 
 - Schema-v3-Ergebnisse speichern jetzt pro Benchmark-Profil eine herkunftsbehaftete,

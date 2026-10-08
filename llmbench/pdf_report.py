@@ -502,6 +502,30 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                 styles,
             ))
 
+            kv_cache = profile.get("kv_cache") or {}
+            if kv_cache:
+                kv_rows = [[_("Effektive KV-Cache-Konfiguration"), _("Wert")]]
+                for key, label, unit in (
+                    ("effective_max_context", _("Effektiver maximaler Kontext"), "tokens"),
+                    ("kv_dtype", _("KV-Datentyp"), ""), ("k_dtype", _("K-Datentyp"), ""), ("v_dtype", _("V-Datentyp"), ""),
+                    ("memory_allocation", _("KV-Zuweisung"), "bytes"), ("token_capacity", _("KV-Token-Kapazitaet"), "tokens"),
+                    ("prefix_caching", _("Prefix-Caching"), ""), ("attention_backend", _("Attention-Backend"), ""),
+                    ("memory_budget_fraction", _("Speicherbudget"), "fraction"), ("runtime_version", _("Runtime-Version"), ""),
+                    ("residency", _("KV-Residenz"), ""),
+                ):
+                    value = kv_cache.get(key)
+                    if value is None:
+                        continue
+                    if key == "memory_allocation" and value is not None:
+                        value = human_bytes(value)
+                    elif key == "memory_budget_fraction" and value is not None:
+                        value = f"{float(value):.2%}"
+                    elif unit:
+                        value = f"{value} {unit}"
+                    kv_rows.append([label, str(value)])
+                if len(kv_rows) > 1:
+                    block.append(_table(kv_rows, [width * 0.45, width * 0.55], numeric_from=99))
+
             for kind, entries in charts.items():
                 block.append(KeepTogether([
                     Spacer(1, 5),

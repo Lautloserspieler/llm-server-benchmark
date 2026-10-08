@@ -9,6 +9,32 @@ from .utils import human_bytes
 from .i18n import _
 from .result_schema import provenance_rows, scalar_summary
 
+
+def _kv_cache_block(kv_cache: dict[str, Any] | None) -> str:
+    if not kv_cache:
+        return ""
+    labels = {
+        "effective_max_context": _("Effektiver maximaler Kontext"), "kv_dtype": _("KV-Datentyp"),
+        "k_dtype": _("K-Datentyp"), "v_dtype": _("V-Datentyp"), "memory_allocation": _("KV-Zuweisung"),
+        "token_capacity": _("KV-Token-Kapazitaet"), "prefix_caching": _("Prefix-Caching"),
+        "attention_backend": _("Attention-Backend"), "memory_budget_fraction": _("Speicherbudget"),
+        "runtime_version": _("Runtime-Version"), "residency": _("KV-Residenz"),
+    }
+    rows = []
+    for key, label in labels.items():
+        item = kv_cache.get(key)
+        value = item.get("value") if isinstance(item, dict) else item
+        source = (item.get("source") or item.get("status") or item.get("reason") or "unknown") if isinstance(item, dict) else ""
+        if value is not None or isinstance(item, dict):
+            if key == "memory_allocation" and value is not None:
+                value = human_bytes(value)
+            elif key == "memory_budget_fraction" and value is not None:
+                value = f"{float(value):.2%}"
+            rows.append(f"<tr><td>{esc(label)}</td><td>{esc(value) if value is not None else '—'}</td><td>{esc(source)}</td></tr>")
+    if not rows:
+        return ""
+    return f"<h4>{_('Effektive KV-Cache-Konfiguration')}</h4><div class='table-wrap'><table><thead><tr><th>{_('Feld')}</th><th>{_('Wert')}</th><th>{_('Quelle')}</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+
 CSS = r"""
 :root { color-scheme: light dark; --fg:#15202b; --muted:#5d6b78; --line:#d8dee4; --soft:#f5f7f9;
         --accent:#1769aa; --good:#177245; --bad:#a12622; --warn:#8a5a11; --bg:#fff; --th:#eef2f6; }
@@ -389,6 +415,7 @@ def _value_provenance_block(rows: list[dict[str, Any]]) -> str:
 
 def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
     value_provenance = provenance_rows(summary)
+    persisted_summary = summary
     summary = scalar_summary(summary)
     hw = summary.get("hardware", {})
     cards = [
@@ -423,7 +450,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
     body.append(_provenance_block(summary))
     body.append(_value_provenance_block(value_provenance))
 
-    for m in summary.get("models", []):
+    for model_index, m in enumerate(summary.get("models", [])):
         meta = m.get("model", {})
         body.append(f"<h2>{esc(meta.get('name'))}</h2>")
         if m.get("status") == "failed":
@@ -443,7 +470,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             f"<div class='card'><div class='k'>{_('Quality Gate')}</div>"
             f"<div class='v'>{esc(meta.get('quality_gate') or _('nicht bewertet'))}</div></div></div>"
         )
-        for profile in m.get("profiles", []):
+        for profile_index, profile in enumerate(m.get("profiles", [])):
             body.append(f"<h3>{_('Profil')}: {esc(profile.get('name'))}</h3>")
             s = profile.get("settings", {})
             body.append(
@@ -452,6 +479,9 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             )
             body.append(_bench_table(profile))
             body.append(_context_capability_block(profile.get("context_capability")))
+            raw_profiles = ((persisted_summary.get("models") or [])[model_index].get("profiles") or [])
+            raw_profile = raw_profiles[profile_index] if profile_index < len(raw_profiles) else profile
+            body.append(_kv_cache_block(raw_profile.get("kv_cache")))
             body.append(f"<h3>{_('Hardware-Telemetrie')}</h3>")
             body.append(_telemetry_table(profile))
         if m.get("endpoint"):

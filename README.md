@@ -43,6 +43,7 @@ Discussions are welcome in both **English and German**.
 - Endpoint/load testing with TTFT and concurrency measurements
 - Stress, soak, OOM, multi-tenant and quantization tests
 - HTML, PDF, CSV and JSON reports
+- Local sanitized [community JSON export](docs/community-export.md) with exact preview, batch isolation and offline validation
 - Model, binary and configuration fingerprints
 - Cross-machine comparison with strict reproducibility validation
 - Windows, Linux and macOS launchers

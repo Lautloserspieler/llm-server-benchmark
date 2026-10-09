@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- Lokale Befehle `community-export`, `community-validate` und optional
+  `community-settings` ergaenzt. Das versionierte Allowlist-JSON behaelt
+  typisierte Provenienz und freigegebene Workload-/Runtime-Gruppen. Es bietet
+  exakte Vorschau, Offline-Pruefung, historische Namen, explizite Inhaltshashes,
+  Gruppenauslassungen und isolierte Batch-Fehler ohne Aenderung der Ergebnisse.
+  Der private Run-ZIP-Export bleibt ein separates Format.
+
 ### System-Telemetrie: Reporting abgeschlossen
 
 - Terminal-, HTML- und PDF-Berichte zeigen jetzt CPU-Auslastung, Frequenz, Temperatur,

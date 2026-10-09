@@ -411,6 +411,29 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("run_dir", help="Pfad zum Ergebnisordner eines Laufs")
     exp.add_argument("--output", default=None)
 
+    community_settings = sub.add_parser("community-settings", help=_("Optionalen lokalen Community-Spitznamen verwalten"))
+    community_settings.add_argument("--nickname")
+    community_settings.add_argument("--clear-nickname", action="store_true")
+    community_settings.add_argument("--show", action="store_true")
+    community_settings.add_argument("--settings-file", default=None)
+
+    community_export = sub.add_parser("community-export", help=_("Sanitierte lokale Community-JSON-Dateien erzeugen"))
+    community_export.add_argument("inputs", nargs="+", help=_("Run-Ordner oder summary.json-Dateien"))
+    community_export.add_argument("--out", default=None)
+    community_export.add_argument("--preview", action="store_true")
+    community_export.add_argument("--nickname")
+    community_export.add_argument("--no-nickname", action="store_true")
+    community_export.add_argument("--settings-file", default=None)
+    community_export.add_argument("--exclude", default="")
+    community_export.add_argument("--model-label", action="append", default=[])
+    community_export.add_argument("--model-identity", action="append", default=[])
+    community_export.add_argument("--non-interactive", action="store_true")
+    community_export.add_argument("--rehash-models", action="store_true")
+
+    community_validate = sub.add_parser("community-validate", help=_("Community-Export offline pruefen"))
+    community_validate.add_argument("inputs", nargs="*")
+    community_validate.add_argument("--schema", action="store_true")
+
     dl = sub.add_parser("download", help="Standard-Modelle ueber HuggingFace verwalten")
     dl.add_argument(
         "--suite",
@@ -544,6 +567,87 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "setup":
         return run_setup_wizard(args.allow_system_search)
+
+    if args.cmd == "community-settings":
+        from .community.settings import SettingsError, load, save
+        path = Path(args.settings_file) if args.settings_file else None
+        if sum(bool(item) for item in (args.nickname, args.clear_nickname, args.show)) != 1:
+            print(_("Genau eine Community-Einstellungsaktion waehlen."), file=sys.stderr)
+            return 2
+        try:
+            if args.show:
+                nickname = load(path)
+                print(json.dumps({"nickname": nickname}, ensure_ascii=False, sort_keys=True))
+            else:
+                save(None if args.clear_nickname else args.nickname, path)
+            return 0
+        except SettingsError:
+            print(_("Community-Einstellungen sind ungueltig."), file=sys.stderr)
+            return 2
+
+    if args.cmd == "community-export":
+        from .community.io import export_inputs
+        from .community.settings import SettingsError, load
+        from .community.identity import validate_label
+        from .community.settings import validate_nickname
+        if args.preview and args.out is not None:
+            print(_("--preview kann nicht mit --out kombiniert werden."), file=sys.stderr)
+            return 2
+        if args.nickname and args.no_nickname:
+            print(_("--nickname und --no-nickname koennen nicht kombiniert werden."), file=sys.stderr)
+            return 2
+        excluded = {part.strip() for part in args.exclude.split(",") if part.strip()}
+        if excluded - {"hardware", "energy", "capabilities", "telemetry"}:
+            print(_("Unbekannte Community-Export-Gruppe."), file=sys.stderr)
+            return 2
+        labels: dict[int, str] = {}
+        identities: set[int] = set()
+        try:
+            for item in args.model_label:
+                number, label = item.split("=", 1)
+                index = int(number)
+                if index < 1 or not label.strip():
+                    raise ValueError
+                if index in labels or index in identities:
+                    raise ValueError
+                labels[index] = validate_label(label)
+            for item in args.model_identity:
+                number, mode = item.split("=", 1)
+                index = int(number)
+                if index < 1 or mode != "fingerprint" or index in labels or index in identities:
+                    raise ValueError
+                identities.add(index)
+            nickname = None if args.no_nickname else (args.nickname or load(Path(args.settings_file) if args.settings_file else None))
+            if nickname is not None:
+                nickname = validate_nickname(nickname)
+        except (ValueError, SettingsError):
+            print(_("Community-Export-Optionen sind ungueltig."), file=sys.stderr)
+            return 2
+        code, messages = export_inputs([Path(item) for item in args.inputs], out=None if args.preview else Path(args.out or "community-exports"), preview=args.preview, nickname=nickname, excluded=excluded, labels=labels, fingerprint_positions=identities, rehash_models=args.rehash_models, non_interactive=args.non_interactive)
+        for message in messages:
+            print(message, file=sys.stderr)
+        return code
+
+    if args.cmd == "community-validate":
+        from .community.io import schema_text, validate_document
+        if args.schema:
+            if args.inputs:
+                print(_("--schema akzeptiert keine Eingabedateien."), file=sys.stderr)
+                return 2
+            sys.stdout.buffer.write(schema_text())
+            return 0
+        if not args.inputs:
+            print(_("Mindestens einen Community-Export angeben."), file=sys.stderr)
+            return 2
+        failed = 0
+        for item in args.inputs:
+            try:
+                validate_document(Path(item))
+                print(_("Gueltig: {path}").format(path=item))
+            except ValueError as exc:
+                failed += 1
+                print(_("Ungueltig: {path}: {error}").format(path=item, error=exc), file=sys.stderr)
+        return 1 if failed else 0
 
     if args.cmd == "download":
         from llmbench.download import download_models, verify_suite

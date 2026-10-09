@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Compare: measured energy efficiency
+
+- `llmbench compare` now ranks energy efficiency from the persisted
+  `tokens_per_joule` and `wh_per_1k_tokens` telemetry metrics instead of deriving a
+  new GPU-only Tokens/s-per-Watt value.
+- Comparison preserves measurement scope and component coverage. Different energy scopes
+  are marked non-comparable and are excluded from the efficiency score.
+- Legacy GPU-only Tokens/s/W values remain visible for older result files as informational
+  data but no longer affect the aggregate score.
+- HTML, PDF, `comparison.json`, and the new `comparison_efficiency.csv` expose
+  Tokens/Joule, Wh/1k tokens, and measured-component energy where available.
+
 ### System telemetry: reporting complete
 
 - Terminal, HTML, and PDF reports now expose CPU utilization, frequency, temperature,

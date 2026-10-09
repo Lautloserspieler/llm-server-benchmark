@@ -17,6 +17,8 @@ DOC_PAIRS = (
         "docs/linux-llamacpp-source-build.en.md",
     ),
     ("models/README.md", "models/README.en.md"),
+    ("docs/community-export.de.md", "docs/community-export.md"),
+    ("docs/prs/issue79-community-export.de.md", "docs/prs/issue79-community-export.md"),
 )
 
 BILINGUAL_SINGLE_FILES = {

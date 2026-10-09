@@ -11,7 +11,7 @@ from llmbench.community.io import export_inputs, validate_document
 from llmbench.community.identity import hash_shards
 from llmbench.community.project import project
 from llmbench.community.schema import parse_document, serialize
-from llmbench.community.settings import SettingsError, load, settings_path, validate_nickname
+import llmbench.community.settings as community_settings
 from llmbench import i18n
 from test_community_contract import SECRET, native_source
 
@@ -59,32 +59,31 @@ def test_nickname_settings_precedence_and_clear(tmp_path: Path, capsys: pytest.C
     assert main(["community-settings", "--show", "--settings-file", str(settings)]) == 0
     assert json.loads(capsys.readouterr().out) == {"nickname": "default-user"}
     assert main(["community-settings", "--clear-nickname", "--settings-file", str(settings)]) == 0
-    assert load(settings) is None
+    assert community_settings.load(settings) is None
 
 
 @pytest.mark.parametrize("raw", ['{"settings_version":true}', '{"settings_version":2}', '{"settings_version":1,"settings_version":1}', '{"settings_version":1,"nickname":123}', '{"settings_version":1,"private-secret":"value"}', '{"settings_version":1,"nickname":NaN}', '{broken'])
 def test_malformed_settings_are_errors_without_sensitive_values(tmp_path: Path, raw: str) -> None:
     path = tmp_path / "settings.json"
     path.write_text(raw, encoding="utf-8")
-    with pytest.raises(SettingsError) as caught:
-        load(path)
+    with pytest.raises(community_settings.SettingsError) as caught:
+        community_settings.load(path)
     assert "private-secret" not in str(caught.value)
 
 
 @pytest.mark.parametrize("value", ["a\x00b", "a\x7fb", "a\u200eb", "a/b", "a\\b", "", "x" * 65])
 def test_nickname_rejects_controls_and_paths(value: str) -> None:
-    with pytest.raises(SettingsError):
-        validate_nickname(value)
+    with pytest.raises(community_settings.SettingsError):
+        community_settings.validate_nickname(value)
 
 
 def test_settings_path_platform_conventions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import llmbench.community.settings as settings
-    monkeypatch.setattr(settings.sys, "platform", "linux")
+    monkeypatch.setattr(community_settings.sys, "platform", "linux")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    assert settings_path() == tmp_path / "llmbench/community-settings.json"
-    monkeypatch.setattr(settings.sys, "platform", "win32")
+    assert community_settings.settings_path() == tmp_path / "llmbench/community-settings.json"
+    monkeypatch.setattr(community_settings.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    assert settings_path() == tmp_path / "llmbench/community-settings.json"
+    assert community_settings.settings_path() == tmp_path / "llmbench/community-settings.json"
 
 
 def test_fingerprint_only_uses_recorded_hash_without_opening_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:

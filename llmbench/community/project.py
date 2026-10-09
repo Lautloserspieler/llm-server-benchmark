@@ -454,7 +454,6 @@ def _finish_groups(document: dict[str, object], summary: Mapping[str, Any], excl
 
 
 def json_bytes(value: object) -> bytes:
-    import json
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 

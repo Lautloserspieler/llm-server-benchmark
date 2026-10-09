@@ -286,6 +286,8 @@ llmbench compare \
   --strict
 ```
 
+`llmbench compare` verwendet für das Energieeffizienz-Ranking die gespeicherten Werte `tokens_per_joule` und `wh_per_1k_tokens`, wenn alle verglichenen Systeme denselben Messumfang und dieselbe Komponentenabdeckung besitzen. Unterschiedliche Scopes (zum Beispiel nur GPU gegenüber CPU-Paket + GPU) werden als nicht vergleichbar gemeldet und nicht gegeneinander gerankt. Alte GPU-only-Werte in Tokens/s pro Watt bleiben nur als Information erhalten.
+
 ---
 
 ## Benchmark-Konfiguration

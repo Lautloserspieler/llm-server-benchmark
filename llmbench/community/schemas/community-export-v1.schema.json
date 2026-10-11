@@ -1,0 +1,5814 @@
+{
+  "$defs": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "nickname": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Nickname",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nickname"
+      ],
+      "title": "Attribution",
+      "type": "object"
+    },
+    "Backend": {
+      "additionalProperties": false,
+      "properties": {
+        "container_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Container Digest"
+        },
+        "id": {
+          "enum": [
+            "llama_cpp",
+            "vllm"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "measurement_tool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementTool"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackendRuntime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Backend",
+      "type": "object"
+    },
+    "BackendDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "llama_cpp",
+            "vllm"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "backend",
+        "field",
+        "value"
+      ],
+      "title": "BackendDetail",
+      "type": "object"
+    },
+    "BackendRuntime": {
+      "additionalProperties": false,
+      "properties": {
+        "build_number": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegerEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "BackendRuntime",
+      "type": "object"
+    },
+    "BandwidthEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "GB/s",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "gt": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "BandwidthEnvelope",
+      "type": "object"
+    },
+    "BandwidthObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "domain_id": {
+          "title": "Domain Id",
+          "type": "string"
+        },
+        "observed_during_benchmark": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BandwidthEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "domain_id"
+      ],
+      "title": "BandwidthObservation",
+      "type": "object"
+    },
+    "Benchmark": {
+      "additionalProperties": false,
+      "properties": {
+        "efficiency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Efficiency"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "capacity",
+                "timeout",
+                "failure_reason_unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/BenchmarkRow"
+          },
+          "title": "Rows",
+          "type": "array"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "ok",
+                "partial",
+                "failed",
+                "skipped_capacity",
+                "skipped_quality_gate",
+                "timeout",
+                "skipped",
+                "unknown",
+                "completed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Telemetry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Benchmark",
+      "type": "object"
+    },
+    "BenchmarkRow": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_ts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/RateEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Ts"
+        },
+        "build_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Commit"
+        },
+        "build_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Number"
+        },
+        "model_n_params": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model N Params"
+        },
+        "model_size": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Size"
+        },
+        "n_depth": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Depth"
+        },
+        "n_gen": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Gen"
+        },
+        "n_gpu_layers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Gpu Layers"
+        },
+        "n_prompt": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Prompt"
+        },
+        "n_threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Threads"
+        },
+        "repetitions": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repetitions"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "ok",
+                "partial",
+                "failed",
+                "skipped_capacity",
+                "skipped_quality_gate",
+                "timeout",
+                "skipped",
+                "unknown",
+                "completed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "stddev_ts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stddev Ts"
+        },
+        "test": {
+          "anyOf": [
+            {
+              "pattern": "^(pp\\d+|tg\\d+|pp\\d+\\+tg\\d+|depth\\d+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Test"
+        }
+      },
+      "title": "BenchmarkRow",
+      "type": "object"
+    },
+    "Benchmarks": {
+      "additionalProperties": false,
+      "properties": {
+        "generation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Benchmark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "long_context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Benchmark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Benchmark"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Benchmarks",
+      "type": "object"
+    },
+    "BooleanEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "default": null,
+          "title": "Unit",
+          "type": "null"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "title": "BooleanEnvelope",
+      "type": "object"
+    },
+    "BytesEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "bytes",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "BytesEnvelope",
+      "type": "object"
+    },
+    "Configuration": {
+      "additionalProperties": false,
+      "properties": {
+        "completeness": {
+          "const": "retained_configured_fields",
+          "default": "retained_configured_fields",
+          "title": "Completeness",
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        "values": {
+          "$ref": "#/$defs/Settings"
+        }
+      },
+      "required": [
+        "values",
+        "fingerprint"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
+    "ContextCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_context_depths": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Completed Context Depths",
+          "type": "array"
+        },
+        "curve": {
+          "items": {
+            "$ref": "#/$defs/CurvePoint"
+          },
+          "title": "Curve",
+          "type": "array"
+        },
+        "first_failed_context": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Failed Context"
+        },
+        "limit_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "ok",
+                "partial",
+                "failed",
+                "skipped_capacity",
+                "timeout",
+                "unknown",
+                "completed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Status"
+        },
+        "maximum_verified_context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CountEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "requested_context_depths": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Requested Context Depths",
+          "type": "array"
+        }
+      },
+      "title": "ContextCapability",
+      "type": "object"
+    },
+    "CoresEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "cores",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "CoresEnvelope",
+      "type": "object"
+    },
+    "CountEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "tokens",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "CountEnvelope",
+      "type": "object"
+    },
+    "Cpu": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_cores": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logical Cores"
+        },
+        "max_frequency_mhz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Frequency Mhz"
+        },
+        "physical_cores": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoresEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Name"
+        }
+      },
+      "title": "Cpu",
+      "type": "object"
+    },
+    "CpuTelemetry": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_frequency_mhz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Frequency Mhz"
+        },
+        "avg_package_power_w": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WattsEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "avg_temperature_c": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Temperature C"
+        },
+        "avg_utilization_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Utilization Percent"
+        },
+        "energy_coverage_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energy Coverage Seconds"
+        },
+        "energy_j": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoulesEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "energy_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "hardware_energy_counter",
+                "sampled_power_integration",
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energy Source"
+        },
+        "energy_wh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_frequency_mhz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Frequency Mhz"
+        },
+        "max_package_power_w": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WattsEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_temperature_c": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Temperature C"
+        },
+        "max_utilization_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Utilization Percent"
+        },
+        "min_frequency_mhz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Frequency Mhz"
+        }
+      },
+      "title": "CpuTelemetry",
+      "type": "object"
+    },
+    "CurvePoint": {
+      "additionalProperties": false,
+      "properties": {
+        "combined_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Combined Tps"
+        },
+        "decode_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decode Tps"
+        },
+        "populated_context": {
+          "minimum": 0,
+          "title": "Populated Context",
+          "type": "integer"
+        },
+        "prefill_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefill Tps"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "oom",
+            "timeout",
+            "failed",
+            "partial",
+            "unknown"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "populated_context",
+        "result"
+      ],
+      "title": "CurvePoint",
+      "type": "object"
+    },
+    "DomainReference": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "dram",
+                "vram",
+                "unified",
+                "host",
+                "gpu",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "DomainReference",
+      "type": "object"
+    },
+    "Efficiency": {
+      "additionalProperties": false,
+      "properties": {
+        "energy_coverage": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Energy Coverage",
+          "type": "array"
+        },
+        "joules_per_1k_tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoulesPerThousandEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "measurement_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "prompt_tokens",
+                "generated_tokens"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement Scope"
+        },
+        "power_scope": {
+          "anyOf": [
+            {
+              "const": "measured_components",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Scope"
+        },
+        "tokens_per_joule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokensPerJouleEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "wh_per_1k_tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhPerThousandEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workload_tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CountEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Efficiency",
+      "type": "object"
+    },
+    "Endpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        },
+        "levels": {
+          "items": {
+            "$ref": "#/$defs/EndpointLevel"
+          },
+          "title": "Levels",
+          "type": "array"
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EndpointSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "failed",
+            "skipped_capacity",
+            "skipped_quality_gate",
+            "timeout",
+            "skipped",
+            "unknown",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Telemetry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "warmup_requests": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warmup Requests"
+        },
+        "warmup_successful": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warmup Successful"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "Endpoint",
+      "type": "object"
+    },
+    "EndpointLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_interactivity_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Interactivity Tps"
+        },
+        "concurrency": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concurrency"
+        },
+        "failed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failed"
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requests"
+        },
+        "short_responses": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Short Responses"
+        },
+        "successful": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Successful"
+        },
+        "system_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Tps"
+        },
+        "total_output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Output Tokens"
+        },
+        "ttft_p50_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ttft P50 Seconds"
+        },
+        "ttft_p95_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ttft P95 Seconds"
+        },
+        "wall_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Seconds"
+        }
+      },
+      "title": "EndpointLevel",
+      "type": "object"
+    },
+    "EndpointSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concurrency"
+        },
+        "context_size": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Size"
+        },
+        "ignore_eos": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ignore Eos"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "parallel_slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Slots"
+        },
+        "requests_per_level": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requests Per Level"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        }
+      },
+      "title": "EndpointSettings",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "catalog_version": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}\\.\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalog Version"
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coverage"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "const": "soc_metrics.DRAMBWCombined",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "max_memory_clock_mhz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Memory Clock Mhz"
+        },
+        "memory_bus_width_bits": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Bus Width Bits"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_log_parsing",
+                "backend_runtime_introspection",
+                "benchmark_measurement",
+                "cli_status_output",
+                "configuration_default",
+                "derived_calculation",
+                "experimental_validation",
+                "hardware_energy_counter",
+                "hardware_introspection",
+                "model_metadata",
+                "user_configuration"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "benchmark",
+                "cpu",
+                "cpu_package",
+                "full",
+                "generated_tokens",
+                "gpu",
+                "gpu_board",
+                "measured_components",
+                "partial",
+                "prompt_tokens",
+                "shutdown",
+                "startup",
+                "system",
+                "unknown",
+                "wall"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "power_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "benchmark",
+                "cpu",
+                "cpu_package",
+                "full",
+                "generated_tokens",
+                "gpu",
+                "gpu_board",
+                "measured_components",
+                "partial",
+                "prompt_tokens",
+                "shutdown",
+                "startup",
+                "system",
+                "unknown",
+                "wall"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "protocol": {
+          "anyOf": [
+            {
+              "const": "mactop-v2-headless-json",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocol"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "enum": [
+                "amd-smi",
+                "apple_official_catalog",
+                "cpu",
+                "gpu",
+                "llama_cpp",
+                "llmbench",
+                "mactop",
+                "nvidia-smi",
+                "nvidia_smi",
+                "nvml",
+                "powercap",
+                "powermetrics",
+                "psutil",
+                "pynvml",
+                "rapl",
+                "rocm-smi",
+                "rocm_smi",
+                "runtime",
+                "sysfs",
+                "system_profiler",
+                "vllm",
+                "wall_power_provider",
+                "wmi"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "qualifier": {
+          "anyOf": [
+            {
+              "const": "at_current_memory_clock",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qualifier"
+        },
+        "sample_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Count"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "benchmark",
+                "cpu",
+                "cpu_package",
+                "full",
+                "generated_tokens",
+                "gpu",
+                "gpu_board",
+                "measured_components",
+                "partial",
+                "prompt_tokens",
+                "shutdown",
+                "startup",
+                "system",
+                "unknown",
+                "wall"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "selected_gpu_layers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Gpu Layers"
+        },
+        "selected_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Tps"
+        },
+        "successful_candidates": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Successful Candidates"
+        },
+        "token_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "benchmark",
+                "cpu",
+                "cpu_package",
+                "full",
+                "generated_tokens",
+                "gpu",
+                "gpu_board",
+                "measured_components",
+                "partial",
+                "prompt_tokens",
+                "shutdown",
+                "startup",
+                "system",
+                "unknown",
+                "wall"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Fingerprint": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "sha256",
+            "sha256-shards-v1"
+          ],
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "recorded_single_file_content",
+            "recorded_shard_content",
+            "current_artifact_unverified",
+            "exported_configuration_v1"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "algorithm",
+        "scope",
+        "value"
+      ],
+      "title": "Fingerprint",
+      "type": "object"
+    },
+    "FractionEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "fraction",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0,
+              "le": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "FractionEnvelope",
+      "type": "object"
+    },
+    "Gpu": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_capability": {
+          "anyOf": [
+            {
+              "pattern": "^\\d+(?:\\.\\d+){0,2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compute Capability"
+        },
+        "driver_version": {
+          "anyOf": [
+            {
+              "pattern": "^\\d+(?:\\.\\d+){0,5}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Driver Version"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "memory_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Bytes"
+        },
+        "power_limit_w": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Power Limit W"
+        },
+        "product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Name"
+        },
+        "vendor": {
+          "anyOf": [
+            {
+              "enum": [
+                "NVIDIA",
+                "AMD",
+                "Intel",
+                "Apple",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vendor"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Gpu",
+      "type": "object"
+    },
+    "GpuTelemetry": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_memory_used_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Memory Used Bytes"
+        },
+        "avg_power_w": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Power W"
+        },
+        "avg_utilization_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Utilization Percent"
+        },
+        "energy_coverage_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energy Coverage Seconds"
+        },
+        "energy_j": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoulesEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "energy_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "hardware_energy_counter",
+                "sampled_power_integration",
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energy Source"
+        },
+        "energy_wh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "max_memory_used_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Memory Used Bytes"
+        },
+        "max_power_w": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Power W"
+        },
+        "max_temperature_c": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Temperature C"
+        },
+        "max_utilization_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Utilization Percent"
+        },
+        "memory_total_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Total Bytes"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "GpuTelemetry",
+      "type": "object"
+    },
+    "Hardware": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "anyOf": [
+            {
+              "enum": [
+                "x86_64",
+                "aarch64",
+                "arm64",
+                "x86",
+                "armv7l"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "cpu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cpu"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gpus": {
+          "items": {
+            "$ref": "#/$defs/Gpu"
+          },
+          "title": "Gpus",
+          "type": "array"
+        },
+        "memory_domains": {
+          "items": {
+            "$ref": "#/$defs/MemoryDomain"
+          },
+          "title": "Memory Domains",
+          "type": "array"
+        },
+        "memory_total_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Total Bytes"
+        },
+        "os_family": {
+          "anyOf": [
+            {
+              "enum": [
+                "Windows",
+                "Linux",
+                "Darwin"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os Family"
+        },
+        "os_version": {
+          "anyOf": [
+            {
+              "pattern": "^\\d+(?:\\.\\d+){0,4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os Version"
+        }
+      },
+      "title": "Hardware",
+      "type": "object"
+    },
+    "Identity": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_identity": {
+          "enum": [
+            "content_fingerprinted",
+            "public_reference",
+            "unverified"
+          ],
+          "title": "Exact Identity",
+          "type": "string"
+        },
+        "fingerprint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fingerprint_status": {
+          "enum": [
+            "available",
+            "unavailable"
+          ],
+          "title": "Fingerprint Status",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "label_source": {
+          "anyOf": [
+            {
+              "const": "user_approved",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label Source"
+        },
+        "public_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Id"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "pattern": "^[a-fA-F0-9]{40,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        },
+        "shard_count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shard Count"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "fingerprint_status",
+        "exact_identity"
+      ],
+      "title": "Identity",
+      "type": "object"
+    },
+    "IntegerEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "default": null,
+          "title": "Unit",
+          "type": "null"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "title": "IntegerEnvelope",
+      "type": "object"
+    },
+    "JoulesEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "J",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "JoulesEnvelope",
+      "type": "object"
+    },
+    "JoulesPerThousandEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "J/1k tokens",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "JoulesPerThousandEnvelope",
+      "type": "object"
+    },
+    "KvCache": {
+      "additionalProperties": false,
+      "properties": {
+        "attention_backend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "backend_details": {
+          "items": {
+            "$ref": "#/$defs/BackendDetail"
+          },
+          "title": "Backend Details",
+          "type": "array"
+        },
+        "effective_max_context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CountEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "k_dtype": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kv_dtype": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memory_allocation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BytesEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memory_budget_fraction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FractionEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prefix_caching": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BooleanEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "residency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "runtime_version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "token_capacity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CountEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "v_dtype": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "KvCache",
+      "type": "object"
+    },
+    "LayersEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "layers",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": -1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "LayersEnvelope",
+      "type": "object"
+    },
+    "LoadSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "available_cpu_threads": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available Cpu Threads"
+        },
+        "concurrency": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concurrency"
+        },
+        "context_size": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Size"
+        },
+        "cpu_concurrency": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Concurrency"
+        },
+        "cpu_request_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Request Timeout Seconds"
+        },
+        "cpu_server_threads": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Server Threads"
+        },
+        "gpu_concurrency": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Concurrency"
+        },
+        "gpu_request_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Request Timeout Seconds"
+        },
+        "gpu_server_threads": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Server Threads"
+        },
+        "ignore_eos": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ignore Eos"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "parallel_slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Slots"
+        },
+        "requests_per_level": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requests Per Level"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "thread_partition_enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thread Partition Enabled"
+        }
+      },
+      "title": "LoadSettings",
+      "type": "object"
+    },
+    "MeasurementTool": {
+      "additionalProperties": false,
+      "properties": {
+        "binary_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Binary Sha256"
+        },
+        "build_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Commit"
+        },
+        "build_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Number"
+        },
+        "id": {
+          "enum": [
+            "llama_bench",
+            "http_bench"
+          ],
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MeasurementTool",
+      "type": "object"
+    },
+    "MemoryDomain": {
+      "additionalProperties": false,
+      "properties": {
+        "capacity_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capacity Bytes"
+        },
+        "device_id": {
+          "anyOf": [
+            {
+              "pattern": "^gpu_\\d+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Device Id"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "dram",
+                "vram",
+                "unified",
+                "host",
+                "gpu",
+                "unknown",
+                "discrete_vram",
+                "unified_memory"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "provider_operating_bandwidth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BandwidthEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "theoretical_bandwidth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BandwidthEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vendor": {
+          "anyOf": [
+            {
+              "enum": [
+                "NVIDIA",
+                "AMD",
+                "Intel",
+                "Apple",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vendor"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MemoryDomain",
+      "type": "object"
+    },
+    "ModelExport": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Endpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "capacity",
+                "timeout",
+                "failure_reason_unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/Identity"
+        },
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/Profile"
+          },
+          "title": "Profiles",
+          "type": "array"
+        },
+        "quality_gate": {
+          "anyOf": [
+            {
+              "enum": [
+                "passed",
+                "failed",
+                "skipped",
+                "unknown",
+                "ok",
+                "partial",
+                "skipped_quality_gate"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quality Gate"
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Stability"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stability"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "ok",
+                "partial",
+                "failed",
+                "skipped_capacity",
+                "skipped_quality_gate",
+                "timeout",
+                "skipped",
+                "unknown",
+                "completed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Telemetry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "identity",
+        "profiles"
+      ],
+      "title": "ModelExport",
+      "type": "object"
+    },
+    "Power": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_component_power_w": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/WattsEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Component Power W"
+        },
+        "component_energy_j": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoulesEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "component_energy_wh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "coverage": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Coverage",
+          "type": "array"
+        },
+        "max_component_power_w": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/WattsEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Component Power W"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "measured_components",
+                "wall",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "wall_energy_j": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoulesEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "wall_energy_wh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WhEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "wall_power_w": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WattsEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Power",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "benchmarks": {
+          "$ref": "#/$defs/Benchmarks"
+        },
+        "configured_settings": {
+          "$ref": "#/$defs/Settings"
+        },
+        "context_capability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextCapability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "effective_kv_cache": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KvCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "configured_settings",
+        "benchmarks"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RateEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "tokens/s",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "RateEnvelope",
+      "type": "object"
+    },
+    "Run": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "hardware_target": {
+          "default": "unknown",
+          "enum": [
+            "cpu",
+            "gpu",
+            "gpu_overload",
+            "both",
+            "unknown"
+          ],
+          "title": "Hardware Target",
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "default": "unknown",
+          "enum": [
+            "completed",
+            "partial",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "timestamp_status": {
+          "enum": [
+            "recorded",
+            "partial",
+            "unknown"
+          ],
+          "title": "Timestamp Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "timestamp_status"
+      ],
+      "title": "Run",
+      "type": "object"
+    },
+    "Settings": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_oversized_gpu": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allow Oversized Gpu"
+        },
+        "auto_tune": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auto Tune"
+        },
+        "batch_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Size"
+        },
+        "cache_type_k": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Type K"
+        },
+        "cache_type_v": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Type V"
+        },
+        "context_depths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Depths"
+        },
+        "cpu_timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Timeout Seconds"
+        },
+        "delay_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Seconds"
+        },
+        "dtype": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dtype"
+        },
+        "flash_attention": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flash Attention"
+        },
+        "generation_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation Tokens"
+        },
+        "gpu_layers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/LayersEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Layers"
+        },
+        "gpu_memory_utilization": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Memory Utilization"
+        },
+        "gpu_timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Timeout Seconds"
+        },
+        "long_context_generation_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Long Context Generation Tokens"
+        },
+        "long_context_prompt_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Long Context Prompt Tokens"
+        },
+        "prompt_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Tokens"
+        },
+        "quantization": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quantization"
+        },
+        "repetitions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repetitions"
+        },
+        "resource_sample_interval": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Sample Interval"
+        },
+        "threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threads"
+        },
+        "timeout_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout Seconds"
+        },
+        "ubatch_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ubatch Size"
+        }
+      },
+      "title": "Settings",
+      "type": "object"
+    },
+    "SoakSide": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Tps"
+        },
+        "early_window_avg_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Early Window Avg Tps"
+        },
+        "failed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failed"
+        },
+        "late_window_avg_tps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Late Window Avg Tps"
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requests"
+        },
+        "successful": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Successful"
+        },
+        "throttling_suspected": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Throttling Suspected"
+        },
+        "total_output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Output Tokens"
+        },
+        "tps_drop_fraction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tps Drop Fraction"
+        }
+      },
+      "title": "SoakSide",
+      "type": "object"
+    },
+    "Stability": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SoakSide"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cpu_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Profile Id"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        },
+        "gpu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SoakSide"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gpu_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu Profile Id"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "soak",
+                "standard",
+                "short",
+                "long",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "enum": [
+                "short",
+                "long",
+                "standard"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "load_settings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "requested_duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Duration Seconds"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "failed",
+            "skipped_capacity",
+            "skipped_quality_gate",
+            "timeout",
+            "skipped",
+            "unknown",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Telemetry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "throttling_suspected": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Throttling Suspected"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "Stability",
+      "type": "object"
+    },
+    "Telemetry": {
+      "additionalProperties": false,
+      "properties": {
+        "avg_cpu_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Cpu Percent"
+        },
+        "avg_ram_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Ram Bytes"
+        },
+        "baseline_busy": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Busy"
+        },
+        "cpu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CpuTelemetry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "domain_references": {
+          "items": {
+            "$ref": "#/$defs/DomainReference"
+          },
+          "title": "Domain References",
+          "type": "array"
+        },
+        "foreign_gpu_load_detected": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Foreign Gpu Load Detected"
+        },
+        "gpus": {
+          "items": {
+            "$ref": "#/$defs/GpuTelemetry"
+          },
+          "title": "Gpus",
+          "type": "array"
+        },
+        "max_cpu_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cpu Percent"
+        },
+        "max_ram_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Ram Bytes"
+        },
+        "memory_bandwidth": {
+          "items": {
+            "$ref": "#/$defs/BandwidthObservation"
+          },
+          "title": "Memory Bandwidth",
+          "type": "array"
+        },
+        "power": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Power"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Count"
+        },
+        "sample_interval_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Interval Seconds"
+        }
+      },
+      "title": "Telemetry",
+      "type": "object"
+    },
+    "TextEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "default": null,
+          "title": "Unit",
+          "type": "null"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "title": "TextEnvelope",
+      "type": "object"
+    },
+    "TokensPerJouleEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "tokens/J",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "TokensPerJouleEnvelope",
+      "type": "object"
+    },
+    "WattsEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "W",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "WattsEnvelope",
+      "type": "object"
+    },
+    "WhEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "Wh",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "WhEnvelope",
+      "type": "object"
+    },
+    "WhPerThousandEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Evidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "backend_does_not_report_field",
+                "backend_start_failed",
+                "component_power_not_available",
+                "config_origin_unknown",
+                "conflicting_runtime_observations",
+                "cpu_energy_not_available",
+                "cpu_power_sensor_not_available",
+                "energy_not_available",
+                "energy_unavailable",
+                "gpu_power_samples_not_available",
+                "hardware_not_reported",
+                "insufficient_energy",
+                "invalid_calculation_origin",
+                "legacy_provenance_missing",
+                "measurement_missing",
+                "no_energy_measurement",
+                "no_measured_power",
+                "no_power_coverage",
+                "no_verified_context_depth",
+                "non_positive_energy",
+                "non_positive_workload_tokens",
+                "runtime_value_not_observed",
+                "unknown_reason",
+                "wall_power_provider_not_configured",
+                "workload_tokens_not_available"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "requested",
+                "defaulted",
+                "detected",
+                "calculated",
+                "measured",
+                "verified"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "unit": {
+          "const": "Wh/1k tokens",
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "unit"
+      ],
+      "title": "WhPerThousandEnvelope",
+      "type": "object"
+    }
+  },
+  "$id": "https://llmbench.local/schemas/community-export-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attribution": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Attribution"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "backend": {
+      "$ref": "#/$defs/Backend"
+    },
+    "benchmark_configuration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Configuration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "export_schema_version": {
+      "const": 1,
+      "title": "Export Schema Version",
+      "type": "integer"
+    },
+    "hardware": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Hardware"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "llmbench_version": {
+      "anyOf": [
+        {
+          "pattern": "^\\d+(?:\\.\\d+){1,3}(?:[-+][a-zA-Z0-9.]{1,32})?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Llmbench Version"
+    },
+    "models": {
+      "items": {
+        "$ref": "#/$defs/ModelExport"
+      },
+      "minItems": 1,
+      "title": "Models",
+      "type": "array"
+    },
+    "omitted_groups": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Omitted Groups",
+      "type": "array"
+    },
+    "run": {
+      "$ref": "#/$defs/Run"
+    },
+    "source_schema_version": {
+      "enum": [
+        1,
+        2,
+        3
+      ],
+      "title": "Source Schema Version",
+      "type": "integer"
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Telemetry"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "export_schema_version",
+    "source_schema_version",
+    "run",
+    "backend",
+    "models",
+    "omitted_groups"
+  ],
+  "title": "CommunityExport",
+  "type": "object"
+}

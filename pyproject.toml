@@ -37,6 +37,10 @@ llmbench = "llmbench.cli:main"
 [tool.setuptools.packages.find]
 include = ["llmbench*"]
 
+[tool.setuptools.package-data]
+"llmbench" = ["locales/*.json"]
+"llmbench.community" = ["schemas/*.json"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

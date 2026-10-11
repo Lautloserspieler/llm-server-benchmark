@@ -43,6 +43,7 @@ Discussions sind sowohl auf **Deutsch als auch auf Englisch** willkommen.
 - Endpoint-/Lasttests mit TTFT und Concurrency-Messungen
 - Stress-, Soak-, OOM-, Multi-Tenant- und Quantisierungstests
 - HTML-, PDF-, CSV- und JSON-Berichte
+- Lokaler bereinigter [Community-JSON-Export](docs/community-export.de.md) mit exakter Vorschau, isolierten Batch-Fehlern und Offline-Pruefung
 - Fingerprints für Modelle, Binaries und Konfiguration
 - Maschinenübergreifender Vergleich mit strikter Reproduzierbarkeitsprüfung
 - Starter für Windows, Linux und macOS

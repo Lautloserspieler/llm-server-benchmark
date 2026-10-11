@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- Added local-only `community-export`, `community-validate`, and optional
+  `community-settings` commands. The versioned allowlist JSON preserves typed
+  provenance and approved workload/runtime groups. It supports exact preview,
+  offline validation, historical labels, explicit content hashing, group
+  exclusions and isolated batch failures without modifying original results.
+  It remains separate from the private run ZIP export.
+
 ### System telemetry: reporting complete
 
 - Terminal, HTML, and PDF reports now expose CPU utilization, frequency, temperature,

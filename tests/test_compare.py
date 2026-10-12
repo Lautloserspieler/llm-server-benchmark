@@ -57,6 +57,41 @@ def make_summary(
     }
 
 
+
+
+def _with_energy_efficiency(
+    summary: dict,
+    *,
+    tokens_per_joule: float,
+    wh_per_1k_tokens: float,
+    component_energy_wh: float,
+    coverage: list[str] | None = None,
+    power_scope: str = "measured_components",
+) -> dict:
+    bench = summary["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    coverage = coverage or ["cpu_package", "gpu:0"]
+    bench["telemetry"]["power"] = {
+        "scope": power_scope,
+        "coverage": coverage,
+        "avg_component_power_w": 525.0,
+        "max_component_power_w": 580.0,
+        "component_energy_j": component_energy_wh * 3600.0,
+        "component_energy_wh": component_energy_wh,
+        "wall_power_w": None,
+        "wall_energy_j": None,
+        "wall_energy_wh": None,
+    }
+    bench["efficiency"] = {
+        "power_scope": power_scope,
+        "power_coverage": coverage,
+        "token_scope": "generated_tokens",
+        "workload_tokens": 4096,
+        "tokens_per_joule": tokens_per_joule,
+        "joules_per_1k_tokens": 1000.0 / tokens_per_joule,
+        "wh_per_1k_tokens": wh_per_1k_tokens,
+    }
+    return summary
+
 def _levels(issues, level):
     return [i for i in issues if i["level"] == level]
 
@@ -314,3 +349,133 @@ def test_missing_ttft_is_not_rendered_as_zero(tmp_path: Path):
     # System-TPS ist echt 0, TTFT dagegen unbekannt und muss als "—" erscheinen.
     assert "0.00</td>" in endpoint_section
     assert "—</td>" in endpoint_section
+
+
+def test_compare_uses_persisted_component_energy_efficiency_for_ranking(tmp_path: Path):
+    summaries = [
+        _with_energy_efficiency(
+            make_summary("A"),
+            tokens_per_joule=0.15,
+            wh_per_1k_tokens=1.85,
+            component_energy_wh=40.0,
+        ),
+        _with_energy_efficiency(
+            make_summary("B"),
+            tokens_per_joule=0.20,
+            wh_per_1k_tokens=1.40,
+            component_energy_wh=35.0,
+        ),
+    ]
+    dirs = []
+    for name, summary in zip(("a", "b"), summaries, strict=True):
+        path = tmp_path / name
+        path.mkdir()
+        (path / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        dirs.append(path)
+
+    report, issues = compare_summaries(dirs, tmp_path / "out")
+    assert not any(issue["topic"].startswith("Energie-Messumfang") for issue in issues)
+
+    html = report.read_text(encoding="utf-8")
+    assert "Energieeffizienz" in html
+    assert "0.2000 tokens/J" in html
+    assert "1.4000 Wh/1k tokens" in html
+    assert "measured_components: cpu_package, gpu:0" in html
+
+    data = json.loads((tmp_path / "out" / "comparison.json").read_text(encoding="utf-8"))
+    by_server = {row["server"]: row for row in data["efficiency"]}
+    assert by_server["A"]["tokens_per_joule"] == 0.15
+    assert by_server["B"]["tokens_per_joule"] == 0.20
+    assert by_server["B"]["component_energy_wh"] == 35.0
+    assert data["scores"]["A"]["normalized"]["eff"] == 75.0
+    assert data["scores"]["B"]["normalized"]["eff"] == 100.0
+    assert (tmp_path / "out" / "comparison_efficiency.csv").exists()
+
+
+def test_compare_warns_and_does_not_rank_different_energy_scopes(tmp_path: Path):
+    a_summary = _with_energy_efficiency(
+        make_summary("A"),
+        tokens_per_joule=0.15,
+        wh_per_1k_tokens=1.85,
+        component_energy_wh=40.0,
+        coverage=["cpu_package", "gpu:0"],
+    )
+    b_summary = _with_energy_efficiency(
+        make_summary("B"),
+        tokens_per_joule=0.30,
+        wh_per_1k_tokens=0.90,
+        component_energy_wh=20.0,
+        coverage=["gpu:0"],
+    )
+    dirs = []
+    for name, summary in (("a", a_summary), ("b", b_summary)):
+        path = tmp_path / name
+        path.mkdir()
+        (path / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        dirs.append(path)
+
+    report, issues = compare_summaries(dirs, tmp_path / "out")
+
+    scope_issues = [
+        issue for issue in issues
+        if issue["topic"].startswith("Energie-Messumfang")
+    ]
+    assert len(scope_issues) == 1
+    assert scope_issues[0]["level"] == "warning"
+    assert "cpu_package" in scope_issues[0]["message"]
+    assert "gpu:0" in scope_issues[0]["message"]
+
+    data = json.loads((tmp_path / "out" / "comparison.json").read_text(encoding="utf-8"))
+    assert data["scores"]["A"]["normalized"]["eff"] is None
+    assert data["scores"]["B"]["normalized"]["eff"] is None
+
+    html = report.read_text(encoding="utf-8")
+    assert "nicht vergleichbar" in html
+
+
+def test_legacy_gpu_only_efficiency_stays_informational_and_out_of_score(tmp_path: Path):
+    path = tmp_path / "a"
+    path.mkdir()
+    (path / "summary.json").write_text(
+        json.dumps(make_summary("A", avg_ts=100.0, power=200.0)),
+        encoding="utf-8",
+    )
+
+    report, _issues = compare_summaries([path], tmp_path / "out")
+    data = json.loads((tmp_path / "out" / "comparison.json").read_text(encoding="utf-8"))
+
+    record = data["efficiency"][0]
+    assert record["tokens_per_joule"] is None
+    assert record["legacy_gpu_tokens_per_watt"] == 0.5
+    assert record["tokens_per_watt"] == 0.5
+    assert data["scores"]["A"]["normalized"]["eff"] is None
+
+    html = report.read_text(encoding="utf-8")
+    assert "Legacy GPU-only" in html
+    assert "nicht im Score" in html
+
+
+def test_compare_pdf_contains_persisted_energy_efficiency(tmp_path: Path):
+    pytest.importorskip("reportlab")
+    pypdf = pytest.importorskip("pypdf")
+
+    summary = _with_energy_efficiency(
+        make_summary("A"),
+        tokens_per_joule=0.161,
+        wh_per_1k_tokens=1.72,
+        component_energy_wh=39.8,
+    )
+    path = tmp_path / "a"
+    path.mkdir()
+    (path / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+    compare_summaries([path], tmp_path / "out")
+
+    reader = pypdf.PdfReader(str(tmp_path / "out" / "comparison.pdf"))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Energieeffizienz" in text
+    assert "Tokens/J" in text
+    assert "0.1610" in text
+    assert "1.7200" in text
+    assert "39.800 Wh" in text
+    assert "measured_components" in text

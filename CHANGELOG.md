@@ -4,12 +4,17 @@
 
 ## Unreleased
 
-- Lokale Befehle `community-export`, `community-validate` und optional
-  `community-settings` ergaenzt. Das versionierte Allowlist-JSON behaelt
-  typisierte Provenienz und freigegebene Workload-/Runtime-Gruppen. Es bietet
-  exakte Vorschau, Offline-Pruefung, historische Namen, explizite Inhaltshashes,
-  Gruppenauslassungen und isolierte Batch-Fehler ohne Aenderung der Ergebnisse.
-  Der private Run-ZIP-Export bleibt ein separates Format.
+### Vergleich: echte Energieeffizienz
+
+- `llmbench compare` verwendet fuer das Effizienz-Ranking jetzt die gespeicherten
+  `tokens_per_joule`- und `wh_per_1k_tokens`-Werte aus der System-Telemetrie statt
+  eines neu berechneten GPU-only-Tokens/s-pro-Watt-Werts.
+- Der Vergleich bewahrt Messumfang und Komponentenabdeckung. Unterschiedliche Energie-
+  Scopes werden als nicht vergleichbar markiert und nicht im Effizienzscore gerankt.
+- Alte GPU-only-Tokens/s/W-Werte bleiben fuer bestehende Ergebnisdateien informativ
+  sichtbar, beeinflussen den Gesamtscore aber nicht mehr.
+- HTML, PDF, `comparison.json` und die neue `comparison_efficiency.csv` enthalten
+  Tokens/Joule, Wh/1k Tokens und gemessene Komponentenenergie, soweit vorhanden.
 
 ### System-Telemetrie: Reporting abgeschlossen
 

@@ -607,6 +607,7 @@ def generate_compare_pdf(
     issues: list[dict[str, str]],
     path: str | Path,
     soak_records: list[dict[str, Any]] | None = None,
+    efficiency_records: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Erzeugt einen PDF-Vergleichsbericht aus mehreren Server-Laeufen."""
     _require_reportlab()
@@ -654,7 +655,7 @@ def generate_compare_pdf(
     if scores and any(s.get("total") is not None for s in scores.values()):
         story.append(Paragraph("Gesamtscore", styles["sub"]))
         metric_labels = {"tg": "Text Generation", "pp": "Prompt Processing",
-                         "ep_tps": "Endpoint TPS", "eff": "Effizienz"}
+                         "ep_tps": "Endpoint TPS", "eff": "Effizienz (Tokens/J)"}
         score_header = ["Metrik"] + servers
         score_data = [score_header]
         for metric, label in metric_labels.items():
@@ -704,6 +705,49 @@ def generate_compare_pdf(
     ]))
     story.append(tbl)
     story.append(Spacer(1, 12))
+
+    if efficiency_records:
+        measured = [
+            record for record in efficiency_records
+            if record.get("tokens_per_joule") is not None
+        ]
+        if measured:
+            story.append(Paragraph("Energieeffizienz", styles["sub"]))
+            efficiency_data = [[
+                "Server", "Modell", "Profil", "Bereich",
+                "Tokens/J", "Wh/1k", "Energie", "Messumfang",
+            ]]
+            for record in measured:
+                coverage = ", ".join(record.get("power_coverage") or []) or "—"
+                scope = str(record.get("power_scope") or "unbekannt")
+                efficiency_data.append([
+                    str(record.get("server") or "—"),
+                    str(record.get("model") or "—"),
+                    str(record.get("profile") or "—"),
+                    str(record.get("kind") or "—"),
+                    _fmt(record.get("tokens_per_joule"), 4),
+                    _fmt(record.get("wh_per_1k_tokens"), 4),
+                    (
+                        f"{_fmt(record.get('component_energy_wh'), 3)} Wh"
+                        if record.get("component_energy_wh") is not None
+                        else "—"
+                    ),
+                    f"{scope}: {coverage}",
+                ])
+            tbl = Table(efficiency_data, repeatRows=1)
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(SOFT)),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
+                ("ALIGN", (4, 1), (6, -1), "RIGHT"),
+            ]))
+            story.append(tbl)
+            story.append(Paragraph(
+                "Das Effizienz-Ranking verwendet nur persistierte Tokens/Joule-Werte "
+                "mit identischem Messumfang. Abweichende Scopes werden oben als Hinweis markiert.",
+                styles["muted_p"],
+            ))
+            story.append(Spacer(1, 12))
 
     # Dauerlast-Vergleich (Soak): eine Zeile je Modell/Dauer/Pfad, ein Wert je Server.
     if soak_records:

@@ -176,6 +176,10 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "message": "Die Profileinstellungen unterscheiden sich zwischen den Servern",
             })
 
+    efficiency_records = [
+        record for summary in summaries for record in _efficiency_records(summary)
+    ]
+    issues.extend(_efficiency_consistency_issues(efficiency_records))
     return issues
 
 
@@ -268,31 +272,155 @@ def _endpoint_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _efficiency_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
-    """Tokens/s pro Watt. Beide Groessen werden bereits gemessen, nur bisher
-    nie zusammengefuehrt - fuer eine Beschaffungsentscheidung oft die Kernzahl."""
+    """Collect persisted energy-efficiency metrics.
+
+    The historic GPU-only Tokens/s-per-Watt value remains available as legacy
+    information for old summaries, but it is no longer used for ranking.
+    """
+    summary = scalar_summary(summary)
     out = []
     for m in summary.get("models", []):
         model_name = m.get("model", {}).get("name")
         for profile in m.get("profiles", []):
             for kind, result in profile.get("benchmarks", {}).items():
                 rows = flatten_bench_rows(result)
-                if not rows:
-                    continue
                 telemetry = result.get("telemetry") or {}
+                power = telemetry.get("power") or {}
+                efficiency = result.get("efficiency") or {}
                 gpus = telemetry.get("gpus") or []
-                power = sum(g.get("avg_power_w") or 0.0 for g in gpus)
-                best = max((r.get("avg_ts") or 0.0) for r in rows)
+
+                gpu_power = sum(
+                    float(g.get("avg_power_w"))
+                    for g in gpus
+                    if g.get("avg_power_w") is not None
+                )
+                best = max((r.get("avg_ts") or 0.0) for r in rows) if rows else 0.0
+
+                coverage = efficiency.get("power_coverage")
+                if coverage is None:
+                    coverage = power.get("coverage")
+                if not isinstance(coverage, list):
+                    coverage = []
+                coverage = sorted(str(item) for item in coverage)
+
+                tokens_per_joule = efficiency.get("tokens_per_joule")
+                wh_per_1k = efficiency.get("wh_per_1k_tokens")
+                joules_per_1k = efficiency.get("joules_per_1k_tokens")
+                workload_tokens = efficiency.get("workload_tokens")
+
+                if (
+                    not rows
+                    and tokens_per_joule is None
+                    and wh_per_1k is None
+                    and not gpus
+                ):
+                    continue
+
+                legacy_tokens_per_watt = (
+                    (best / gpu_power) if gpu_power > 0 and best else None
+                )
                 out.append({
-                    "server": _server(summary), "model": model_name,
-                    "profile": profile.get("name"), "kind": kind,
+                    "server": _server(summary),
+                    "model": model_name,
+                    "profile": profile.get("name"),
+                    "kind": kind,
                     "best_avg_ts": best or None,
-                    "avg_gpu_power_w": power or None,
-                    "tokens_per_watt": (best / power) if power > 0 and best else None,
+                    "tokens_per_joule": tokens_per_joule,
+                    "joules_per_1k_tokens": joules_per_1k,
+                    "wh_per_1k_tokens": wh_per_1k,
+                    "workload_tokens": workload_tokens,
+                    "power_scope": efficiency.get("power_scope") or power.get("scope"),
+                    "token_scope": efficiency.get("token_scope"),
+                    "power_coverage": coverage,
+                    "avg_component_power_w": power.get("avg_component_power_w"),
+                    "max_component_power_w": power.get("max_component_power_w"),
+                    "component_energy_wh": power.get("component_energy_wh"),
+                    "avg_gpu_power_w": gpu_power or None,
+                    # Backward-compatible informational field. Never used in score.
+                    "tokens_per_watt": legacy_tokens_per_watt,
+                    "legacy_gpu_tokens_per_watt": legacy_tokens_per_watt,
                     "max_temperature_c": max(
-                        (g.get("max_temperature_c") or 0.0) for g in gpus
-                    ) if gpus else None,
+                        (
+                            float(g["max_temperature_c"])
+                            for g in gpus
+                            if g.get("max_temperature_c") is not None
+                        ),
+                        default=None,
+                    ),
                 })
     return out
+
+
+def _efficiency_key(record: dict[str, Any]) -> tuple[Any, Any, Any]:
+    return record.get("model"), record.get("profile"), record.get("kind")
+
+
+def _efficiency_signature(record: dict[str, Any]) -> tuple[str, tuple[str, ...], str | None] | None:
+    if record.get("tokens_per_joule") is None:
+        return None
+    scope = record.get("power_scope")
+    if not isinstance(scope, str) or not scope:
+        return None
+    coverage = tuple(sorted(str(item) for item in record.get("power_coverage") or []))
+    token_scope = record.get("token_scope")
+    return scope, coverage, str(token_scope) if token_scope is not None else None
+
+
+def _comparable_efficiency_keys(
+    records: list[dict[str, Any]],
+    servers: list[str],
+) -> set[tuple[Any, Any, Any]]:
+    """Return groups that all compared servers measured with the same scope."""
+    grouped: dict[tuple[Any, Any, Any], list[dict[str, Any]]] = {}
+    for record in records:
+        if record.get("tokens_per_joule") is None:
+            continue
+        grouped.setdefault(_efficiency_key(record), []).append(record)
+
+    expected_servers = set(servers)
+    comparable: set[tuple[Any, Any, Any]] = set()
+    for key, group in grouped.items():
+        signatures = {_efficiency_signature(record) for record in group}
+        present_servers = {str(record.get("server")) for record in group}
+        if None not in signatures and len(signatures) == 1 and present_servers == expected_servers:
+            comparable.add(key)
+    return comparable
+
+
+def _efficiency_consistency_issues(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    grouped: dict[tuple[Any, Any, Any], list[dict[str, Any]]] = {}
+    for record in records:
+        if record.get("tokens_per_joule") is None:
+            continue
+        grouped.setdefault(_efficiency_key(record), []).append(record)
+
+    issues: list[dict[str, str]] = []
+    for key, group in grouped.items():
+        signatures = {_efficiency_signature(record) for record in group}
+        known = {signature for signature in signatures if signature is not None}
+        if len(known) <= 1:
+            continue
+        details = []
+        for record in group:
+            signature = _efficiency_signature(record)
+            if signature is None:
+                continue
+            scope, coverage, token_scope = signature
+            coverage_text = ",".join(coverage) if coverage else "none"
+            details.append(
+                f"{record.get('server')}: {scope} [{coverage_text}]"
+                + (f" / {token_scope}" if token_scope else "")
+            )
+        model, profile, kind = key
+        issues.append({
+            "level": "warning",
+            "topic": f"Energie-Messumfang {model}/{profile}/{kind}",
+            "message": (
+                "Die Energieeffizienz wurde mit unterschiedlichem Messumfang erfasst und "
+                "wird deshalb nicht gegeneinander gerankt (" + "; ".join(details) + ")"
+            ),
+        })
+    return issues
 
 
 def _soak_records(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -446,14 +574,21 @@ def _endpoint_table_html(records: list[dict[str, Any]], servers: list[str]) -> s
 
 
 def _efficiency_table_html(records: list[dict[str, Any]], servers: list[str]) -> str:
-    usable = [r for r in records if r.get("tokens_per_watt")]
+    usable = [
+        record
+        for record in records
+        if record.get("tokens_per_joule") is not None
+        or record.get("legacy_gpu_tokens_per_watt") is not None
+    ]
     if not usable:
-        return (
-            "<p class='muted'>Keine GPU-Leistungsdaten verfuegbar. "
-            "Tokens/s pro Watt wird nur fuer NVIDIA-GPUs mit NVML erfasst.</p>"
-        )
-    keys = sorted({(r["model"], r["profile"], r["kind"]) for r in usable})
-    lookup = {(r["server"], r["model"], r["profile"], r["kind"]): r for r in usable}
+        return "<p class='muted'>Keine Energieeffizienz-Daten verfuegbar.</p>"
+
+    comparable = _comparable_efficiency_keys(records, servers)
+    keys = sorted({_efficiency_key(record) for record in usable})
+    lookup = {
+        (record["server"], *_efficiency_key(record)): record
+        for record in usable
+    }
     rows = []
     for key in keys:
         cells = []
@@ -462,18 +597,47 @@ def _efficiency_table_html(records: list[dict[str, Any]], servers: list[str]) ->
             if not rec:
                 cells.append("<td class='num muted'>—</td>")
                 continue
-            cells.append(
-                f"<td class='num'>{fnum(rec.get('tokens_per_watt'), 3)}"
-                f"<br><span class='small muted'>{fnum(rec.get('avg_gpu_power_w'), 0)} W</span></td>"
-            )
+
+            if rec.get("tokens_per_joule") is not None:
+                scope = str(rec.get("power_scope") or "unbekannt")
+                coverage = ", ".join(rec.get("power_coverage") or []) or "keine Angabe"
+                details = [
+                    f"{fnum(rec.get('tokens_per_joule'), 4)} tokens/J",
+                    f"{fnum(rec.get('wh_per_1k_tokens'), 4)} Wh/1k tokens",
+                ]
+                if rec.get("component_energy_wh") is not None:
+                    details.append(f"{fnum(rec.get('component_energy_wh'), 3)} Wh")
+                details.append(f"{scope}: {coverage}")
+                if key not in comparable and len(servers) > 1:
+                    details.append("nicht vergleichbar")
+                cells.append(
+                    "<td class='num'>"
+                    + esc(details[0])
+                    + "".join(
+                        f"<br><span class='small muted'>{esc(detail)}</span>"
+                        for detail in details[1:]
+                    )
+                    + "</td>"
+                )
+            else:
+                legacy = fnum(rec.get("legacy_gpu_tokens_per_watt"), 3)
+                cells.append(
+                    "<td class='num muted'>"
+                    f"{legacy} tok/s/W"
+                    "<br><span class='small'>Legacy GPU-only · nicht im Score</span>"
+                    "</td>"
+                )
+
         rows.append(
             f"<tr><td>{esc(key[0])}</td><td>{esc(key[1])}</td><td>{esc(key[2])}</td>"
             f"{''.join(cells)}</tr>"
         )
-    header = "".join(f"<th class='num'>{esc(s)}</th>" for s in servers)
+    header = "".join(f"<th class='num'>{esc(server)}</th>" for server in servers)
     return (
         "<div class='table-wrap'><table><thead><tr><th>Modell</th><th>Profil</th><th>Bereich</th>"
         f"{header}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        "<p class='muted small'>Das Effizienz-Ranking verwendet nur persistierte Tokens/Joule-Werte "
+        "mit identischem Messumfang. Alte GPU-only Tokens/s/W-Werte bleiben rein informativ.</p>"
     )
 
 def _soak_table_html(records: list[dict[str, Any]], servers: list[str]) -> str:
@@ -535,12 +699,13 @@ def _compute_scores(records: list[dict[str, Any]], endpoint_records: list[dict[s
         if r.get("system_tps") is not None:
             server_metrics[srv]["ep_tps"].append(float(r["system_tps"]))
 
+    comparable_efficiency = _comparable_efficiency_keys(efficiency, servers)
     for r in efficiency:
         srv = r.get("server")
-        if srv not in server_metrics:
+        if srv not in server_metrics or _efficiency_key(r) not in comparable_efficiency:
             continue
-        if r.get("tokens_per_watt") is not None:
-            server_metrics[srv]["eff"].append(float(r["tokens_per_watt"]))
+        if r.get("tokens_per_joule") is not None:
+            server_metrics[srv]["eff"].append(float(r["tokens_per_joule"]))
 
     averages: dict[str, dict[str, float | None]] = {}
     for srv in servers:
@@ -584,7 +749,7 @@ def _score_html(scores: dict[str, dict[str, Any]], servers: list[str]) -> str:
         return ""
     metric_labels = {
         "tg": "Text Generation", "pp": "Prompt Processing",
-        "ep_tps": "Endpoint TPS", "eff": "Effizienz",
+        "ep_tps": "Endpoint TPS", "eff": "Effizienz (Tokens/J)",
     }
     header = "".join(f"<th class='num'>{esc(s)}</th>" for s in servers)
     rows = []
@@ -671,6 +836,24 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         "scores": scores,
     })
 
+    if efficiency:
+        efficiency_fields = [
+            "server", "model", "profile", "kind",
+            "tokens_per_joule", "joules_per_1k_tokens", "wh_per_1k_tokens",
+            "workload_tokens", "power_scope", "token_scope", "power_coverage",
+            "avg_component_power_w", "max_component_power_w", "component_energy_wh",
+            "legacy_gpu_tokens_per_watt",
+        ]
+        with (out / "comparison_efficiency.csv").open(
+            "w", newline="", encoding="utf-8-sig"
+        ) as f:
+            writer = csv.DictWriter(f, fieldnames=efficiency_fields)
+            writer.writeheader()
+            for record in efficiency:
+                row = {key: record.get(key) for key in efficiency_fields}
+                row["power_coverage"] = ",".join(record.get("power_coverage") or [])
+                writer.writerow(row)
+
     bench_fields = ["server", "model", "profile", "kind", "test", "status", "error",
                     "avg_ts", "stddev_ts", "n_prompt", "n_gen", "n_depth"]
     with (out / "comparison.csv").open("w", newline="", encoding="utf-8-sig") as f:
@@ -701,7 +884,7 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
         + "<h2>Hardware</h2>" + _hardware_table_html(summaries)
         + "<h2>Benchmark-Vergleich</h2>" + _bench_table_html(records, servers)
         + "<h2>Endpoint- und Mehrbenutzer-Vergleich</h2>" + _endpoint_table_html(endpoint_records, servers)
-        + "<h2>Effizienz (Tokens/s pro Watt)</h2>" + _efficiency_table_html(efficiency, servers)
+        + "<h2>Energieeffizienz</h2>" + _efficiency_table_html(efficiency, servers)
         + "<h2>Dauerlast-Test (Soak)</h2>" + _soak_table_html(soak_records, servers)
         + "</main></body></html>"
     )
@@ -710,7 +893,14 @@ def compare_summaries(inputs: list[str | Path], out_dir: str | Path) -> tuple[Pa
 
     try:
         from .pdf_report import generate_compare_pdf
-        generate_compare_pdf(summaries, scores, issues, out / "comparison.pdf", soak_records)
+        generate_compare_pdf(
+            summaries,
+            scores,
+            issues,
+            out / "comparison.pdf",
+            soak_records,
+            efficiency,
+        )
     except Exception as exc:
         import sys
         print(f"Vergleichs-PDF konnte nicht erzeugt werden: {exc}", file=sys.stderr)

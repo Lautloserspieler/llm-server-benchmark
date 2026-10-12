@@ -4,12 +4,17 @@
 
 ## Unreleased
 
-- Added local-only `community-export`, `community-validate`, and optional
-  `community-settings` commands. The versioned allowlist JSON preserves typed
-  provenance and approved workload/runtime groups. It supports exact preview,
-  offline validation, historical labels, explicit content hashing, group
-  exclusions and isolated batch failures without modifying original results.
-  It remains separate from the private run ZIP export.
+### Compare: measured energy efficiency
+
+- `llmbench compare` now ranks energy efficiency from the persisted
+  `tokens_per_joule` and `wh_per_1k_tokens` telemetry metrics instead of deriving a
+  new GPU-only Tokens/s-per-Watt value.
+- Comparison preserves measurement scope and component coverage. Different energy scopes
+  are marked non-comparable and are excluded from the efficiency score.
+- Legacy GPU-only Tokens/s/W values remain visible for older result files as informational
+  data but no longer affect the aggregate score.
+- HTML, PDF, `comparison.json`, and the new `comparison_efficiency.csv` expose
+  Tokens/Joule, Wh/1k tokens, and measured-component energy where available.
 
 ### System telemetry: reporting complete
 

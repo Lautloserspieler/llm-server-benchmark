@@ -2,7 +2,14 @@
 
 🇩🇪 Deutsch | [🇬🇧 English](CHANGELOG.en.md)
 
-## Unreleased
+## 1.6.0
+
+### Community-Export: lokaler, datenschutzbewusster Austausch
+
+- Neuer Befehl `llmbench community-export` erzeugt lokal geprüfte, bereinigte JSON-Artefakte aus bestehenden Benchmark-Zusammenfassungen; es erfolgt kein automatischer Upload.
+- `community-export --preview` zeigt den exakten Export vor dem Schreiben. `community-validate` prüft die veröffentlichten Ergebnisse offline gegen das mitgelieferte Schema.
+- Optionale Nicknames, selektierbare Hardware-/Energiedaten, Modellidentität, sichere Fehlerbehandlung und isolierte Stapelverarbeitung erleichtern den späteren Austausch in der Community.
+
 
 ### Vergleich: echte Energieeffizienz
 
@@ -315,9 +322,9 @@
   mehr faelschlich auf den Native-Modus zurueck.
 - `LLMBENCH_AUTO_INSTALL=1` installiert ohne Rueckfrage, `=0` nie.
 
-## 1.6.0
+### Bisherige Änderungen für v1.6.0
 
-### vLLM als zweites Backend (ueber Docker)
+#### vLLM als zweites Backend (ueber Docker)
 
 - Neues Backend `vllm`: `tools.backend: vllm` in `benchmark.yaml` benchmarkt
   einen vLLM-Server statt llama.cpp. vLLM laeuft dabei ausschliesslich als
@@ -342,7 +349,7 @@
   Server einmal pro Profil statt einmal pro Testart starten wollen -
   bestehende llama.cpp-Konfigurationen sind davon unberuehrt.
 
-### AMD-GPU-Live-Telemetrie (rocm-smi)
+#### AMD-GPU-Live-Telemetrie (rocm-smi)
 
 - Neuer `AmdProvider` liefert erstmals laufende GPU-Auslastung, VRAM,
   Temperatur und Power fuer AMD-GPUs (`rocm-smi --json`), bisher gab es dort
@@ -354,7 +361,7 @@
   Quellen faelschlich als `cpu_only` gemeldet, obwohl echte GPU-Messwerte
   vorlagen.
 
-### Projekt-Infrastruktur
+#### Projekt-Infrastruktur
 
 - Neu: `CONTRIBUTING.md`, `ROADMAP.md`, GitHub-Issue-/PR-Vorlagen unter
   `.github/` - Grundlage fuer die geplante Erweiterung um weitere Backends

@@ -2,7 +2,14 @@
 
 [🇩🇪 Deutsch](CHANGELOG.md) | 🇬🇧 English
 
-## Unreleased
+## 1.6.0
+
+### Community export: local, privacy-aware sharing
+
+- New `llmbench community-export` command creates validated, sanitized JSON artifacts from existing benchmark summaries entirely locally; nothing is uploaded automatically.
+- `community-export --preview` displays the exact export candidate before writing, and `community-validate` checks exported files offline against the bundled schema.
+- Optional nicknames, selectable hardware/energy fields, model identities, safe errors, and isolated batch processing prepare future community sharing.
+
 
 ### Compare: measured energy efficiency
 
@@ -286,9 +293,9 @@
   instead of a PowerShell stack trace and no longer incorrectly falls back to native mode.
 - `LLMBENCH_AUTO_INSTALL=1` installs without confirmation; `=0` never installs.
 
-## 1.6.0
+### Previously documented v1.6.0 changes
 
-### vLLM as the second backend (via Docker)
+#### vLLM as the second backend (via Docker)
 
 - New `vllm` backend: `tools.backend: vllm` in `benchmark.yaml` benchmarks a vLLM
   server instead of llama.cpp. vLLM runs exclusively as a Docker container using the
@@ -310,7 +317,7 @@
   that start a server once per profile rather than once per test type; existing llama.cpp
   configurations are unaffected.
 
-### AMD GPU live telemetry (rocm-smi)
+#### AMD GPU live telemetry (rocm-smi)
 
 - New `AmdProvider` supplies live GPU utilization, VRAM, temperature, and power for AMD
   GPUs through `rocm-smi --json`. Previously AMD had only one-time hardware detection.
@@ -319,7 +326,7 @@
 - Fix: `telemetry_source` in result files was incorrectly reported as `cpu_only` for
   non-NVIDIA sources even when real GPU telemetry was present.
 
-### Project infrastructure
+#### Project infrastructure
 
 - Added `CONTRIBUTING.md`, `ROADMAP.md`, and GitHub issue/PR templates under
   `.github/` as the foundation for additional backends (Ollama, TGI) and GPU vendors

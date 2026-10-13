@@ -86,6 +86,10 @@ class BenchmarkBackend(abc.ABC):
     def end_profile(self) -> None:  # noqa: B027
         """Called once after all benchmark kinds of a profile. No-op by default."""
 
+    def prepare_endpoint_config(self, endpoint_cfg: dict[str, Any]) -> dict[str, Any]:
+        """Return backend-specific settings for the shared endpoint load client."""
+        return dict(endpoint_cfg)
+
     async def probe_context(  # noqa: B027
         self,
         base_url: str,  # noqa: ARG002

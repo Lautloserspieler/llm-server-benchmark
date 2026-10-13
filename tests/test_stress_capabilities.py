@@ -16,6 +16,9 @@ class _FakeTtftBackend:
     def supports(self, name: str) -> bool:
         return self.capabilities.supports(name)
 
+    def prepare_endpoint_config(self, endpoint_cfg):
+        return dict(endpoint_cfg)
+
     def start_server(self, *_args, **_kwargs):
         return SimpleNamespace(pid=1234), "fake server"
 

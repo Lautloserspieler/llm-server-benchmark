@@ -453,7 +453,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, help_text in (
         ("stress-ttft", _("TTFT-Latenz unter extremer Parallelitaet")),
-        ("stress-multitenant", _("Zwei aktive llama-server-Instanzen gleichzeitig")),
+        ("stress-multitenant", _("Zwei aktive Modellserver gleichzeitig")),
         ("stress-oom", _("Progressiver KV-Cache/Kontext-OOM-Test")),
         ("stress-quant", _("Gleiche Modelle mit verschiedenen Quantisierungen vergleichen")),
     ):

@@ -306,6 +306,12 @@ def test_end_profile_writes_container_log(tmp_path: Path):
 # --------------------------------------------------------- Endpoint-Lasttest
 
 
+def test_prepare_endpoint_config_selects_openai_completions():
+    backend = _backend()
+    cfg = backend.prepare_endpoint_config({"base_url": "http://127.0.0.1:8000"})
+    assert cfg["api_style"] == "openai_completions"
+
+
 def test_start_server_reuses_container_start_path(docker, tmp_path: Path):
     backend = _backend()
     proc, command = backend.start_server(

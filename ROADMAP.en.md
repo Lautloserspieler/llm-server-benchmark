@@ -20,7 +20,7 @@ traceable benchmark results backed by evidence instead of isolated tokens/s numb
 | --- | --- | --- | --- |
 | llama.cpp | ✅ complete | local binary (`llama-bench`/`llama-server`) | Reference backend |
 | vLLM | ✅ complete (1.6.0) | Docker container (`vllm/vllm-openai`) | Phase A |
-| TGI | 📋 planned | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase C, builds on Phase A |
+| TGI | 🚧 in progress | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase C; registered as a containerized, OpenAI-compatible HTTP backend alongside vLLM |
 | Ollama | 📋 planned | Docker container (`ollama/ollama`) | Phase B, native API instead of OpenAI-compatible |
 
 New server backends such as vLLM/Ollama/TGI are intentionally containerized instead of
@@ -42,7 +42,7 @@ runtime install/uninstall expectations.
 When multiple GPU vendors are present, `CompositeProvider` (since 1.6.0) can combine
 available providers instead of selecting only the first source.
 
-## Phase 0 — Architecture contracts ✅ *implemented (unreleased)*
+## Phase 0 — Architecture contracts ✅ *implemented/merged*
 
 Before additional backends and later multimodal workloads enter the core, the layer
 boundaries and compatibility rules are now documented explicitly. The contracts separate
@@ -52,7 +52,7 @@ state that the working text path must not be replaced through a big-bang rewrite
 See [docs/architecture/](docs/architecture/README.en.md) for the core, runtimes,
 tasks/workloads, telemetry, results, and compatibility contracts.
 
-## Phase 1 — Backend capabilities and backend-independent stress tests ✅ *implemented (unreleased)*
+## Phase 1 — Backend capabilities and backend-independent stress tests ✅ *implemented/merged*
 
 `BenchmarkBackend` now exposes explicit `BackendCapabilities`. TTFT, context/OOM,
 quantization, and multi-tenant stress no longer instantiate the llama.cpp backend directly;
@@ -78,9 +78,10 @@ terminal UI.
    translation-coverage tests.
 2. **Finish setup/installer** ✅ *implemented (unreleased)* — NVIDIA driver checks on
    Windows, resume after reboot, backend selection during setup, and installer tests in CI.
-3. **Stress tests through backend capabilities** ✅ *implemented (unreleased)* — stress paths run through `get_backend()` and unsupported workloads are skipped with a structured reason.
-4. **TGI backend** (Phase C), followed by **Ollama backend** (Phase B, using existing GGUFs
-   where applicable).
+3. **Stress tests through backend capabilities** ✅ *implemented/merged* — stress paths run through `get_backend()` and unsupported workloads are skipped with a structured reason.
+4. **TGI backend** (Phase C) — in progress; `TgiBackend` is registered in the backend factory,
+   config, setup, and runner alongside `VllmBackend` as a containerized, OpenAI-compatible HTTP
+   backend. Followed by **Ollama backend** (Phase B, using existing GGUFs where applicable).
 
 ## Original phase plan
 

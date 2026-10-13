@@ -383,7 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     install_backend = sub.add_parser(
         "install-backend",
-        help="Container-Backend (vLLM) automatisch installieren: Docker-Image laden",
+        help="Container-Backend automatisch installieren: Docker-Image laden",
     )
     install_backend.add_argument("--backend", choices=list(SUPPORTED_BACKENDS), required=True)
     install_backend.add_argument("--image", default=None, help="Abweichendes Docker-Image statt des Standards")

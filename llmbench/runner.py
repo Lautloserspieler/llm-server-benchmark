@@ -121,6 +121,22 @@ def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
         info["vllm"] = {"image": image, "digest": digest}
         return info
 
+    if name == "tgi":
+        # Bei einem Container-Backend gibt es keine Programmdatei, die sich
+        # hashen liesse. Image-Tag und -Digest uebernehmen exakt dieselbe Rolle:
+        # sie belegen, welche Serverversion gemessen hat.
+        from .backend_setup import DEFAULT_TGI_IMAGE
+        from .docker_backend import image_digest
+
+        image = cfg["tools"].get("tgi_image") or DEFAULT_TGI_IMAGE
+        digest = None
+        try:
+            digest = image_digest(image)
+        except Exception:
+            digest = None
+        info["tgi"] = {"image": image, "digest": digest}
+        return info
+
     info["llama_bench"] = probe_build(cfg["tools"]["llama_bench"], with_hash=with_hash)
     server_exe = cfg["tools"].get("llama_server")
     if server_exe:

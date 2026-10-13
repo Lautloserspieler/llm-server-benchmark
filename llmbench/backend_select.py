@@ -29,14 +29,16 @@ from .utils import ask_yes_no, console, print_err, print_msg, print_section
 # Ungefaehre Download-Groesse der Standard-Images, nur fuer die Rueckfrage.
 BACKEND_DOWNLOAD_GIB: dict[str, int] = {
     "vllm": 10,
+    "tgi": 10,
 }
 
 # Backends, deren Container immer mit --gpus starten (NVIDIA-only).
-NVIDIA_ONLY_BACKENDS = frozenset({"vllm"})
+NVIDIA_ONLY_BACKENDS = frozenset({"vllm", "tgi"})
 
 BACKEND_LABELS: dict[str, str] = {
     "llama_cpp": "llama.cpp",
     "vllm": "vLLM",
+    "tgi": "TGI",
 }
 
 
@@ -130,14 +132,15 @@ def select_backends(root: Path | str, config_path: Path | str) -> int:
 
     # Ein optionales Backend, das nicht installiert werden konnte, bricht das
     # Setup nicht ab - llama.cpp funktioniert trotzdem.
-    if docker_ok and not gpu_ok and any(name in NVIDIA_ONLY_BACKENDS for name in missing):
-        print_msg(
-            _(
-                "vLLM braucht eine NVIDIA-GPU, die Docker an Container durchreicht "
-                "(NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten."
-            ),
-            style="yellow",
-        )
+    if docker_ok and not gpu_ok:
+        for name in [n for n in missing if n in NVIDIA_ONLY_BACKENDS]:
+            print_msg(
+                _(
+                    "{name} braucht eine NVIDIA-GPU, die Docker an Container durchreicht "
+                    "(NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten."
+                ).format(name=_label(name)),
+                style="yellow",
+            )
 
     for name in [n for n in missing if _usable(n, docker_ok, gpu_ok)]:
         if not _confirm_install(name):

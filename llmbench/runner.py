@@ -13,7 +13,13 @@ from .endpoint import run_endpoint_load, run_sanity_check
 from .energy import apply_energy_efficiency
 from .hardware import collect_hardware
 from .kv_cache import empty_kv_cache, normalize_kv_cache
-from .llama_bench import build_ids_from_rows, flatten_bench_rows, probe_build
+from .llama_bench import (
+    build_ids_from_rows,
+    evaluate_llama_bench_quality,
+    flatten_bench_rows,
+    probe_build,
+)
+from .monitor import evaluate_telemetry_quality
 from .pdf_report import generate_run_pdf
 from .progress import Reporter, make_reporter
 from .report import generate_run_html
@@ -28,6 +34,43 @@ from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, u
 BENCH_KINDS = ("prompt", "generation", "long_context")
 SOAK_LABELS = (("short", "duration_short_seconds"), ("long", "duration_long_seconds"))
 HARDWARE_TARGETS = ("cpu", "gpu", "gpu_overload", "both")
+
+
+def _worst_status(statuses: list[str | None]) -> str:
+    """Gibt den schlechtesten Status aus einer Liste zurueck.
+
+    Reihenfolge: invalid > warning > clean.
+    """
+    s = {str(x) for x in statuses if x}
+    if "invalid" in s:
+        return "invalid"
+    if "warning" in s:
+        return "warning"
+    return "clean"
+
+
+def _unique_reasons(reasons: list[str]) -> list[str]:
+    """Behält die Reihenfolge, entfernt aber Duplikate."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in reasons:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
+
+def _merge_qualities(qualities: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fasst mehrere Quality-Gate-2.0-Bewertungen zu einer zusammen."""
+    if not qualities:
+        return {"status": "clean", "reasons": [], "details": []}
+    reasons = _unique_reasons([r for q in qualities for r in q.get("reasons", [])])
+    details = [q for q in qualities if q.get("status") != "clean"]
+    return {
+        "status": _worst_status([q.get("status") for q in qualities]),
+        "reasons": reasons,
+        "details": details,
+    }
 
 
 def _write_summary(path: Path, summary: dict[str, Any], cfg: dict[str, Any]) -> None:
@@ -322,11 +365,21 @@ def _run_suite(
                     endpoint_cfg["base_url"], float(endpoint_cfg.get("startup_timeout_seconds", 300)), proc=proc
                 )
                 passed, msg = asyncio.run(run_sanity_check(endpoint_cfg["base_url"], endpoint_cfg, quality_gate_cfg))
-                model_result["quality_gate"] = {"passed": passed, "message": msg}
+                sanity_quality = {
+                    "passed": passed,
+                    "message": msg,
+                    "status": "clean" if passed else "invalid",
+                }
                 if not passed:
                     summary["warnings"].append(f"{model['name']}: Quality Gate fehlgeschlagen. Modell wird uebersprungen. Grund: {msg}")
                     reporter.note("Warnung: Quality Gate fehlgeschlagen. Modell wird uebersprungen.")
                     model_result["status"] = "skipped_quality_gate"
+                    model_result["quality_gate"] = {
+                        "status": "invalid",
+                        "sanity": sanity_quality,
+                        "benchmark_quality": {},
+                        "message": msg,
+                    }
                     summary["models"].append(model_result)
                     _write_summary(run_dir / "summary.partial.json", summary, cfg)
                     if proc is not None:
@@ -334,6 +387,12 @@ def _run_suite(
                     continue
                 else:
                     reporter.note("Quality Gate bestanden.")
+                    model_result["quality_gate"] = {
+                        "status": "clean",
+                        "sanity": sanity_quality,
+                        "benchmark_quality": {},
+                        "message": msg,
+                    }
             except Exception as exc:
                 summary["warnings"].append(f"{model['name']}: Quality Gate Fehler: {exc}")
                 reporter.note(f"Warnung: Quality Gate Fehler: {exc}")
@@ -373,6 +432,7 @@ def _run_suite(
                         f"{model['name']}/{profile['name']}: KV-Cache-Introspektion beim Start nicht verfuegbar."
                     )
 
+            profile_qualities: list[dict[str, Any]] = []
             try:
                 for kind in BENCH_KINDS:
                     reporter.test_started(model["name"], profile["name"], kind)
@@ -417,6 +477,27 @@ def _run_suite(
                                  *(result.get("telemetry") or {}).get("warnings", [])]:
                         summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
                         reporter.note(warn)
+
+                    # Quality Gate 2.0: llama-bench Streuung + Telemetrie bewerten.
+                    bench_quality = evaluate_llama_bench_quality(result, quality_gate_cfg)
+                    telemetry_quality = evaluate_telemetry_quality(
+                        result.get("telemetry"), quality_gate_cfg
+                    )
+                    result["quality_gate_2"] = {
+                        "benchmark": bench_quality,
+                        "telemetry": telemetry_quality,
+                        "status": _worst_status([bench_quality.get("status"), telemetry_quality.get("status")]),
+                        "reasons": _unique_reasons(
+                            bench_quality.get("reasons", []) + telemetry_quality.get("reasons", [])
+                        ),
+                    }
+                    if result["quality_gate_2"]["status"] != "clean":
+                        prefix = f"{model['name']}/{profile['name']}/{kind}: Quality Gate 2.0: {result['quality_gate_2']['status']}"
+                        for reason in result["quality_gate_2"]["reasons"]:
+                            summary["warnings"].append(f"{prefix} – {reason}")
+                        reporter.note(f"{prefix}: {'; '.join(result['quality_gate_2']['reasons'])}")
+                    profile_qualities.append(result["quality_gate_2"])
+
                     profile_result["benchmarks"][kind] = result
                     if kind == "long_context":
                         profile_result["context_capability"] = build_context_capability(result)
@@ -444,6 +525,7 @@ def _run_suite(
                     summary["warnings"].append(
                         f"{model['name']}/{profile['name']}: Backend konnte nicht sauber beendet werden: {exc}"
                     )
+            profile_result["quality_gate_2"] = _merge_qualities(profile_qualities)
             model_result["profiles"].append(profile_result)
 
         soak_cfg = dict(cfg.get("soak", {}))
@@ -532,6 +614,7 @@ def _run_suite(
                     float(cfg["benchmark"].get("resource_sample_interval", 0.5)),
                     endpoint_dir,
                     target_pid=proc.pid if proc else None,
+                    qg_cfg=quality_gate_cfg,
                 )
                 ep["server_command"] = command
                 ep["profile"] = profile.get("name")
@@ -539,6 +622,13 @@ def _run_suite(
                 model_result["endpoint"] = ep
                 for warn in (ep.get("telemetry") or {}).get("warnings", []):
                     summary["warnings"].append(f"{model['name']}/endpoint: {warn}")
+                # Endpoint-Quality mit Modell-Quality zusammenfuehren.
+                ep_qg = ep.get("quality_gate_2") or {"status": "clean", "reasons": []}
+                if ep_qg.get("status") != "clean":
+                    prefix = f"{model['name']}/endpoint: Quality Gate 2.0: {ep_qg['status']}"
+                    for reason in ep_qg.get("reasons", []):
+                        summary["warnings"].append(f"{prefix} – {reason}")
+                    reporter.note(f"{prefix}: {'; '.join(ep_qg.get('reasons', []))}")
             except Exception as exc:
                 model_result["endpoint"] = {
                     "status": "failed",
@@ -549,6 +639,33 @@ def _run_suite(
             finally:
                 if proc is not None:
                     backend.stop_server(proc)
+
+        # Quality Gate 2.0: Modell-Gesamtbewertung aus Sanity, Profilen und Endpoint.
+        model_qg = model_result.get("quality_gate") or {"status": "clean", "sanity": None}
+        all_statuses = [model_qg.get("status")]
+        all_reasons = list(model_qg.get("benchmark_quality", {}).get("reasons", []))
+        for profile in model_result.get("profiles", []):
+            pq = profile.get("quality_gate_2") or {}
+            all_statuses.append(pq.get("status"))
+            all_reasons.extend(pq.get("reasons", []))
+        if model_result.get("endpoint"):
+            eq = model_result["endpoint"].get("quality_gate_2") or {}
+            all_statuses.append(eq.get("status"))
+            all_reasons.extend(eq.get("reasons", []))
+        final_status = _worst_status(all_statuses)
+        final_reasons = _unique_reasons(all_reasons)
+        model_result["quality_gate"] = {
+            "status": final_status,
+            "sanity": model_qg.get("sanity"),
+            "benchmark_quality": _merge_qualities(
+                [p.get("quality_gate_2", {}) for p in model_result.get("profiles", [])]
+            ),
+            "endpoint_quality": model_result.get("endpoint", {}).get("quality_gate_2"),
+            "message": (
+                _("Quality Gate 2.0: {status}.").format(status=final_status.upper())
+                + (" " + "; ".join(final_reasons) if final_reasons else "")
+            ),
+        }
 
         summary["models"].append(model_result)
         _write_summary(run_dir / "summary.partial.json", summary, cfg)

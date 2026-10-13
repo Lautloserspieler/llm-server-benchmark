@@ -101,6 +101,44 @@ def status_cell(status: str | None) -> str:
     return f"<span class='{cls}'>{esc(label)}</span>"
 
 
+def _qg_badge(status: str | None) -> str:
+    """Farbiges Badge fuer Quality-Gate-2.0-Status."""
+    mapping = {
+        "clean": ("status-ok", _("Clean")),
+        "warning": ("status-timeout", _("Warning")),
+        "invalid": ("status-failed", _("Invalid")),
+    }
+    cls, label = mapping.get(str(status).lower(), ("status-failed", esc(str(status))))
+    return f"<span class='{cls}'>{esc(label)}</span>"
+
+
+def _quality_details(qg: dict[str, Any]) -> str:
+    """HTML-Liste mit Quality-Gate-2.0-Begruendungen und Details."""
+    if not qg:
+        return ""
+    status = qg.get("status")
+    parts = [f"<p><strong>{_('Status')}</strong>: {_qg_badge(status)}</p>"]
+    reasons = qg.get("reasons") or []
+    if reasons:
+        items = "".join(f"<li>{esc(r)}</li>" for r in reasons)
+        parts.append(f"<ul>{items}</ul>")
+    foreign = qg.get("foreign_gpu_processes") or []
+    significant = [p for p in foreign if p.get("max_util_gpu_percent") is not None]
+    if significant:
+        rows = "".join(
+            f"<tr><td>{esc(p.get('name') or '?')}</td><td>{p.get('pid')}</td>"
+            f"<td class='num'>{fnum(p.get('max_util_gpu_percent'), 0)} %</td>"
+            f"<td class='num'>{fnum(p.get('avg_util_gpu_percent'), 0)} %</td></tr>"
+            for p in significant
+        )
+        parts.append(
+            f"<table><thead><tr><th>{_('Prozess')}</th><th>{_('PID')}</th>"
+            f"<th class='num'>{_('GPU-Last Max')}</th><th class='num'>{_('GPU-Last Ø')}</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+    return "\n".join(parts)
+
+
 def _gpu_text(hw: dict[str, Any]) -> str:
     gpus = hw.get("gpus") or []
     if not gpus:
@@ -316,33 +354,40 @@ def _endpoint_table(ep: dict[str, Any]) -> str:
     if ep.get("status") != "ok":
         return f"<p class='status-failed'>{_('Endpoint-Test fehlgeschlagen')}: {esc(ep.get('error'))}</p>"
     settings = ep.get("settings") or {}
+    qg = ep.get("quality_gate_2") or {}
     head = (
         f"<p class='muted small'>{_('Profil')}: <code>{esc(ep.get('profile'))}</code> · "
         f"max_tokens {esc(settings.get('max_tokens'))} · seed {esc(settings.get('seed'))} · "
         f"ignore_eos {esc(settings.get('ignore_eos'))} · "
-        f"Warmup {esc((ep.get('warmup') or {}).get('requests'))} {_('Requests (verworfen)')}</p>"
+        f"Warmup {esc((ep.get('warmup') or {}).get('requests'))} {_('Requests (verworfen)')} · "
+        f"Quality Gate 2.0: {_qg_badge(qg.get('status'))}</p>"
     )
     rows = []
+    details = {d.get("concurrency"): d for d in qg.get("details", [])}
     for x in ep.get("levels", []):
         note = f"<br><span class='small status-timeout'>{esc(x.get('note'))}</span>" if x.get("note") else ""
+        conc = x.get('concurrency')
+        level_qg = details.get(conc, {})
+        level_badge = _qg_badge(level_qg.get("status")) if level_qg else _qg_badge("clean")
         rows.append(
             "<tr>"
-            f"<td class='num'>{esc(x.get('concurrency'))}</td>"
+            f"<td class='num'>{esc(conc)}</td>"
             f"<td class='num'>{esc(x.get('successful'))}/{esc(x.get('requests'))}{note}</td>"
             f"<td class='num'><strong>{fnum(x.get('system_tps'))}</strong></td>"
             f"<td class='num'>{fnum(x.get('avg_interactivity_tps'))}</td>"
             f"<td class='num'>{fms(x.get('ttft_p50_seconds'))}</td>"
             f"<td class='num'>{fms(x.get('ttft_p95_seconds'))}</td>"
+            f"<td class='num'>{level_badge}</td>"
             "</tr>"
         )
     return head + (
         f"<div class='table-wrap'><table><thead><tr><th class='num'>{_('Concurrency')}</th>"
         f"<th class='num'>{_('Erfolgreich')}</th><th class='num'>{_('System TPS')}</th>"
         f"<th class='num'>{_('TPS/Request')}</th><th class='num'>{_('TTFT P50 ms')}</th>"
-        f"<th class='num'>{_('TTFT P95 ms')}</th></tr></thead><tbody>"
+        f"<th class='num'>{_('TTFT P95 ms')}</th><th class='num'>{_('Quality')}</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
-    )
+    ) + _quality_details(qg)
 
 
 def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
@@ -385,6 +430,37 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
     )
 
 
+def _executive_summary(summary: dict[str, Any]) -> str:
+    """Kurze Statusuebersicht fuer den HTML-Bericht."""
+    models = summary.get("models") or []
+    statuses = [(m.get("quality_gate") or {}).get("status") for m in models]
+    if "invalid" in statuses:
+        overall = "invalid"
+    elif "warning" in statuses:
+        overall = "warning"
+    else:
+        overall = "clean"
+
+    counts: dict[str, int] = {"clean": 0, "warning": 0, "invalid": 0}
+    for s in statuses:
+        if s in counts:
+            counts[s] += 1
+
+    rows = "".join(
+        f"<tr><td>{esc(m.get('model', {}).get('name', '?'))}</td>"
+        f"<td>{_qg_badge((m.get('quality_gate') or {}).get('status'))}</td>"
+        f"<td>{esc((m.get('quality_gate') or {}).get('message', ''))}</td></tr>"
+        for m in models
+    )
+    return (
+        f"<h2>{_('Executive Summary')}</h2>"
+        f"<p>{_('Gesamt-Status')}: {_qg_badge(overall)} "
+        f"{_('{clean} sauber, {warning} Warnung(en), {invalid} ungueltig').format(**counts)}</p>"
+        f"<div class='table-wrap'><table><thead><tr><th>{_('Modell')}</th><th>{_('Status')}</th>"
+        f"<th>{_('Hinweis')}</th></tr></thead><tbody>{rows}</tbody></table></div>"
+    )
+
+
 def _provenance_block(summary: dict[str, Any]) -> str:
     tools = summary.get("tools") or {}
     bench = (tools.get("llama_bench") or {}).get("binary") or {}
@@ -406,7 +482,7 @@ def _provenance_block(summary: dict[str, Any]) -> str:
     return (
         f"<h2>{_('Nachweis der Testbedingungen')}</h2>"
         f"<p class='muted'>{_('Diese Angaben muessen auf allen verglichenen Servern uebereinstimmen. ')}"
-        "<code>llmbench compare</code> {_('prueft das automatisch.')}</p>"
+        f"<code>llmbench compare</code> {_('prueft das automatisch.')}</p>"
         f"<div class='table-wrap'><table><tbody>{cells}</tbody></table></div>"
     )
 
@@ -465,6 +541,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
     body.append("</div>")
     body.append(_memory_bandwidth_block(summary))
     body.append(_warnings_block(summary))
+    body.append(_executive_summary(summary))
     body.append(
         f"<div class='notice'>{_('Tokens/s aus <code>llama-bench</code> messen die Inferenzkernleistung ')}"
         f"{_('ohne Tokenisierung und Sampling. Endpoint-Tests messen zusaetzlich reale ')}"
@@ -489,22 +566,33 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
             f"<div class='card'><div class='k'>SHA256</div>"
             f"<div class='v small'><code>{esc(sha[:32])}{'…' if len(sha) > 32 else ''}</code></div></div>"
         )
+        qg = m.get("quality_gate") or {}
         body.append(
-            f"<div class='card'><div class='k'>{_('Quality Gate')}</div>"
-            f"<div class='v'>{esc(meta.get('quality_gate') or _('nicht bewertet'))}</div></div></div>"
+            f"<div class='card'><div class='k'>{_('Quality Gate 2.0')}</div>"
+            f"<div class='v'>{_qg_badge(qg.get('status'))}</div></div></div>"
         )
+        if qg.get("reasons"):
+            body.append(
+                f"<div class='warn'><strong>{_('Quality-Gate-Begruendungen')}</strong>"
+                f"<ul>{''.join(f'<li>{esc(r)}</li>' for r in qg.get('reasons', []))}</ul></div>"
+            )
         for profile_index, profile in enumerate(m.get("profiles", [])):
             body.append(f"<h3>{_('Profil')}: {esc(profile.get('name'))}</h3>")
             s = profile.get("settings", {})
             body.append(
                 f"<p class='muted'>GPU-Layer: <code>{esc(s.get('gpu_layers'))}</code> · "
-                f"Threads: <code>{esc(s.get('threads', 'auto'))}</code></p>"
+                f"Threads: <code>{esc(s.get('threads', 'auto'))}</code> · "
+                f"Quality Gate 2.0: {_qg_badge((profile.get('quality_gate_2') or {}).get('status'))}</p>"
             )
             body.append(_bench_table(profile))
             body.append(_context_capability_block(profile.get("context_capability")))
             raw_profiles = ((persisted_summary.get("models") or [])[model_index].get("profiles") or [])
             raw_profile = raw_profiles[profile_index] if profile_index < len(raw_profiles) else profile
             body.append(_kv_cache_block(raw_profile.get("kv_cache")))
+            pq = profile.get("quality_gate_2") or {}
+            if pq.get("reasons"):
+                body.append(f"<h4>{_('Benchmark-Qualitaet')}</h4>")
+                body.append(_quality_details(pq))
             body.append(f"<h3>{_('Hardware-Telemetrie')}</h3>")
             body.append(_telemetry_table(profile))
             body.append(_system_power_table(profile))

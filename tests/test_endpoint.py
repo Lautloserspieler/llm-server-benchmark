@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from llmbench.endpoint import (
+    evaluate_endpoint_quality,
     percentile,
     run_endpoint_load,
     start_llama_server,
@@ -256,3 +257,49 @@ def test_run_endpoint_load_flags_short_responses_without_ignore_eos(tmp_path: Pa
     level = result["levels"][0]
     assert level["short_responses"] == 1
     assert "note" in level
+
+
+def test_run_endpoint_load_includes_quality_gate_2_when_qg_cfg_given(tmp_path: Path, monkeypatch):
+    transport = httpx.MockTransport(_sse_response_handler(tokens_per_request=5))
+
+    class _PatchedAsyncClient(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr("llmbench.endpoint.httpx.AsyncClient", _PatchedAsyncClient)
+    monkeypatch.setattr("llmbench.endpoint.ResourceMonitor.start", lambda _self: None)
+    monkeypatch.setattr("llmbench.endpoint.ResourceMonitor.stop", lambda _self: {"sample_count": 0})
+
+    cfg = {
+        "concurrency": [1],
+        "requests_per_level": 2,
+        "warmup_requests": 0,
+        "max_tokens": 5,
+        "prompt": "hello",
+        "temperature": 0.0,
+        "ignore_eos": True,
+        "seed": 42,
+    }
+    qg_cfg = {"max_tps_coefficient_of_variation": 1.0}
+    result = run_endpoint_load("http://testserver", cfg, 0.5, tmp_path, qg_cfg=qg_cfg)
+    assert "quality_gate_2" in result
+    assert result["quality_gate_2"]["status"] == "clean"
+
+
+def test_evaluate_endpoint_quality_clean_for_stable_requests():
+    levels = [
+        {
+            "concurrency": 1,
+            "requests": 2,
+            "successful": 2,
+            "request_details": [
+                {"ok": True, "request_tps": 100.0, "ttft_seconds": 0.1},
+                {"ok": True, "request_tps": 101.0, "ttft_seconds": 0.11},
+            ],
+        }
+    ]
+    qg = evaluate_endpoint_quality(
+        levels, {}, {"max_tps_coefficient_of_variation": 0.5}
+    )
+    assert qg["status"] == "clean"

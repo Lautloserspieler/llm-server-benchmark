@@ -12,9 +12,11 @@ def _summary(bench_status: str = "ok") -> dict:
         {"kind": "generation", "status": "ok",
          "rows": [{"n_prompt": 0, "n_gen": 128, "n_depth": 0, "avg_ts": 42.0}],
          "telemetry": {"gpus": [{"index": 0, "avg_power_w": 100.0, "max_temperature_c": 71.0},
-                                {"index": 1, "avg_power_w": 90.0, "max_temperature_c": 68.0}]}}
+                                {"index": 1, "avg_power_w": 90.0, "max_temperature_c": 68.0}]},
+         "quality_gate_2": {"status": "clean", "reasons": []}}
         if bench_status == "ok"
-        else {"kind": "generation", "status": bench_status, "error": "abgebrochen", "telemetry": {}}
+        else {"kind": "generation", "status": bench_status, "error": "abgebrochen", "telemetry": {},
+              "quality_gate_2": {"status": "invalid", "reasons": ["Benchmark fehlgeschlagen"]}}
     )
     return {
         "schema_version": 2,
@@ -36,8 +38,24 @@ def _summary(bench_status: str = "ok") -> dict:
         "warnings": ["Fremde Prozesse haben die GPU benutzt"],
         "models": [{
             "model": {"name": "M", "sha256": "a" * 64, "size_bytes": 1024},
+            "quality_gate": {
+                "status": "warning",
+                "sanity": {"status": "clean"},
+                "benchmark_quality": {"status": "clean"},
+                "endpoint_quality": {"status": "warning", "reasons": ["Hohe Streuung"]},
+                "message": "Warnung bei Endpunktmessung",
+            },
             "profiles": [{"name": "Full-GPU", "settings": {"gpu_layers": -1},
+                          "quality_gate_2": {"status": "clean", "reasons": []},
                           "benchmarks": {"generation": bench}}],
+            "endpoint": {
+                "status": "ok",
+                "profile": "Full-GPU",
+                "settings": {"max_tokens": 50, "seed": 42, "ignore_eos": True},
+                "warmup": {"requests": 0},
+                "quality_gate_2": {"status": "warning", "reasons": ["Hohe Streuung"]},
+                "levels": [{"concurrency": 1, "successful": 2, "requests": 2}],
+            },
         }],
     }
 
@@ -334,3 +352,37 @@ def test_html_report_shows_full_system_power_thermals_and_efficiency(tmp_path: P
     assert "cpu_package, gpu:0" in html
     assert "0.1610 tokens/J" in html
     assert "1.7200 Wh/1k tokens" in html
+
+
+def test_report_shows_model_quality_gate_badge(tmp_path: Path):
+    out = tmp_path / "report.html"
+    generate_run_html(_summary(), out)
+    html = out.read_text(encoding="utf-8")
+    assert "Quality Gate 2.0" in html
+    assert "Warning" in html or "Warnung" in html
+
+
+def test_report_shows_endpoint_quality_column_and_reason(tmp_path: Path):
+    out = tmp_path / "report.html"
+    generate_run_html(_summary(), out)
+    html = out.read_text(encoding="utf-8")
+    assert "Endpoint-Qualitaet" in html or "Quality" in html
+    assert "Hohe Streuung" in html
+
+
+def test_report_shows_profile_quality_gate_2(tmp_path: Path):
+    out = tmp_path / "report.html"
+    generate_run_html(_summary(), out)
+    html = out.read_text(encoding="utf-8")
+    assert "Clean" in html
+    assert "quality_gate_2" not in html.lower()
+
+
+def test_report_executive_summary_shows_overall_status(tmp_path: Path):
+    out = tmp_path / "report.html"
+    generate_run_html(_summary(), out)
+    html = out.read_text(encoding="utf-8")
+    assert "Executive Summary" in html
+    assert "Gesamt-Status" in html or "Overall status" in html
+    assert "Warnung" in html or "Warning" in html
+    assert "M" in html

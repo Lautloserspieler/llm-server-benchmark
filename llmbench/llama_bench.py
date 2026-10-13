@@ -12,7 +12,7 @@ from typing import IO, Any
 from .config import normalize_flash_attention
 from .i18n import _
 from .llama_flags import load_flags, no_op_offload_flags
-from .monitor import ResourceMonitor, strip_samples
+from .monitor import PHASE_COOLDOWN, PHASE_RUN, ResourceMonitor, strip_samples
 from .utils import csv_value, file_fingerprint, kill_process_tree, read_json, resolve_executable, run_capture, utc_now_iso, write_json
 
 
@@ -403,6 +403,7 @@ def run_llama_bench(
     # Erst der Monitor (wartet ggf. bis zu 15 s auf eine ruhige GPU), dann die
     # Zeitmessung - sonst zaehlt die Wartezeit zur Benchmark-Dauer.
     monitor.start()
+    monitor.mark_phase(PHASE_RUN)
     started = time.perf_counter()
     load_warning: str | None = None
 
@@ -429,6 +430,10 @@ def run_llama_bench(
         if on_progress:
             on_progress(load_warning, None)
         stdout, stderr, returncode, timed_out = _execute(args, timeout_s, monitor, on_progress)
+
+    # Kurze Cooldown-Phase erfassen, bevor der Monitor stoppt.
+    monitor.mark_phase(PHASE_COOLDOWN)
+    time.sleep(1)
 
     duration = time.perf_counter() - started
     telemetry = monitor.stop()
@@ -645,3 +650,60 @@ def _derive_test_name(row: dict[str, Any]) -> str:
     else:
         base = "unknown"
     return f"{base}@d{d}" if d else base
+
+
+def evaluate_llama_bench_quality(
+    result: dict[str, Any], qg_cfg: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Bewertet llama-bench-Ergebnisse hinsichtlich Messstreuung.
+
+    Eine hohe relative Standardabweichung der Tokens/s deutet auf instabile
+    Messbedingungen hin (z. B. Hintergrundlast, Throttling, zu wenige Wiederholungen).
+    """
+    if qg_cfg is None:
+        qg_cfg = {}
+
+    try:
+        max_cv = float(qg_cfg.get("max_tps_coefficient_of_variation", 0.15))
+    except (TypeError, ValueError):
+        max_cv = 0.15
+
+    if result.get("status") != "ok":
+        return {
+            "status": "invalid",
+            "reasons": [
+                _("Benchmark nicht erfolgreich ({status}).").format(
+                    status=result.get("status", "failed")
+                )
+            ],
+            "details": [],
+        }
+
+    reasons: list[str] = []
+    details: list[dict[str, Any]] = []
+    status = "clean"
+
+    for row in flatten_bench_rows(result):
+        avg = row.get("avg_ts")
+        std = row.get("stddev_ts")
+        if avg is None or std is None or avg <= 0:
+            continue
+        cv = float(std) / float(avg)
+        detail = {"test": row.get("test"), "avg_ts": avg, "stddev_ts": std, "cv": cv}
+        if cv > max_cv:
+            status = "warning"
+            reason = _(
+                "Test {test}: Hohe Streuung der Tokens/s (CV {cv:.1%}, Schwelle {threshold:.1%})."
+            ).format(test=row.get("test"), cv=cv, threshold=max_cv)
+            reasons.append(reason)
+            detail["status"] = "warning"
+            detail["reason"] = reason
+        else:
+            detail["status"] = "clean"
+        details.append(detail)
+
+    return {
+        "status": status,
+        "reasons": reasons,
+        "details": details,
+    }

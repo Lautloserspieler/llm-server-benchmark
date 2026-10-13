@@ -1,7 +1,7 @@
 import time
 
 from llmbench.cpu_telemetry import CpuSample, CpuTelemetryProvider
-from llmbench.monitor import ResourceMonitor, strip_samples
+from llmbench.monitor import PHASE_RUN, PHASE_WARMUP, ResourceMonitor, strip_samples
 from llmbench.telemetry import GpuSample, TelemetryProvider
 
 
@@ -136,12 +136,12 @@ def test_start_and_stop_collect_samples_via_the_telemetry_provider(monkeypatch):
 
     monitor = ResourceMonitor(interval=0.02, idle_wait_seconds=0)
     monitor.start()
-    
+
     # Wait for at least one sample instead of a fixed sleep to prevent flakiness
     start_time = time.time()
     while len(monitor._samples) == 0 and time.time() - start_time < 2.0:
         time.sleep(0.01)
-        
+
     summary = monitor.stop()
 
     assert summary["sample_count"] >= 1
@@ -391,3 +391,33 @@ def test_missing_power_is_not_treated_as_zero_or_bridged_across_gap():
 
     assert summary["gpus"][0]["energy_j"] is None
     assert summary["power"]["component_energy_j"] is None
+
+
+def test_mark_phase_tags_samples():
+    monitor = ResourceMonitor()
+    monitor._baseline = {"gpus": [_gpu(util=2.0).__dict__]}
+    monitor._samples = [
+        {"phase": PHASE_WARMUP, "cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": [_gpu(util=10.0).__dict__]},
+        {"phase": PHASE_RUN, "cpu_percent": 5.0, "ram_used_bytes": 1, "gpus": [_gpu(util=80.0).__dict__]},
+    ]
+    summary = monitor.summary()
+    assert PHASE_WARMUP in summary["phases"]
+    assert PHASE_RUN in summary["phases"]
+    assert summary["phases"][PHASE_RUN]["gpus"][0]["avg_util_gpu_percent"] == 80.0
+    assert summary["phases"][PHASE_WARMUP]["gpus"][0]["avg_util_gpu_percent"] == 10.0
+
+
+def test_summary_quantifies_foreign_gpu_process_metrics():
+    monitor = ResourceMonitor()
+    monitor._own_pids = {111}
+    monitor._seen_gpu_pids = {111, 222}
+    monitor._samples = [
+        {"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": [_gpu(util=40.0, pids=[111, 222]).__dict__]},
+        {"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": [_gpu(util=60.0, pids=[111, 222]).__dict__]},
+    ]
+    summary = monitor.summary()
+    proc = summary["foreign_gpu_processes"][0]
+    assert proc["pid"] == 222
+    assert proc["max_util_gpu_percent"] == 60.0
+    assert proc["avg_util_gpu_percent"] == 50.0
+    assert "max_memory_used_bytes" in proc

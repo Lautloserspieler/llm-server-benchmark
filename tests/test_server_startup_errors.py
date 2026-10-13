@@ -119,8 +119,10 @@ def test_exit_during_last_health_attempt_is_still_reported(monkeypatch):
         raise endpoint.httpx.ConnectError("All connection attempts failed")
 
     monkeypatch.setattr(endpoint.httpx.AsyncClient, "get", slow_get)
+    # Etwas mehr Zeit, damit der AsyncClient-Start nicht die gesamte Zeit frisst
+    # und der Exitcode nach dem fehlgeschlagenen Health-Check noch erkannt wird.
     with pytest.raises(RuntimeError, match="0xC0000005"):
-        endpoint.wait_health("http://127.0.0.1:9", 0.2, proc=DiesLate())
+        endpoint.wait_health("http://127.0.0.1:9", 1.0, proc=DiesLate())
 
 
 def test_gpu_idle_wait_is_not_counted_as_benchmark_duration(monkeypatch, tmp_path):
@@ -136,9 +138,13 @@ def test_gpu_idle_wait_is_not_counted_as_benchmark_duration(monkeypatch, tmp_pat
         def stop(self):
             return {"sample_count": 0, "samples": []}
 
+        def mark_phase(self, _phase):
+            pass
+
     monkeypatch.setattr(llama_bench, "ResourceMonitor", SlowStartMonitor)
     monkeypatch.setattr(llama_bench, "resolve_executable", lambda exe: exe)
     monkeypatch.setattr(llama_bench, "_execute", lambda *_a, **_k: ("", "boom", 1, False))
+    monkeypatch.setattr(llama_bench.time, "sleep", lambda _s: None)
     result = llama_bench.run_llama_bench(
         "llama-bench", "m.gguf", {"repetitions": 1, "batch_size": 512, "ubatch_size": 512, "prompt_tokens": [512]},
         {"name": "p"}, "prompt", tmp_path,

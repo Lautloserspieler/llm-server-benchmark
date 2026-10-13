@@ -11,6 +11,7 @@ from typing import Any
 
 import psutil
 
+from .cpu_sensors import sample_cpu_sensors
 from .cpu_telemetry import get_cpu_telemetry_provider
 from .i18n import _
 from .telemetry import get_telemetry_provider
@@ -20,6 +21,13 @@ from .telemetry import get_telemetry_provider
 IDLE_GPU_UTIL_PERCENT = 10.0
 IDLE_WAIT_SECONDS = 15.0
 BUSY_BASELINE_UTIL_PERCENT = 15.0
+
+# Phasen fuer das Quality Gate 2.0. Jeder Sample wird mit seiner Phase
+# markiert, damit Vorher/Waehrend/Nachher getrennt ausgewertet werden koennen.
+PHASE_BASELINE = "baseline"
+PHASE_WARMUP = "warmup"
+PHASE_RUN = "run"
+PHASE_COOLDOWN = "cooldown"
 
 
 def _max_gpu_util(sample: dict[str, Any] | None) -> float:
@@ -103,6 +111,7 @@ class ResourceMonitor:
     _baseline: dict[str, Any] | None = None
     _max_samples: int = 100000  # Hard limit to prevent unbounded memory growth
     idle_wait_seconds: float = IDLE_WAIT_SECONDS
+    _phase: str = PHASE_BASELINE
 
     # ------------------------------------------------------------------ start
 
@@ -120,6 +129,7 @@ class ResourceMonitor:
 
     def _wait_for_idle_gpu(self) -> dict[str, Any]:
         """Baseline erst nehmen, wenn die GPU ruhig ist (hoechstens idle_wait_seconds)."""
+        self._phase = PHASE_BASELINE
         sample = self._sample()
         deadline = time.monotonic() + max(0.0, float(self.idle_wait_seconds))
         while _max_gpu_util(sample) >= IDLE_GPU_UTIL_PERCENT and time.monotonic() < deadline:
@@ -150,6 +160,16 @@ class ResourceMonitor:
         Fremdlast melden sollen."""
         for pid in pids:
             self.set_target_pid(pid)
+
+    def mark_phase(self, phase: str) -> None:
+        """Wechselt die Phase fuer neu gesammelte Samples.
+
+        Das Quality Gate 2.0 benoetigt eine Trennung zwischen Baseline,
+        Warmup, eigentlichem Lauf und Cooldown, um GPU-Last vor, waehrend
+        und nach dem Benchmark getrennt bewerten zu koennen. Bereits
+        gesammelte Samples behalten ihre urspruengliche Phase bei.
+        """
+        self._phase = phase
 
     # ----------------------------------------------------------------- sampling
 
@@ -212,11 +232,25 @@ class ResourceMonitor:
         cpu_sample = self._cpu_sample(float(cpu_percent))
         gpu_samples = self._gpu_sample()
 
+        # Zusaetzliche CPU-Sensoren (z. B. LibreHardwareMonitor) als separate
+        # Felder, damit sie unabhaengig vom cpu_telemetry-Provider vorliegen.
+        cpu_temp: float | None = None
+        cpu_power: float | None = None
+        cpu_sensor_source: str | None = None
+        try:
+            cpu_sensors = sample_cpu_sensors()
+            if cpu_sensors:
+                cpu_temp = cpu_sensors.temperature_c
+                cpu_power = cpu_sensors.power_w
+                cpu_sensor_source = cpu_sensors.sensor_source
+        except Exception:
+            pass
+
         component_power: list[float] = []
         coverage: list[str] = []
-        cpu_power = cpu_sample.get("package_power_w")
-        if cpu_power is not None:
-            component_power.append(float(cpu_power))
+        cpu_power_w = cpu_sample.get("package_power_w")
+        if cpu_power_w is not None:
+            component_power.append(float(cpu_power_w))
             coverage.append("cpu_package")
         for gpu in gpu_samples:
             gpu_power = gpu.get("power_w")
@@ -227,11 +261,15 @@ class ResourceMonitor:
         return {
             "ts": time.time(),
             "monotonic_ts": time.monotonic(),
+            "phase": self._phase,
             # Keep the existing flat fields for backward compatibility.
             "cpu_percent": cpu_percent,
             "ram_used_bytes": vm.used,
             "ram_percent": vm.percent,
             "cpu": cpu_sample,
+            "cpu_temperature_c": cpu_temp,
+            "cpu_power_w": cpu_power,
+            "cpu_sensor_source": cpu_sensor_source,
             "gpus": gpu_samples,
             "power": {
                 "scope": "measured_components",
@@ -263,18 +301,23 @@ class ResourceMonitor:
             self._cpu_provider.shutdown()
         return self.summary()
 
-    def _foreign_processes(self) -> list[dict[str, Any]]:
+    def _foreign_processes(
+        self, ignored_names: list[str] | set[str] | None = None
+    ) -> list[dict[str, Any]]:
         foreign = sorted(self._seen_gpu_pids - self._own_pids)
         out = []
-        ignored_names = {
-            "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe",
-            "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe",
-            "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe",
-            "windowsterminal.exe", "docker desktop.exe", "widgetboard.exe",
-            "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe",
-            "system", "system idle process", "registry", "csrss.exe", "winlogon.exe",
-            "fontdrvhost.exe",
-        }
+        if ignored_names is None:
+            ignored_names = {
+                "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe",
+                "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe",
+                "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe",
+                "windowsterminal.exe", "docker desktop.exe", "widgetboard.exe",
+                "chrome.exe", "firefox.exe", "discord.exe", "slack.exe", "code.exe",
+                "system", "system idle process", "registry", "csrss.exe", "winlogon.exe",
+                "fontdrvhost.exe",
+            }
+        ignored_set = {str(x).strip().lower() for x in ignored_names}
+
         for pid in foreign:
             # PID 0/4 sind unter Windows Leerlauf- und Kernel-Prozess ("System");
             # nvidia-smi fuehrt sie als GPU-Nutzer, sie verfaelschen aber nichts.
@@ -283,9 +326,27 @@ class ResourceMonitor:
             name = None
             with contextlib.suppress(Exception):
                 name = psutil.Process(pid).name()
-            if name and name.lower() in ignored_names:
+            if name and name.lower() in ignored_set:
                 continue
-            out.append({"pid": pid, "name": name})
+
+            # Quality Gate 2.0: Schaetze GPU-Last und VRAM-Nutzung dieses
+            # fremden Prozesses ueber die Samples ab, in denen er in compute_pids
+            # auftaucht. Bei AMD ist compute_pids leer, dann bleiben die Werte None.
+            util_values: list[float] = []
+            memory_values: list[int] = []
+            for sample in self._samples:
+                for gpu in sample.get("gpus", []):
+                    if pid in (gpu.get("compute_pids") or []):
+                        util_values.append(float(gpu.get("util_gpu_percent") or 0.0))
+                        memory_values.append(int(gpu.get("memory_used_bytes") or 0))
+
+            entry: dict[str, Any] = {"pid": pid, "name": name}
+            if util_values:
+                entry["max_util_gpu_percent"] = max(util_values)
+                entry["avg_util_gpu_percent"] = statistics.fmean(util_values)
+            if memory_values:
+                entry["max_memory_used_bytes"] = max(memory_values)
+            out.append(entry)
         return out
 
     def summary(self) -> dict[str, Any]:
@@ -472,6 +533,12 @@ class ResourceMonitor:
                     ).format(percent=f"{busy[0].get('util_gpu_percent'):.0f}", seconds=f"{self.idle_wait_seconds:.0f}")
                 )
 
+        phases = self._phase_summaries()
+
+        cpu_temps = [float(s["cpu_temperature_c"]) for s in self._samples if s.get("cpu_temperature_c") is not None]
+        cpu_powers = [float(s["cpu_power_w"]) for s in self._samples if s.get("cpu_power_w") is not None]
+        sensor_sources = [s.get("cpu_sensor_source") for s in self._samples if s.get("cpu_sensor_source")]
+
         return {
             "sample_count": len(self._samples),
             "telemetry_source": getattr(self._provider, "TELEMETRY_SOURCE", "cpu_only"),
@@ -481,6 +548,11 @@ class ResourceMonitor:
             "max_ram_used_bytes": max(ram),
             "cpu": cpu_summary,
             "cpu_telemetry_source": cpu_summary["telemetry_source"],
+            "avg_cpu_temperature_c": statistics.fmean(cpu_temps) if cpu_temps else None,
+            "max_cpu_temperature_c": max(cpu_temps) if cpu_temps else None,
+            "avg_cpu_power_w": statistics.fmean(cpu_powers) if cpu_powers else None,
+            "max_cpu_power_w": max(cpu_powers) if cpu_powers else None,
+            "cpu_sensor_source": sensor_sources[-1] if sensor_sources else None,
             "gpus": gpu_summaries,
             "power": power_summary,
             "sample_interval_seconds": self.interval,
@@ -488,4 +560,251 @@ class ResourceMonitor:
             "foreign_gpu_processes": foreign,
             "warnings": warnings,
             "samples": self._samples,
+            "phases": phases,
         }
+
+    def _phase_summaries(self) -> dict[str, dict[str, Any]]:
+        """Aggregierte Kennzahlen pro Phase fuer das Quality Gate 2.0."""
+        out: dict[str, dict[str, Any]] = {}
+        for phase in (PHASE_BASELINE, PHASE_WARMUP, PHASE_RUN, PHASE_COOLDOWN):
+            samples = [s for s in self._samples if s.get("phase") == phase]
+            if not samples:
+                continue
+            cpu_vals = [float(s["cpu_percent"]) for s in samples]
+            ram_vals = [int(s["ram_used_bytes"]) for s in samples]
+            gpu_count = max((len(s.get("gpus", [])) for s in samples), default=0)
+            gpu_agg: list[dict[str, Any]] = []
+            for idx in range(gpu_count):
+                items = [s["gpus"][idx] for s in samples if len(s.get("gpus", [])) > idx]
+                avg_util, max_util = _agg(items, "util_gpu_percent")
+                avg_mem, max_mem = _agg(items, "memory_used_bytes")
+                avg_power, max_power = _agg(items, "power_w")
+                _avg_temp, max_temp = _agg(items, "temperature_c")
+                gpu_agg.append(
+                    {
+                        "index": idx,
+                        "avg_util_gpu_percent": avg_util,
+                        "max_util_gpu_percent": max_util,
+                        "avg_memory_used_bytes": avg_mem,
+                        "max_memory_used_bytes": max_mem,
+                        "avg_power_w": avg_power,
+                        "max_power_w": max_power,
+                        "max_temperature_c": max_temp,
+                    }
+                )
+            cpu_temps = [float(s["cpu_temperature_c"]) for s in samples if s.get("cpu_temperature_c") is not None]
+            cpu_powers = [float(s["cpu_power_w"]) for s in samples if s.get("cpu_power_w") is not None]
+            out[phase] = {
+                "sample_count": len(samples),
+                "avg_cpu_percent": statistics.fmean(cpu_vals),
+                "max_cpu_percent": max(cpu_vals),
+                "avg_ram_used_bytes": statistics.fmean(ram_vals),
+                "max_ram_used_bytes": max(ram_vals),
+                "avg_cpu_temperature_c": statistics.fmean(cpu_temps) if cpu_temps else None,
+                "max_cpu_temperature_c": max(cpu_temps) if cpu_temps else None,
+                "avg_cpu_power_w": statistics.fmean(cpu_powers) if cpu_powers else None,
+                "max_cpu_power_w": max(cpu_powers) if cpu_powers else None,
+                "gpus": gpu_agg,
+            }
+        return out
+
+    def evaluate_quality(self, qg_cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Bewertet die gemessene Telemetrie nach Quality-Gate-2.0-Regeln.
+
+        Liefert einen Status clean/warning/invalid plus Begruendungen. Die
+        Schwellen kommen aus der QualityGateConfig; fehlt sie, werden konservative
+        Defaults verwendet.
+        """
+        if qg_cfg is None:
+            qg_cfg = {}
+
+        def _threshold(key: str, default: float) -> float:
+            val = qg_cfg.get(key)
+            try:
+                return float(val) if val is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        idle_util = _threshold("gpu_idle_util_percent", IDLE_GPU_UTIL_PERCENT)
+        busy_baseline_invalid = _threshold(
+            "gpu_busy_baseline_invalid_percent", BUSY_BASELINE_UTIL_PERCENT
+        )
+        max_foreign_util = _threshold("max_foreign_gpu_util_percent", 5.0)
+        min_run_util = _threshold("min_gpu_util_during_benchmark_percent", 50.0)
+
+        ignored_names = qg_cfg.get("foreign_process_ignored_names")
+
+        reasons: list[str] = []
+        status = "clean"
+
+        # 1) Baseline: war die GPU vor dem Lauf im Ruhezustand?
+        baseline_max_util = _max_gpu_util(self._baseline)
+        if baseline_max_util > busy_baseline_invalid:
+            status = "invalid"
+            reasons.append(
+                _(
+                    "GPU-Utilisation vor dem Lauf bei {percent:.0f} % (Schwelle {threshold:.0f} %). "
+                    "Der Server war nicht im Ruhezustand."
+                ).format(percent=baseline_max_util, threshold=busy_baseline_invalid)
+            )
+        elif baseline_max_util > idle_util:
+            # Zwischen idle und invalid liegt ein warning
+            if status == "clean":
+                status = "warning"
+            reasons.append(
+                _(
+                    "GPU-Utilisation vor dem Lauf bei {percent:.0f} % ueberschreitet die Idle-Schwelle "
+                    "von {threshold:.0f} %."
+                ).format(percent=baseline_max_util, threshold=idle_util)
+            )
+
+        # 2) Fremde GPU-Prozesse quantifiziert bewerten.
+        foreign = self._foreign_processes(ignored_names)
+        significant_foreign = [
+            p for p in foreign
+            if (p.get("max_util_gpu_percent") or 0) > max_foreign_util
+        ]
+        if significant_foreign:
+            status = "invalid"
+            names = ", ".join(
+                f"{p['name'] or '?'} (PID {p['pid']}, {p.get('max_util_gpu_percent', 0):.0f} %)"
+                for p in significant_foreign
+            )
+            reasons.append(
+                _(
+                    "Fremde GPU-Prozesse mit signifikanter Last erkannt: {names}. "
+                    "Schwelle: {threshold:.0f} %."
+                ).format(names=names, threshold=max_foreign_util)
+            )
+        elif foreign:
+            if status == "clean":
+                status = "warning"
+            names = ", ".join(
+                f"{p['name'] or '?'} (PID {p['pid']})" for p in foreign
+            )
+            reasons.append(
+                _(
+                    "Fremde GPU-Prozesse erkannt, aber unter der Signifikanzschwelle: {names}."
+                ).format(names=names)
+            )
+
+        # 3) Wurde die GPU waehrend des Laufes genug gefordert?
+        run_phase = (self._phase_summaries() or {}).get(PHASE_RUN, {})
+        for gpu in run_phase.get("gpus", []):
+            avg_util = gpu.get("avg_util_gpu_percent")
+            if avg_util is not None and avg_util < min_run_util:
+                if status == "clean":
+                    status = "warning"
+                reasons.append(
+                    _(
+                        "GPU {index} war waehrend des Laufes nur zu {percent:.0f} % ausgelastet "
+                        "(Erwartung: > {threshold:.0f} %)."
+                    ).format(index=gpu.get("index", 0), percent=avg_util, threshold=min_run_util)
+                )
+
+        return {
+            "status": status,
+            "reasons": reasons,
+            "foreign_gpu_processes": foreign,
+            "baseline_max_gpu_util_percent": baseline_max_util,
+            "phases": self._phase_summaries(),
+        }
+
+
+def evaluate_telemetry_quality(
+    telemetry_summary: dict[str, Any] | None, qg_cfg: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Bewertet eine bereits aggregierte Telemetrie-Zusammenfassung.
+
+    Wird in runner.py fuer llama-bench-Telemetrie verwendet, wo der Monitor
+    selbst nicht mehr zugaenglich ist. Die Logik entspricht
+    ``ResourceMonitor.evaluate_quality()``.
+    """
+    if telemetry_summary is None:
+        telemetry_summary = {}
+    if qg_cfg is None:
+        qg_cfg = {}
+
+    def _threshold(key: str, default: float) -> float:
+        val = qg_cfg.get(key)
+        try:
+            return float(val) if val is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    idle_util = _threshold("gpu_idle_util_percent", IDLE_GPU_UTIL_PERCENT)
+    busy_baseline_invalid = _threshold(
+        "gpu_busy_baseline_invalid_percent", BUSY_BASELINE_UTIL_PERCENT
+    )
+    max_foreign_util = _threshold("max_foreign_gpu_util_percent", 5.0)
+    min_run_util = _threshold("min_gpu_util_during_benchmark_percent", 50.0)
+
+    reasons: list[str] = []
+    status = "clean"
+
+    baseline = telemetry_summary.get("baseline") or {}
+    baseline_max_util = _max_gpu_util(baseline)
+    if baseline_max_util > busy_baseline_invalid:
+        status = "invalid"
+        reasons.append(
+            _(
+                "GPU-Utilisation vor dem Lauf bei {percent:.0f} % (Schwelle {threshold:.0f} %). "
+                "Der Server war nicht im Ruhezustand."
+            ).format(percent=baseline_max_util, threshold=busy_baseline_invalid)
+        )
+    elif baseline_max_util > idle_util:
+        if status == "clean":
+            status = "warning"
+        reasons.append(
+            _(
+                "GPU-Utilisation vor dem Lauf bei {percent:.0f} % ueberschreitet die Idle-Schwelle "
+                "von {threshold:.0f} %."
+            ).format(percent=baseline_max_util, threshold=idle_util)
+        )
+
+    foreign = telemetry_summary.get("foreign_gpu_processes") or []
+    significant_foreign = [
+        p for p in foreign if (p.get("max_util_gpu_percent") or 0) > max_foreign_util
+    ]
+    if significant_foreign:
+        status = "invalid"
+        names = ", ".join(
+            f"{p['name'] or '?'} (PID {p['pid']}, {p.get('max_util_gpu_percent', 0):.0f} %)"
+            for p in significant_foreign
+        )
+        reasons.append(
+            _(
+                "Fremde GPU-Prozesse mit signifikanter Last erkannt: {names}. "
+                "Schwelle: {threshold:.0f} %."
+            ).format(names=names, threshold=max_foreign_util)
+        )
+    elif foreign:
+        if status == "clean":
+            status = "warning"
+        names = ", ".join(f"{p['name'] or '?'} (PID {p['pid']})" for p in foreign)
+        reasons.append(
+            _(
+                "Fremde GPU-Prozesse erkannt, aber unter der Signifikanzschwelle: {names}."
+            ).format(names=names)
+        )
+
+    run_phase = (telemetry_summary.get("phases") or {}).get(PHASE_RUN, {})
+    for gpu in run_phase.get("gpus", []):
+        avg_util = gpu.get("avg_util_gpu_percent")
+        if avg_util is not None and avg_util < min_run_util:
+            if status == "clean":
+                status = "warning"
+            reasons.append(
+                _(
+                    "GPU {index} war waehrend des Laufes nur zu {percent:.0f} % ausgelastet "
+                    "(Erwartung: > {threshold:.0f} %)."
+                ).format(index=gpu.get("index", 0), percent=avg_util, threshold=min_run_util)
+            )
+
+    return {
+        "status": status,
+        "reasons": reasons,
+        "foreign_gpu_processes": foreign,
+        "baseline_max_gpu_util_percent": baseline_max_util,
+        "phases": telemetry_summary.get("phases", {}),
+    }

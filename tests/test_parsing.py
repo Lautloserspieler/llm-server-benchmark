@@ -190,10 +190,12 @@ def test_older_build_without_progress_is_retried(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("llmbench.llama_bench.resolve_executable", lambda x: x)
     monkeypatch.setattr("llmbench.llama_bench.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("llmbench.monitor.sample_cpu_sensors", lambda: None)
 
     result = run_llama_bench(
         "llama-bench", "m.gguf", BENCH_CFG, {"gpu_layers": -1}, "generation", tmp_path
     )
     assert result["status"] == "ok"
-    assert len(calls) == 2
-    assert "--progress" in calls[0] and "--progress" not in calls[1]
+    bench_calls = [c for c in calls if c and c[0] == "llama-bench"]
+    assert len(bench_calls) == 2
+    assert "--progress" in bench_calls[0] and "--progress" not in bench_calls[1]

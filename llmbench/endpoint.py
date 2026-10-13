@@ -17,7 +17,13 @@ import httpx
 
 from .config import normalize_flash_attention
 from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
-from .monitor import ResourceMonitor, strip_samples
+from .monitor import (
+    PHASE_COOLDOWN,
+    PHASE_RUN,
+    PHASE_WARMUP,
+    ResourceMonitor,
+    strip_samples,
+)
 from .i18n import _
 from .llama_flags import load_flags, no_op_offload_flags
 from .utils import (
@@ -43,6 +49,133 @@ def percentile(values: list[float], p: float) -> float | None:
     if f == c:
         return xs[int(k)]
     return xs[f] * (c - k) + xs[c] * (k - f)
+
+
+def _iqr_outliers(values: list[float], multiplier: float) -> list[float]:
+    """Gibt Werte zurueck, die mehr als multiplier * IQR oberhalb von Q3
+    oder unterhalb von Q1 liegen."""
+    if len(values) < 4:
+        return []
+    xs = sorted(values)
+    q1 = percentile(xs, 0.25)
+    q3 = percentile(xs, 0.75)
+    if q1 is None or q3 is None:
+        return []
+    iqr = q3 - q1
+    lower = q1 - multiplier * iqr
+    upper = q3 + multiplier * iqr
+    return [x for x in values if x < lower or x > upper]
+
+
+def evaluate_endpoint_quality(
+    levels: list[dict[str, Any]], telemetry: dict[str, Any], qg_cfg: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Bewertet Endpoint-Testergebnisse nach Quality Gate 2.0.
+
+    Prueft pro Concurrency-Level die Streuung der Tokens/s (CV) und TTFT-
+    Ausreißer. Markiert invalid, wenn ein Level keine erfolgreichen Requests
+    hatte.
+    """
+    if qg_cfg is None:
+        qg_cfg = {}
+
+    def _threshold(key: str, default: float) -> float:
+        val = qg_cfg.get(key)
+        try:
+            return float(val) if val is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    max_cv = _threshold("max_tps_coefficient_of_variation", 0.15)
+    ttft_multiplier = _threshold("max_ttft_outlier_iqr_multiplier", 3.0)
+
+    reasons: list[str] = []
+    details: list[dict[str, Any]] = []
+    status = "clean"
+
+    for level in levels:
+        concurrency = level.get("concurrency", 0)
+        successful = level.get("successful", 0)
+        requests = level.get("requests", 0)
+        detail: dict[str, Any] = {"concurrency": concurrency}
+
+        if successful == 0:
+            status = "invalid"
+            reason = _(
+                "Concurrency {conc}: Keiner der {n} Requests war erfolgreich."
+            ).format(conc=concurrency, n=requests)
+            reasons.append(reason)
+            detail["status"] = "invalid"
+            detail["reason"] = reason
+            details.append(detail)
+            continue
+
+        # Tokens/s pro Request aus request_details
+        request_tps_values: list[float] = []
+        ttft_values: list[float] = []
+        for req in level.get("request_details", []):
+            if req.get("ok"):
+                tps = req.get("request_tps")
+                if tps is not None:
+                    request_tps_values.append(float(tps))
+                ttft = req.get("ttft_seconds")
+                if ttft is not None:
+                    ttft_values.append(float(ttft))
+
+        level_status = "clean"
+        level_reasons: list[str] = []
+
+        if request_tps_values:
+            mean_tps = statistics.fmean(request_tps_values)
+            std_tps = statistics.stdev(request_tps_values) if len(request_tps_values) > 1 else 0.0
+            cv = (std_tps / mean_tps) if mean_tps > 0 else 0.0
+            detail["mean_tps"] = mean_tps
+            detail["stddev_tps"] = std_tps
+            detail["cv_tps"] = cv
+            if cv > max_cv:
+                if status == "clean":
+                    status = "warning"
+                level_status = "warning"
+                reason = _(
+                    "Concurrency {conc}: Hohe Streuung der Tokens/s "
+                    "(CV {cv:.1%}, Schwelle {threshold:.1%})."
+                ).format(conc=concurrency, cv=cv, threshold=max_cv)
+                level_reasons.append(reason)
+
+        if ttft_values:
+            outliers = _iqr_outliers(ttft_values, ttft_multiplier)
+            detail["ttft_outliers"] = len(outliers)
+            if outliers:
+                if status == "clean":
+                    status = "warning"
+                level_status = "warning"
+                reason = _(
+                    "Concurrency {conc}: {n} TTFT-Ausreißer erkannt (IQR-Multiplikator {mult})."
+                ).format(conc=concurrency, n=len(outliers), mult=ttft_multiplier)
+                level_reasons.append(reason)
+
+        detail["status"] = level_status
+        if level_reasons:
+            detail["reasons"] = level_reasons
+            reasons.extend(level_reasons)
+        details.append(detail)
+
+    # Telemetrie-Quality aus dem Monitor ergaenzen, falls vorhanden.
+    monitor_quality = (telemetry or {}).get("quality")
+    if monitor_quality:
+        if monitor_quality.get("status") == "invalid":
+            status = "invalid"
+        elif monitor_quality.get("status") == "warning" and status == "clean":
+            status = "warning"
+        for reason in monitor_quality.get("reasons", []):
+            if reason not in reasons:
+                reasons.append(reason)
+
+    return {
+        "status": status,
+        "reasons": reasons,
+        "details": details,
+    }
 
 
 async def run_sanity_check(
@@ -351,6 +484,7 @@ async def _run_endpoint_load_async(
     out_dir: Path,
     target_pid: int | None = None,
     target_pids: list[int] | None = None,
+    qg_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     levels = [int(x) for x in cfg["concurrency"]]
     warmup_n = int(cfg.get("warmup_requests", 0) or 0)
@@ -388,6 +522,7 @@ async def _run_endpoint_load_async(
     if owned_pids:
         monitor.set_target_pids(list(dict.fromkeys(owned_pids)))
 
+    monitor.mark_phase(PHASE_RUN)
     all_levels: list[dict[str, Any]] = []
     total_started = time.perf_counter()
     for concurrency in levels:
@@ -424,7 +559,13 @@ async def _run_endpoint_load_async(
         all_levels.append(level)
         await asyncio.sleep(1)
 
+    # Kurze Cooldown-Phase erfassen, bevor der Monitor stoppt.
+    monitor.mark_phase(PHASE_COOLDOWN)
+    await asyncio.sleep(1)
+
     telemetry = monitor.stop()
+    endpoint_quality = evaluate_endpoint_quality(all_levels, telemetry, qg_cfg)
+
     result = {
         "status": "ok",
         "started_at": utc_now_iso(),
@@ -442,12 +583,14 @@ async def _run_endpoint_load_async(
         },
         "levels": all_levels,
         "telemetry": telemetry,
+        "quality_gate_2": endpoint_quality,
     }
     write_json(out_dir / "endpoint_load.json", result)
 
     light = dict(result)
     light["telemetry"] = strip_samples(telemetry)
     light["levels"] = [{k: v for k, v in lv.items() if k != "request_details"} for lv in all_levels]
+    light["quality_gate_2"] = endpoint_quality
     light["details_stored_in"] = "endpoint_load.json"
     return light
 
@@ -459,6 +602,7 @@ def run_endpoint_load(
     out_dir: Path,
     target_pid: int | None = None,
     target_pids: list[int] | None = None,
+    qg_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Synchronous wrapper to run the async load test."""
     try:
@@ -466,12 +610,12 @@ def run_endpoint_load(
     except RuntimeError:
         return asyncio.run(
             _run_endpoint_load_async(
-                base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids
+                base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids, qg_cfg
             )
         )
 
     return loop.run_until_complete(
         _run_endpoint_load_async(
-            base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids
+            base_url, cfg, telemetry_interval, out_dir, target_pid, target_pids, qg_cfg
         )
     )

@@ -104,6 +104,47 @@ class QualityGateConfig(BaseModel):
     enabled: bool = True
     tests: list[QualityGateTestConfig] = Field(default_factory=list)
 
+    # --- Quality Gate 2.0: Messqualitäts-Schwellen --------------------------
+    # Diese Werte steuern, wann ein Lauf als clean/warning/invalid klassifiziert
+    # wird. Sie sind optional und haben konservative Defaults, sodass bestehende
+    # Konfigurationen unverändert weiterlaufen.
+
+    # GPU muss vor dem Test unter dieser Utilisation liegen, damit die
+    # Baseline als idle gilt (siehe monitor.py IDLE_GPU_UTIL_PERCENT).
+    gpu_idle_util_percent: float = Field(10.0, ge=0.0, le=100.0)
+    # Liegt die GPU-Utilisation vor dem Test darüber, gilt der Lauf als invalid,
+    # weil die GPU nicht im Ruhezustand war.
+    gpu_busy_baseline_invalid_percent: float = Field(15.0, ge=0.0, le=100.0)
+    # Fremde GPU-Prozesse mit mehr als x % Utilisation führen zu warning/invalid.
+    max_foreign_gpu_util_percent: float = Field(5.0, ge=0.0, le=100.0)
+    # Ab diesem Variationskoeffizienten (Stdabw / Mittelwert) der Tokens/s wird
+    # die Messstreuung als auffällig markiert.
+    max_tps_coefficient_of_variation: float = Field(0.15, ge=0.0)
+    # TTFT-Ausreißer werden über den IQR-Faktor ermittelt.
+    max_ttft_outlier_iqr_multiplier: float = Field(3.0, ge=0.0)
+    # Während des Benchmarks sollte die GPU deutlich gefordert sein. Liegt die
+    # durchschnittliche Utilisation darunter, wird ein warning ausgelöst.
+    min_gpu_util_during_benchmark_percent: float = Field(50.0, ge=0.0, le=100.0)
+    # Prozessnamen, die trotz GPU-Nutzung ignoriert werden (z. B. Desktop-
+    # Kompositoren). Muss klein geschrieben sein.
+    foreign_process_ignored_names: list[str] = Field(
+        default_factory=lambda: [
+            "dwm.exe", "explorer.exe", "searchhost.exe",
+            "startmenuexperiencehost.exe", "shellexperiencehost.exe",
+            "shellhost.exe", "applicationframehost.exe",
+            "systemsettings.exe", "msedge.exe", "msedgewebview2.exe",
+            "taskmgr.exe", "windowsterminal.exe", "docker desktop.exe",
+            "widgetboard.exe", "chrome.exe", "firefox.exe", "discord.exe",
+            "slack.exe", "code.exe", "system", "system idle process",
+            "registry", "csrss.exe", "winlogon.exe", "fontdrvhost.exe",
+        ]
+    )
+
+    @field_validator("foreign_process_ignored_names")
+    @classmethod
+    def _lowercase_ignored_names(cls, v):
+        return [str(x).strip().lower() for x in v if str(x).strip()]
+
 class EndpointConfig(BaseModel):
     enabled: bool = False
     auto_start: bool = True
@@ -181,6 +222,36 @@ class PerformanceConfig(BaseModel):
     restore_after_run: bool = False
     use_sudo: bool = True
 
+# --- STT-Prototyp: Konfiguration ---------------------------------------------
+# Experimentelles Nebenmodul, das STT-Engines (z. B. faster-whisper) auf
+# Transkriptionsqualitaet und Geschwindigkeit testet.
+
+class STTMetricConfig(BaseModel):
+    name: str = "wer"
+    params: dict[str, Any] = Field(default_factory=dict)
+
+class STTEngineConfig(BaseModel):
+    name: str
+    model: str | None = None
+    device: str = "auto"
+    compute_type: str = "default"
+    language: str | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+class STTConfig(BaseModel):
+    enabled: bool = False
+    dataset_path: str | None = None
+    max_samples: int | None = None
+    engines: list[STTEngineConfig] = Field(
+        default_factory=lambda: [
+            STTEngineConfig(name="faster-whisper", model="base", compute_type="int8")
+        ]
+    )
+    metrics: list[STTMetricConfig] = Field(
+        default_factory=lambda: [STTMetricConfig(name="wer")]
+    )
+    output_dir: str = "stt_results"
+
 class ProfileConfig(BaseModel):
     name: str
     gpu_layers: int
@@ -207,6 +278,7 @@ class RootConfig(BaseModel):
     endpoint: EndpointConfig = Field(default_factory=EndpointConfig)
     soak: SoakConfig = Field(default_factory=SoakConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    stt: STTConfig = Field(default_factory=STTConfig)
     models: list[ModelConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -327,6 +399,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": True,
         "restore_after_run": False,
         "use_sudo": True,
+    },
+    "stt": {
+        "enabled": False,
+        "dataset_path": None,
+        "max_samples": None,
+        "engines": [
+            {"name": "faster-whisper", "model": "base", "device": "auto", "compute_type": "int8"}
+        ],
+        "metrics": [{"name": "wer"}],
+        "output_dir": "stt_results",
     },
     "models": [],
 }

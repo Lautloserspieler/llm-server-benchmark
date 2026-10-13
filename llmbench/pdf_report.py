@@ -59,6 +59,24 @@ def _fmt(value: Any, digits: int = 2) -> str:
         return "—"
 
 
+def _qg_label(status: str | None) -> str:
+    mapping = {
+        "clean": _("Clean"),
+        "warning": _("Warning"),
+        "invalid": _("Invalid"),
+    }
+    return mapping.get(str(status).lower(), str(status) or "—")
+
+
+def _qg_color(status: str | None) -> str:
+    mapping = {
+        "clean": GOOD,
+        "warning": WARN,
+        "invalid": BAD,
+    }
+    return mapping.get(str(status).lower(), BAD)
+
+
 def _unit(value: Any, unit: str, digits: int = 0) -> str:
     """Zahl mit Einheit. Fehlt der Wert, entfaellt auch die Einheit -
     "— %" liest sich sonst wie eine gemessene Null."""
@@ -444,6 +462,33 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
             story.append(Paragraph(f"… und {len(warnings) - 20} weitere in summary.json",
                                    styles["muted"]))
 
+    # Executive Summary
+    models = summary.get("models") or []
+    statuses = [(m.get("quality_gate") or {}).get("status") for m in models]
+    overall = "invalid" if "invalid" in statuses else "warning" if "warning" in statuses else "clean"
+    counts: dict[str, int] = {"clean": 0, "warning": 0, "invalid": 0}
+    for s in statuses:
+        if s in counts:
+            counts[s] += 1
+    story.append(Paragraph(_("Executive Summary"), styles["h2"]))
+    story.append(Paragraph(
+        f"{_('Gesamt-Status')}: <font color='{_qg_color(overall)}'>{_qg_label(overall)}</font> "
+        f"({_('{clean} sauber, {warning} Warnung(en), {invalid} ungueltig').format(**counts)})",
+        styles["body"],
+    ))
+    summary_rows = [[_('Modell'), _('Status'), _('Hinweis')]]
+    for m in models:
+        qg = m.get("quality_gate") or {}
+        summary_rows.append([
+            str(m.get("model", {}).get("name", "?")),
+            _qg_label(qg.get("status")),
+            str(qg.get("message") or "")[:80],
+        ])
+    if len(summary_rows) > 1:
+        story.append(_table(summary_rows, [
+            width * 0.35, width * 0.20, width * 0.45,
+        ], numeric_from=99))
+
     for model in summary.get("models", []):
         meta = model.get("model") or {}
         story.append(Paragraph(str(meta.get("name") or "Modell"), styles["h2"]))
@@ -453,17 +498,30 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
             continue
 
         sha = meta.get("sha256") or "nicht berechnet"
+        qg = model.get("quality_gate") or {}
+        qg_status = qg.get("status")
         story.append(Paragraph(
             f"Datei: {meta.get('path') or '—'}<br/>Größe: {human_bytes(meta.get('size_bytes'))}"
             f" &middot; SHA256: {sha[:40]}{'...' if len(sha) > 40 else ''}"
-            f" &middot; Quality Gate: {meta.get('quality_gate') or 'nicht bewertet'}",
+            f" &middot; Quality Gate 2.0: <font color='{_qg_color(qg_status)}'>{_qg_label(qg_status)}</font>",
             styles["muted"]))
+        if qg.get("reasons"):
+            for reason in qg["reasons"]:
+                story.append(Paragraph(f"&bull; {reason}", styles["warn"]))
 
         for profile in model.get("profiles", []):
             settings = profile.get("settings") or {}
+            pq = profile.get("quality_gate_2") or {}
+            pq_status = pq.get("status")
             block: list[Any] = [Paragraph(
                 f"{_('Profil')} {profile.get('name')} &middot; GPU-Layer {settings.get('gpu_layers')} "
-                f"&middot; Threads {settings.get('threads', 'auto')}", styles["h3"])]
+                f"&middot; Threads {settings.get('threads', 'auto')} "
+                f"&middot; Quality Gate 2.0: <font color='{_qg_color(pq_status)}'>{_qg_label(pq_status)}</font>",
+                styles["h3"],
+            )]
+            if pq.get("reasons"):
+                for reason in pq["reasons"]:
+                    block.append(Paragraph(f"&bull; {reason}", styles["warn"]))
 
             rows = [[_("Bereich"), _("Test"), _("Tokens/s"), _("Stdabw."), _("Prompt"), _("Gen."), _("Tiefe")]]
             charts: dict[str, list[tuple[str, float]]] = {}
@@ -570,22 +628,35 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
         endpoint = model.get("endpoint")
         if endpoint and endpoint.get("status") == "ok":
-            story.append(Paragraph(_("Endpoint-/Multi-User-Test"), styles["h3"]))
+            eq = endpoint.get("quality_gate_2") or {}
+            eq_status = eq.get("status")
+            story.append(Paragraph(
+                f"{_('Endpoint-/Multi-User-Test')} &middot; Quality Gate 2.0: "
+                f"<font color='{_qg_color(eq_status)}'>{_qg_label(eq_status)}</font>",
+                styles["h3"],
+            ))
+            if eq.get("reasons"):
+                for reason in eq["reasons"]:
+                    story.append(Paragraph(f"&bull; {reason}", styles["warn"]))
             ep_rows = [[_("Concurrency"), _("Erfolgreich"), _("System TPS"), _("TPS/Request"),
-                        _("TTFT P50 ms"), _("TTFT P95 ms")]]
+                        _("TTFT P50 ms"), _("TTFT P95 ms"), _("Quality")]]
+            details = {d.get("concurrency"): d for d in eq.get("details", [])}
             for level in endpoint.get("levels", []):
                 p50 = level.get("ttft_p50_seconds")
                 p95 = level.get("ttft_p95_seconds")
+                conc = level.get("concurrency")
+                level_qg = details.get(conc, {})
                 ep_rows.append([
-                    str(level.get("concurrency")),
+                    str(conc),
                     f"{level.get('successful')}/{level.get('requests')}",
                     _fmt(level.get("system_tps")), _fmt(level.get("avg_interactivity_tps")),
                     _fmt(p50 * 1000) if p50 is not None else "—",
                     _fmt(p95 * 1000) if p95 is not None else "—",
+                    _qg_label(level_qg.get("status")),
                 ])
             story.append(_table(ep_rows, [
-                width * 0.13, width * 0.17, width * 0.18, width * 0.18,
-                width * 0.17, width * 0.17,
+                width * 0.12, width * 0.15, width * 0.16, width * 0.16,
+                width * 0.15, width * 0.15, width * 0.11,
             ], numeric_from=1))
         elif endpoint:
             story.append(Paragraph(

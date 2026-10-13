@@ -52,6 +52,22 @@ state that the working text path must not be replaced through a big-bang rewrite
 See [docs/architecture/](docs/architecture/README.en.md) for the core, runtimes,
 tasks/workloads, telemetry, results, and compatibility contracts.
 
+## Phase 1 — Backend capabilities and backend-independent stress tests ✅ *implemented (unreleased)*
+
+`BenchmarkBackend` now exposes explicit `BackendCapabilities`. TTFT, context/OOM,
+quantization, and multi-tenant stress no longer instantiate the llama.cpp backend directly;
+they use `get_backend()` and check the capabilities they require.
+
+An unsupported workload is not a benchmark failure: it writes structured
+`status: skipped` data with `reason: backend_capability_missing` and returns exit code 2.
+llama.cpp supports the four existing stress paths. vLLM can run the generic
+TTFT/concurrency stress workload; OOM probing, local quantization comparison, and
+multi-model stress remain explicitly unsupported until their adapters can implement those
+methods reliably.
+
+The llama.cpp-specific HTTP operations required by the context/OOM probe now live inside
+the llama.cpp backend instead of the generic stress runner.
+
 ## Next steps (after 1.6.0)
 
 Everything below must continue to support **both German and English** and use the common
@@ -62,9 +78,7 @@ terminal UI.
    translation-coverage tests.
 2. **Finish setup/installer** ✅ *implemented (unreleased)* — NVIDIA driver checks on
    Windows, resume after reboot, backend selection during setup, and installer tests in CI.
-3. **Stress tests for all backends** — TTFT/multi-tenant/OOM/quant are still tied too
-   closely to llama.cpp; they should run through `get_backend()`, with unsupported tests
-   skipped with an explicit reason.
+3. **Stress tests through backend capabilities** ✅ *implemented (unreleased)* — stress paths run through `get_backend()` and unsupported workloads are skipped with a structured reason.
 4. **TGI backend** (Phase C), followed by **Ollama backend** (Phase B, using existing GGUFs
    where applicable).
 

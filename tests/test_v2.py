@@ -166,6 +166,9 @@ def test_multitenant_uses_two_backend_paths_and_separate_result_dirs(tmp_path: P
         def supports(self, capability: str) -> bool:
             return self.capabilities.supports(capability)
 
+        def prepare_endpoint_config(self, endpoint_cfg):
+            return dict(endpoint_cfg)
+
         def start_server(self, *_args):
             self.i += 1
             return Proc(self.i), f"cmd{self.i}"
@@ -281,6 +284,9 @@ def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:
 
         def supports(self, capability: str) -> bool:
             return self.capabilities.supports(capability)
+
+        def prepare_endpoint_config(self, endpoint_cfg):
+            return dict(endpoint_cfg)
 
         def start_server(self, *_args):
             return Proc(), "cmd"

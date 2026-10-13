@@ -141,8 +141,10 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     base_endpoint = deepcopy(cfg.get("endpoint", {}))
     ep_cfg1 = deepcopy(base_endpoint)
     ep_cfg1.update(model1.get("endpoint", {}) or {})
+    ep_cfg1 = backend.prepare_endpoint_config(ep_cfg1)
     ep_cfg2 = deepcopy(base_endpoint)
     ep_cfg2.update(model2.get("endpoint", {}) or {})
+    ep_cfg2 = backend.prepare_endpoint_config(ep_cfg2)
 
     parsed = urlparse(str(base_endpoint.get("base_url", "http://127.0.0.1:8080")))
     first_port = parsed.port or 8080

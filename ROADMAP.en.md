@@ -42,6 +42,16 @@ runtime install/uninstall expectations.
 When multiple GPU vendors are present, `CompositeProvider` (since 1.6.0) can combine
 available providers instead of selecting only the first source.
 
+## Phase 0 — Architecture contracts ✅ *implemented (unreleased)*
+
+Before additional backends and later multimodal workloads enter the core, the layer
+boundaries and compatibility rules are now documented explicitly. The contracts separate
+**task**, **runtime/backend**, **workload**, **metric**, **telemetry**, and **result**, and
+state that the working text path must not be replaced through a big-bang rewrite.
+
+See [docs/architecture/](docs/architecture/README.en.md) for the core, runtimes,
+tasks/workloads, telemetry, results, and compatibility contracts.
+
 ## Next steps (after 1.6.0)
 
 Everything below must continue to support **both German and English** and use the common
@@ -103,3 +113,4 @@ If you are interested in one of these areas, open an issue using the
 - [`CONTRIBUTING.en.md`](CONTRIBUTING.en.md) — how to contribute to these areas
 - [`CHANGELOG.en.md`](CHANGELOG.en.md) — released changes
 - [`docs/DOCKER.en.md`](docs/DOCKER.en.md) — running llmbench with Docker
+- [`docs/architecture/README.en.md`](docs/architecture/README.en.md) — architecture contracts for v1.7+

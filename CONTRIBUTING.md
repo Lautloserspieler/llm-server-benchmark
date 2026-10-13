@@ -42,6 +42,22 @@ Weitere zentrale Module:
 - `compare.py` — Vergleich zweier Ergebnisse, inkl. `--strict`-Konsistenzprüfung
 - `i18n.py` / `locales/en.json` — Übersetzungsschicht (siehe Abschnitt "Sprache & i18n")
 
+### Architekturverträge für neue Phasen
+
+Vor Änderungen an Core, Backend-Abstraktion, Resultatstruktur oder zukünftigen
+multimodalen Workloads müssen die Verträge unter
+[docs/architecture/](docs/architecture/README.md) berücksichtigt werden. Dort sind die
+Begriffe **Task**, **Runtime/Backend**, **Workload**, **Metrik**, **Telemetrie** und
+**Resultat** voneinander getrennt.
+
+Insbesondere gilt:
+
+- capability-basierte Entscheidungen statt verteilter Backend-Namensprüfungen,
+- keine universellen Scores über nicht vergleichbare Tasks,
+- fehlende Messwerte niemals stillschweigend als Null behandeln,
+- bestehende Text-Konfigurationen und Resultate nur über getestete Migrationen verändern,
+- kein Big-Bang-Rewrite des funktionierenden Textpfads.
+
 ## Entwicklungs-Setup
 
 ```bash
@@ -403,4 +419,5 @@ Vor dem Öffnen eines PRs:
 - [`README.md`](README.md) / [`README.de.md`](README.de.md) — Nutzersicht, Quick Start, Ergebnisstruktur
 - [`ROADMAP.md`](ROADMAP.md) — geplante Backends/Telemetrie-Quellen und Reihenfolge
 - [`docs/DOCKER.md`](docs/DOCKER.md) — Docker-Betrieb von `llmbench` selbst
+- [`docs/architecture/README.md`](docs/architecture/README.md) — Architekturverträge und Schichtgrenzen
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — Abnahme vor einem Release

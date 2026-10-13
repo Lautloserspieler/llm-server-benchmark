@@ -29,6 +29,7 @@ from .utils import ask_yes_no, console, print_err, print_msg, print_section
 # Ungefaehre Download-Groesse der Standard-Images, nur fuer die Rueckfrage.
 BACKEND_DOWNLOAD_GIB: dict[str, int] = {
     "vllm": 10,
+    "ollama": 1,
 }
 
 # Backends, deren Container immer mit --gpus starten (NVIDIA-only).
@@ -37,6 +38,7 @@ NVIDIA_ONLY_BACKENDS = frozenset({"vllm"})
 BACKEND_LABELS: dict[str, str] = {
     "llama_cpp": "llama.cpp",
     "vllm": "vLLM",
+    "ollama": "Ollama",
 }
 
 

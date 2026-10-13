@@ -41,9 +41,9 @@ def test_declined_question_installs_nothing(monkeypatch, tmp_path):
 
 def test_confirmed_backend_is_installed(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
-    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "2")
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "3")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    assert installed == ["vllm"]
+    assert installed == ["tgi", "vllm"]
     cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
     assert cfg["tools"]["backend"] == "vllm"
 
@@ -59,7 +59,7 @@ def test_auto_install_env_controls_questions(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=False)
     monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    assert installed == ["vllm"]
+    assert installed == ["tgi", "vllm"]
 
 
 def test_vllm_is_not_offered_without_nvidia_gpu_in_docker(monkeypatch, tmp_path):

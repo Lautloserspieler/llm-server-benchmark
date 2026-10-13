@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from llmbench.backends.capabilities import BackendCapabilities
 from llmbench.bootstrap import bootstrap_config, discover_models, model_shards
 from llmbench.download import verify_suite
 from llmbench.stress.quant import discover_quant_groups
@@ -150,39 +151,59 @@ def test_multitenant_uses_two_backend_paths_and_separate_result_dirs(tmp_path: P
         ],
     )
 
-    calls: dict = {"backend": None, "out_dirs": []}
+    calls: dict = {"factory": False, "out_dirs": []}
 
     class Proc:
         def __init__(self, pid: int):
             self.pid = pid
 
     class Backend:
-        def __init__(self, bench: str, server: str):
-            calls["backend"] = (bench, server)
+        capabilities = BackendCapabilities(endpoint=True, concurrency=True, multi_model=True)
+
+        def __init__(self):
             self.i = 0
+
+        def supports(self, capability: str) -> bool:
+            return self.capabilities.supports(capability)
 
         def start_server(self, *_args):
             self.i += 1
             return Proc(self.i), f"cmd{self.i}"
 
+        def wait_health(self, *_args, **_kwargs):
+            return 0.1
+
         def stop_server(self, _proc):
             return None
 
-    async def fake_health(*_args, **_kwargs):
-        return 0.1
+    backend = Backend()
+
+    def fake_get_backend(_cfg):
+        calls["factory"] = True
+        return backend
 
     async def fake_load(_base, _cfg, _interval, out_dir, target_pid=None, target_pids=None):
         calls["out_dirs"].append(Path(out_dir))
         assert set(target_pids or []) == {1, 2}
         return {"status": "ok", "levels": [{"system_tps": float(target_pid or 1)}]}
 
-    monkeypatch.setattr(module, "LlamaCppBackend", Backend)
-    monkeypatch.setattr(module, "wait_health_async", fake_health)
+    models = [
+        {"name": "A", "path": "A.gguf", "profiles": [{"name": "GPU", "gpu_layers": -1}]},
+        {"name": "B", "path": "B.gguf", "profiles": [{"name": "GPU", "gpu_layers": -1}]},
+    ]
+    pair = (
+        {"model": models[0], "profile": models[0]["profiles"][0], "path": "A.gguf", "size_bytes": 1},
+        {"model": models[1], "profile": models[1]["profiles"][0], "path": "B.gguf", "size_bytes": 1},
+    )
+
+    monkeypatch.setattr(module, "get_backend", fake_get_backend)
+    monkeypatch.setattr(module, "backend_name", lambda _cfg: "fake")
+    monkeypatch.setattr(module, "_select_multitenant_pair", lambda _cfg: (pair, None))
     monkeypatch.setattr(module, "_run_endpoint_load_async", fake_load)
 
     rc = asyncio.run(module.run_multitenant(str(config), tmp_path / "out"))
     assert rc == 0
-    assert calls["backend"] == ("bench", "server")
+    assert calls["factory"] is True
     assert calls["out_dirs"][0] != calls["out_dirs"][1]
     assert (tmp_path / "out" / "multitenant.json").exists()
 
@@ -196,38 +217,50 @@ def test_oom_stress_initializes_backend_correctly_and_restarts_per_level(tmp_pat
         [{"name": "A", "path": "A.gguf", "profiles": [{"name": "GPU", "gpu_layers": -1}]}],
         context_depths=[4096, 8192],
     )
-    calls = {"backend": None, "starts": 0, "stops": 0}
+    calls = {"factory": False, "starts": 0, "stops": 0}
 
     class Proc:
         pid = 1
 
     class Backend:
-        def __init__(self, bench: str, server: str):
-            calls["backend"] = (bench, server)
+        capabilities = BackendCapabilities(endpoint=True, oom_probe=True)
+
+        def supports(self, capability: str) -> bool:
+            return self.capabilities.supports(capability)
 
         def start_server(self, *_args):
             calls["starts"] += 1
             return Proc(), "cmd"
 
+        def wait_health(self, *_args, **_kwargs):
+            return 0.1
+
+        async def probe_context(self, _url, prompt_target, _cfg):
+            return {"ok": True, "actual_prompt_tokens": prompt_target, "duration_seconds": 0.1}
+
         def stop_server(self, _proc):
             calls["stops"] += 1
 
-    async def fake_health(*_args, **_kwargs):
-        return 0.1
+    backend = Backend()
 
-    async def fake_probe(_url, prompt_target, _cfg):
-        return {"ok": True, "actual_prompt_tokens": prompt_target, "duration_seconds": 0.1}
+    def fake_get_backend(_cfg):
+        calls["factory"] = True
+        return backend
 
-    monkeypatch.setattr(module, "LlamaCppBackend", Backend)
-    monkeypatch.setattr(module, "wait_health_async", fake_health)
-    monkeypatch.setattr(module, "_probe_context", fake_probe)
+    monkeypatch.setattr(module, "get_backend", fake_get_backend)
+    monkeypatch.setattr(module, "backend_name", lambda _cfg: "fake")
+    monkeypatch.setattr(module.asyncio, "sleep", lambda _seconds: _completed_sleep())
 
     rc = asyncio.run(module.run_oom_stress(str(config), tmp_path / "oom"))
     assert rc == 0
-    assert calls["backend"] == ("bench", "server")
+    assert calls["factory"] is True
     assert calls["starts"] == calls["stops"] == len(module.DEFAULT_OOM_CONTEXTS)
     data = json.loads((tmp_path / "oom" / "oom.json").read_text(encoding="utf-8"))
     assert data["max_stable_prompt_tokens"] == module.DEFAULT_OOM_CONTEXTS[-1]
+
+
+async def _completed_sleep() -> None:
+    return None
 
 
 def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:
@@ -238,14 +271,16 @@ def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:
         config,
         [{"name": "A", "path": "A.gguf", "profiles": [{"name": "GPU", "gpu_layers": -1}]}],
     )
-    calls = {"backend": None, "load": False}
+    calls = {"factory": False, "load": False}
 
     class Proc:
         pid = 123
 
     class Backend:
-        def __init__(self, bench: str, server: str):
-            calls["backend"] = (bench, server)
+        capabilities = BackendCapabilities(endpoint=True, concurrency=True)
+
+        def supports(self, capability: str) -> bool:
+            return self.capabilities.supports(capability)
 
         def start_server(self, *_args):
             return Proc(), "cmd"
@@ -256,6 +291,12 @@ def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:
         def stop_server(self, _proc):
             return None
 
+    backend = Backend()
+
+    def fake_get_backend(_cfg):
+        calls["factory"] = True
+        return backend
+
     def fake_load(*_args, **_kwargs):
         calls["load"] = True
         return {
@@ -265,11 +306,12 @@ def test_ttft_stress_is_real_endpoint_test(tmp_path: Path, monkeypatch) -> None:
             ],
         }
 
-    monkeypatch.setattr(module, "LlamaCppBackend", Backend)
+    monkeypatch.setattr(module, "get_backend", fake_get_backend)
+    monkeypatch.setattr(module, "backend_name", lambda _cfg: "fake")
     monkeypatch.setattr(module, "run_endpoint_load", fake_load)
 
     rc = module.run_ttft_stress(str(config), tmp_path / "ttft")
     assert rc == 0
-    assert calls["backend"] == ("bench", "server")
+    assert calls["factory"] is True
     assert calls["load"] is True
     assert (tmp_path / "ttft" / "ttft.json").exists()

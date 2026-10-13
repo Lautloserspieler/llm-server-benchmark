@@ -68,18 +68,7 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_quant"
     out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
 
-    backend = get_backend(cfg)
     name = backend_name(cfg)
-    skipped = require_capabilities(
-        backend,
-        name,
-        ("quantization",),
-        workload="text.quantization_compare",
-        result_path=out_dir / "quant.json",
-    )
-    if skipped is not None:
-        return skipped
-
     root = Path(cfg.get("_config_dir") or ".").resolve()
     models_dir = root / "models"
     groups = discover_quant_groups(root, models_dir)
@@ -94,6 +83,17 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
             {"status": "skipped", "backend": name, "reason": "no_matching_quantizations", "message": message, "groups": []},
         )
         return 2
+
+    backend = get_backend(cfg)
+    skipped = require_capabilities(
+        backend,
+        name,
+        ("quantization",),
+        workload="text.quantization_compare",
+        result_path=out_dir / "quant.json",
+    )
+    if skipped is not None:
+        return skipped
 
     bench_cfg = dict(cfg["benchmark"])
     bench_cfg["prompt_tokens"] = [512]

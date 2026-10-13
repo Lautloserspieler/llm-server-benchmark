@@ -144,8 +144,12 @@ def test_tools_vllm_image_has_default():
     assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:latest"
 
 
+def test_tools_ollama_image_has_default():
+    assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:latest"
+
+
 def test_validation_accepts_known_backends():
-    for name in ("llama_cpp", "vllm"):
+    for name in ("llama_cpp", "vllm", "ollama"):
         cfg = _valid_cfg(tools={"backend": name})
         assert validate_config(cfg) == [], name
 
@@ -164,6 +168,11 @@ def test_validation_rejects_backend_typo():
 
 def test_vllm_image_is_overridable():
     cfg = _valid_cfg(tools={"backend": "vllm", "vllm_image": "vllm/vllm-openai:v0.6.0"})
+    assert validate_config(cfg) == []
+
+
+def test_ollama_image_is_overridable():
+    cfg = _valid_cfg(tools={"backend": "ollama", "ollama_image": "ollama/ollama:0.3.0"})
     assert validate_config(cfg) == []
 
 
@@ -192,6 +201,29 @@ def test_profile_vllm_fields_are_optional_for_llama_cpp():
     assert profile.quantization is None
     assert profile.gpu_memory_utilization is None
     assert profile.dtype is None
+
+
+def test_profile_accepts_ollama_passthrough_fields():
+    cfg = _valid_cfg(
+        tools={"backend": "ollama"},
+        models=[{
+            "name": "M", "path": "x",
+            "profiles": [{
+                "name": "Ollama", "gpu_layers": -1,
+                "ollama_num_ctx": 8192, "ollama_num_gpu": 1,
+            }],
+        }],
+    )
+    assert validate_config(cfg) == []
+
+
+def test_profile_ollama_fields_are_optional_for_llama_cpp():
+    """llama.cpp-Profile lassen die Ollama-Felder einfach weg."""
+    from llmbench.config import ProfileConfig
+
+    profile = ProfileConfig(name="Full-GPU", gpu_layers=-1)
+    assert profile.ollama_num_ctx is None
+    assert profile.ollama_num_gpu is None
 
 
 def test_profile_rejects_non_numeric_tensor_parallel_size():

@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 
+class BackendCapabilityError(RuntimeError):
+    """Raised when code calls an optional backend operation that is unsupported."""
+
+
 @dataclass(frozen=True, slots=True)
 class BackendCapabilities:
     """Optional features exposed by a benchmark backend.

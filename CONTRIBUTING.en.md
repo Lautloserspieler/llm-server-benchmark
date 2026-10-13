@@ -36,6 +36,21 @@ Important modules include:
 - `compare.py` — comparison of two results, including `--strict` consistency checks
 - `i18n.py` / `locales/en.json` — translation layer (see "Language & i18n" below)
 
+### Architecture contracts for new phases
+
+Before changing the core, backend abstraction, result structure, or future multimodal
+workloads, contributors must follow the contracts under
+[docs/architecture/](docs/architecture/README.en.md). They explicitly separate
+**task**, **runtime/backend**, **workload**, **metric**, **telemetry**, and **result**.
+
+In particular:
+
+- prefer capability-based decisions over scattered backend-name checks,
+- never create universal scores across unrelated tasks,
+- never silently treat missing measurements as zero,
+- change existing text configurations/results only through tested migrations,
+- do not big-bang rewrite the working text path.
+
 ## Development setup
 
 ```bash
@@ -391,4 +406,5 @@ Before opening a PR:
 - [`README.de.md`](README.de.md) — German README
 - [`ROADMAP.en.md`](ROADMAP.en.md) — backend/telemetry roadmap in English
 - [`docs/DOCKER.en.md`](docs/DOCKER.en.md) — Docker operation in English
+- [`docs/architecture/README.en.md`](docs/architecture/README.en.md) — architecture contracts and layer boundaries
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — release acceptance checklist

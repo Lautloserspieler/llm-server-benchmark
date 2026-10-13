@@ -18,6 +18,13 @@ DOC_PAIRS = (
     ),
     ("models/README.md", "models/README.en.md"),
     ("docs/community-export.de.md", "docs/community-export.md"),
+    ("docs/architecture/README.md", "docs/architecture/README.en.md"),
+    ("docs/architecture/core.md", "docs/architecture/core.en.md"),
+    ("docs/architecture/backends.md", "docs/architecture/backends.en.md"),
+    ("docs/architecture/workloads.md", "docs/architecture/workloads.en.md"),
+    ("docs/architecture/telemetry.md", "docs/architecture/telemetry.en.md"),
+    ("docs/architecture/results.md", "docs/architecture/results.en.md"),
+    ("docs/architecture/compatibility.md", "docs/architecture/compatibility.en.md"),
 )
 
 BILINGUAL_SINGLE_FILES = {

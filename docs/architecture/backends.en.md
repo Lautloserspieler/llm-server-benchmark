@@ -52,7 +52,7 @@ It is **not** responsible for:
 
 ## Capabilities instead of backend-name checks
 
-Starting in Phase 1, optional behavior should be represented explicitly, for example:
+Starting with Phase 1, optional behavior is represented explicitly through `BackendCapabilities`:
 
 ```text
 endpoint
@@ -65,8 +65,25 @@ quantization
 multi_model
 ```
 
-Code should check a capability instead of branching on `backend == "..."` when the
-decision is really capability-based.
+Code checks a capability instead of branching on `backend == "..."` when the decision is
+capability-based.
+
+Current adapter state:
+
+| Capability | llama.cpp | vLLM |
+| --- | --- | --- |
+| endpoint | ✅ | ✅ |
+| streaming | ✅ | ✅ |
+| concurrency | ✅ | ✅ |
+| long_context | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ |
+| oom_probe | ✅ | — |
+| quantization | ✅ | — |
+| multi_model | ✅ | — |
+
+A missing check mark does not mean the upstream runtime can never perform that operation.
+It means the current llmbench adapter does not yet expose a reproducible benchmark contract
+for it.
 
 ## Install/remove symmetry
 

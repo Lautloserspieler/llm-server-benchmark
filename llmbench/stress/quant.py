@@ -4,14 +4,14 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from llmbench.backends import backend_name, get_backend
 from llmbench.bootstrap import discover_models, shard_info
 from llmbench.config import load_config
-from llmbench.llama_bench import flatten_bench_rows, run_llama_bench
 from llmbench.i18n import _
+from llmbench.llama_bench import flatten_bench_rows
+from llmbench.stress.base import require_capabilities
 from llmbench.utils import ensure_dir, print_err, print_msg, print_section, safe_name, write_json
 
-# Typische llama.cpp/GGUF-Quantisierungsnamen. Wichtig ist, dass nur Varianten
-# desselben Basis-Modells gegeneinander verglichen werden.
 QUANT_RE = re.compile(
     r"(?i)(?:^|[-_.])(?P<quant>(?:I?Q\d(?:_[A-Z0-9]+)+|BF16|F16))(?:[-_.]|$)"
 )
@@ -63,13 +63,26 @@ def _best_tps(result: dict) -> float | None:
 
 
 async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str | Path | None = None) -> int:
-    """Vergleicht mindestens zwei Quantisierungen exakt desselben Basismodells."""
+    """Compare local quantization variants through the configured backend."""
     cfg = load_config(config_path)
+    default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_quant"
+    out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
+
+    backend = get_backend(cfg)
+    name = backend_name(cfg)
+    skipped = require_capabilities(
+        backend,
+        name,
+        ("quantization",),
+        workload="text.quantization_compare",
+        result_path=out_dir / "quant.json",
+    )
+    if skipped is not None:
+        return skipped
+
     root = Path(cfg.get("_config_dir") or ".").resolve()
     models_dir = root / "models"
     groups = discover_quant_groups(root, models_dir)
-    default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_quant"
-    out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
     if not groups:
         message = _(
             "Kein echter Quantisierungsvergleich moeglich. Lege mindestens zwei Quantisierungen "
@@ -78,22 +91,17 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
         print_msg(message, style="yellow")
         write_json(
             out_dir / "quant.json",
-            {
-                "status": "skipped",
-                "reason": "no_matching_quantizations",
-                "message": message,
-                "groups": [],
-            },
+            {"status": "skipped", "backend": name, "reason": "no_matching_quantizations", "message": message, "groups": []},
         )
         return 2
+
     bench_cfg = dict(cfg["benchmark"])
     bench_cfg["prompt_tokens"] = [512]
     bench_cfg["generation_tokens"] = [128]
     bench_cfg["context_depths"] = [0]
     profile = {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"}
-    exe = cfg["tools"]["llama_bench"]
 
-    document: dict = {"status": "ok", "groups": []}
+    document: dict = {"status": "ok", "backend": name, "groups": []}
     any_success = False
     for base_name, variants in groups.items():
         print_section(_("Quantisierungsvergleich: {name}").format(name=base_name))
@@ -101,13 +109,30 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
         for quant, model_path in variants.items():
             print_msg(_("Teste {quant}: {file}").format(quant=quant, file=model_path.name))
             variant_dir = ensure_dir(out_dir / safe_name(base_name) / safe_name(quant))
-            prompt_result = run_llama_bench(
-                exe, str(model_path), bench_cfg, profile, "prompt", variant_dir
+            prompt_result: dict = {"status": "failed", "error": "not run"}
+            generation_result: dict = {"status": "failed", "error": "not run"}
+            begin_ok = False
+            try:
+                backend.begin_profile(str(model_path), profile, bench_cfg, variant_dir)
+                begin_ok = True
+                prompt_result = backend.run_benchmark(
+                    str(model_path), profile, "prompt", variant_dir, bench_cfg
+                )
+                generation_result = backend.run_benchmark(
+                    str(model_path), profile, "generation", variant_dir, bench_cfg
+                )
+            except Exception as exc:
+                prompt_result = {"status": "failed", "error": str(exc)}
+                generation_result = {"status": "failed", "error": str(exc)}
+            finally:
+                if begin_ok:
+                    backend.end_profile()
+
+            status = (
+                "ok"
+                if prompt_result.get("status") == "ok" and generation_result.get("status") == "ok"
+                else "failed"
             )
-            generation_result = run_llama_bench(
-                exe, str(model_path), bench_cfg, profile, "generation", variant_dir
-            )
-            status = "ok" if prompt_result.get("status") == "ok" and generation_result.get("status") == "ok" else "failed"
             any_success = any_success or status == "ok"
             entry = {
                 "quant": quant,

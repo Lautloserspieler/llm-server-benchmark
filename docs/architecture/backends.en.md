@@ -70,20 +70,34 @@ capability-based.
 
 Current adapter state:
 
-| Capability | llama.cpp | vLLM |
-| --- | --- | --- |
-| endpoint | ✅ | ✅ |
-| streaming | ✅ | ✅ |
-| concurrency | ✅ | ✅ |
-| long_context | ✅ | ✅ |
-| kv_cache_observation | ✅ | ✅ |
-| oom_probe | ✅ | — |
-| quantization | ✅ | — |
-| multi_model | ✅ | — |
+| Capability | llama.cpp | vLLM | Ollama |
+| --- | --- | --- | --- |
+| endpoint | ✅ | ✅ | ✅ |
+| streaming | ✅ | ✅ | ✅ |
+| concurrency | ✅ | ✅ | ✅ |
+| long_context | ✅ | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ | — |
+| oom_probe | ✅ | — | — |
+| quantization | ✅ | — | — |
+| multi_model | ✅ | — | — |
 
 A missing check mark does not mean the upstream runtime can never perform that operation.
 It means the current llmbench adapter does not yet expose a reproducible benchmark contract
 for it.
+
+## Ollama backend
+
+Ollama runs only as a Docker container (`ollama/ollama`) and uses its own
+non-OpenAI-compatible API on port `11434`. Prompt, generation, and long-context
+measurements use `POST /api/generate`.
+
+For a local GGUF model, the adapter mounts the file's directory read-only into `/models`,
+generates a minimal `Modelfile`, and registers the model via `POST /api/create` before the
+health check. Alternatively, an already available Ollama model name can be used.
+
+The natively different API is encapsulated in the shared HTTP benchmark layer by the
+`ollama_native` style, so terminal, HTML, PDF, and CSV reports produce the same comparable
+metrics as llama.cpp and vLLM.
 
 ## Install/remove symmetry
 

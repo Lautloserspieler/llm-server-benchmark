@@ -2,6 +2,23 @@
 
 🇩🇪 Deutsch | [🇬🇧 English](CHANGELOG.en.md)
 
+## Unveröffentlicht
+
+### Ollama-Backend
+
+- Neues Backend `ollama`: `tools.backend: ollama` in `benchmark.yaml` benchmarkt einen
+  Ollama-Server statt llama.cpp. Ollama läuft dabei ausschliesslich als Docker-Container
+  (`ollama/ollama`) und nutzt die native `/api/generate`-Schnittstelle auf Port `11434`.
+- Lokale GGUFs werden schreibgeschützt in den Container gemountet, ein minimales
+  `Modelfile` generiert und das Modell vor dem Benchmark über `POST /api/create`
+  registriert. Alternativ kann ein bestehender Ollama-Modellname verwendet werden.
+- Prompt-, Generation- und Long-Context-Messungen laufen über den gemeinsamen
+  HTTP-Benchmark-Layer mit dem Stil `ollama_native`, sodass Berichte dieselben
+  vergleichbaren Metriken wie bei llama.cpp und vLLM liefern.
+- Neue Befehle `llmbench install-backend --backend ollama` und
+  `llmbench uninstall-backend --backend ollama`: automatische Installation (Image-Pull)
+  und vollständige Deinstallation (Container, Image).
+
 ## 1.6.0
 
 ### Phase 1: Backend-Capabilities und Stresstest-Entkopplung

@@ -21,7 +21,7 @@ traceable benchmark results backed by evidence instead of isolated tokens/s numb
 | llama.cpp | ✅ complete | local binary (`llama-bench`/`llama-server`) | Reference backend |
 | vLLM | ✅ complete (1.6.0) | Docker container (`vllm/vllm-openai`) | Phase A |
 | TGI | 📋 planned | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase C, builds on Phase A |
-| Ollama | 📋 planned | Docker container (`ollama/ollama`) | Phase B, native API instead of OpenAI-compatible |
+| Ollama | ✅ complete (unreleased) | Docker container (`ollama/ollama`) | Phase 3, native API instead of OpenAI-compatible, port 11434, GGUF import via `/api/create` |
 
 New server backends such as vLLM/Ollama/TGI are intentionally containerized instead of
 using another native/bare-metal installation path like llama.cpp. Docker, including the

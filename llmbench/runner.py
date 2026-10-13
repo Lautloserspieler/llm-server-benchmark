@@ -496,6 +496,7 @@ def _run_suite(
 
         endpoint_cfg = dict(cfg.get("endpoint", {}))
         endpoint_cfg.update(model.get("endpoint", {}) or {})
+        endpoint_cfg = backend.prepare_endpoint_config(endpoint_cfg)
         if endpoint_cfg.get("enabled") and not skip_endpoint and not profiles:
             summary["warnings"].append(
                 f"{model['name']}: Endpoint-Test uebersprungen - kein Profil passt zur Hardware-Auswahl "

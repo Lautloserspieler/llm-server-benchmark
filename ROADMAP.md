@@ -44,6 +44,17 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
 (seit 1.6.0) alle verfügbaren Provider parallel.
 
+## Phase 0 — Architekturverträge ✅ *umgesetzt (unveröffentlicht)*
+
+Bevor weitere Backends und spätere multimodale Workloads in den Core einziehen, sind die
+Schichtgrenzen und Kompatibilitätsregeln verbindlich dokumentiert. Die Verträge trennen
+**Task**, **Runtime/Backend**, **Workload**, **Metrik**, **Telemetrie** und **Resultat** und
+schreiben ausdrücklich fest, dass der funktionierende Textpfad nicht per Big-Bang-Rewrite
+ersetzt wird.
+
+Siehe [docs/architecture/](docs/architecture/README.md) für Core, Backends/Runtimes,
+Tasks/Workloads, Telemetrie, Resultate und Kompatibilität.
+
 ## Nächste Schritte (Stand: nach 1.6.0)
 
 Für alles gilt: **Das Sprachsystem (de/en) muss überall funktionieren**, und alles läuft über
@@ -111,3 +122,4 @@ ist der richtige Ort, um Bedarf sichtbar zu machen.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — wie man an einer dieser Phasen mitarbeitet
 - [`CHANGELOG.md`](CHANGELOG.md) — was bereits ausgeliefert wurde
 - [`docs/DOCKER.md`](docs/DOCKER.md) — Docker-Betrieb von `llmbench` selbst
+- [`docs/architecture/README.md`](docs/architecture/README.md) — Architekturverträge für v1.7+

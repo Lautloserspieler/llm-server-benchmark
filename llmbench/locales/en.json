@@ -334,5 +334,6 @@
   "Mindestens einen Community-Export angeben.": "Provide at least one community export.",
   "Gueltig: {path}": "Valid: {path}",
   "Ungueltig: {path}: {error}": "Invalid: {path}: {error}",
-  "Stresstest wird fuer Backend '{backend}' uebersprungen: fehlende Faehigkeiten: {capabilities}.": "Stress test skipped for backend '{backend}': missing capabilities: {capabilities}."
+  "Stresstest wird fuer Backend '{backend}' uebersprungen: fehlende Faehigkeiten: {capabilities}.": "Stress test skipped for backend '{backend}': missing capabilities: {capabilities}.",
+  "Zwei aktive Modellserver gleichzeitig": "Two active model servers at the same time"
 }

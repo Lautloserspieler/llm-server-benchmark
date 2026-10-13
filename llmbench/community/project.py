@@ -265,7 +265,7 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
         raise ProjectionError("unsupported summary schema")
     raw_backend = summary.get("backend")
     backend_id = raw_backend if isinstance(raw_backend, str) else _mapping(raw_backend).get("id")
-    if backend_id not in {"llama_cpp", "vllm"}:
+    if backend_id not in {"llama_cpp", "vllm", "ollama"}:
         raise ProjectionError("summary lacks a supported backend")
     started, finished = _utc(summary.get("started_at")), _utc(summary.get("finished_at"))
     timestamp_status = "recorded" if started and finished else ("partial" if started or finished else "unknown")

@@ -550,7 +550,7 @@ class KvCache(ClosedModel):
 
 
 class BackendDetail(ClosedModel):
-    backend: Literal["llama_cpp", "vllm"]
+    backend: Literal["llama_cpp", "vllm", "ollama"]
     field: str
     value: Provenance
 
@@ -576,7 +576,7 @@ class ModelExport(ClosedModel):
 
 
 class Backend(ClosedModel):
-    id: Literal["llama_cpp", "vllm"]
+    id: Literal["llama_cpp", "vllm", "ollama"]
     runtime: BackendRuntime | None = None
     measurement_tool: MeasurementTool | None = None
     container_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")

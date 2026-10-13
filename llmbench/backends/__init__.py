@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BenchmarkBackend
+from .capabilities import BackendCapabilities, BackendCapabilityError
 
 DEFAULT_BACKEND = "llama_cpp"
 
@@ -45,4 +46,11 @@ def get_backend(cfg: dict[str, Any]) -> BenchmarkBackend:
     raise ValueError(f"Unbekanntes Backend: {name!r}. Erlaubt: llama_cpp, vllm")
 
 
-__all__ = ["DEFAULT_BACKEND", "BenchmarkBackend", "backend_name", "get_backend"]
+__all__ = [
+    "DEFAULT_BACKEND",
+    "BackendCapabilities",
+    "BackendCapabilityError",
+    "BenchmarkBackend",
+    "backend_name",
+    "get_backend",
+]

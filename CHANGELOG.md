@@ -4,6 +4,24 @@
 
 ## 1.6.0
 
+### Phase 1: Backend-Capabilities und Stresstest-Entkopplung
+
+- Neue unveränderliche `BackendCapabilities` beschreiben optionale Adapter-Fähigkeiten wie
+  Endpoint, Concurrency, Long Context, KV-Cache-Beobachtung, OOM-Probe,
+  Quantisierungsvergleich und Multi-Model-Betrieb.
+- TTFT-, OOM-, Quantisierungs- und Multi-Tenant-Stresstests verwenden jetzt die zentrale
+  Backend-Factory statt `LlamaCppBackend` bzw. `run_llama_bench` direkt aufzurufen.
+- Nicht unterstützte Stress-Workloads werden als `skipped` mit
+  `reason: backend_capability_missing`, benötigten/fehlenden Capabilities und Exitcode 2
+  dokumentiert statt als Fehler zu erscheinen.
+- Der TTFT-/Concurrency-Stresstest kann damit auch über den vorhandenen vLLM-Adapter laufen.
+  OOM-Probe, lokaler Quantisierungsvergleich und Multi-Model-Stress bleiben für vLLM bis zu
+  einer belastbaren Implementierung explizit deaktiviert.
+- Die llama.cpp-spezifische Kontextprobe über `/tokenize` und `/completion` liegt jetzt
+  im Backend und nicht mehr im generischen OOM-Stressmodul.
+- Regressionstests prüfen die Capability-Matrix, strukturierte Unsupported-Skips und den
+  backend-unabhängigen TTFT-Pfad.
+
 ### Community-Export: lokaler, datenschutzbewusster Austausch
 
 - Neuer Befehl `llmbench community-export` erzeugt lokal geprüfte, bereinigte JSON-Artefakte aus bestehenden Benchmark-Zusammenfassungen; es erfolgt kein automatischer Upload.

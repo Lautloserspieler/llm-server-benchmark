@@ -4,8 +4,17 @@ import abc
 from pathlib import Path
 from typing import Any
 
+from .capabilities import BackendCapabilities, BackendCapabilityError
+
+
 class BenchmarkBackend(abc.ABC):
     """Abstract base class for LLM benchmark backends."""
+
+    capabilities = BackendCapabilities()
+
+    def supports(self, capability: str) -> bool:
+        """Return whether this llmbench adapter supports an optional feature."""
+        return self.capabilities.supports(capability)
 
     @abc.abstractmethod
     def run_benchmark(
@@ -76,6 +85,19 @@ class BenchmarkBackend(abc.ABC):
 
     def end_profile(self) -> None:  # noqa: B027
         """Called once after all benchmark kinds of a profile. No-op by default."""
+
+    def prepare_endpoint_config(self, endpoint_cfg: dict[str, Any]) -> dict[str, Any]:
+        """Return backend-specific settings for the shared endpoint load client."""
+        return dict(endpoint_cfg)
+
+    async def probe_context(  # noqa: B027
+        self,
+        base_url: str,  # noqa: ARG002
+        prompt_target: int,  # noqa: ARG002
+        endpoint_cfg: dict[str, Any],  # noqa: ARG002
+    ) -> dict[str, Any]:
+        """Probe a context target for backends exposing the oom_probe capability."""
+        raise BackendCapabilityError("Backend unterstuetzt keinen Kontext-/OOM-Probe.")
 
     def collect_kv_cache_observations(  # noqa: B027
         self,

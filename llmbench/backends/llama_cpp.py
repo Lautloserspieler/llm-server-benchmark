@@ -8,9 +8,12 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+
+import httpx
 from typing import Any
 
 from .base import BenchmarkBackend
+from .capabilities import BackendCapabilities
 from ..capacity import CapacityLimitError, profile_vram_issue_for_path
 from ..endpoint import (
     start_llama_server,
@@ -19,6 +22,7 @@ from ..endpoint import (
 )
 from ..llama_bench import run_llama_bench
 from ..kv_cache import KvCacheObservation
+from ..utils import auth_headers
 
 
 VRAM_RELEASE_TIMEOUT_SECONDS = 12.0
@@ -228,6 +232,17 @@ def _wait_for_vram_release(baseline_mib: float | None) -> None:
 class LlamaCppBackend(BenchmarkBackend):
     """Implementation of the benchmark backend for llama.cpp."""
 
+    capabilities = BackendCapabilities(
+        endpoint=True,
+        streaming=True,
+        concurrency=True,
+        long_context=True,
+        kv_cache_observation=True,
+        oom_probe=True,
+        quantization=True,
+        multi_model=True,
+    )
+
     def __init__(self, llama_bench_exe: str, llama_server_exe: str):
         self.llama_bench_exe = llama_bench_exe
         self.llama_server_exe = llama_server_exe
@@ -376,3 +391,61 @@ class LlamaCppBackend(BenchmarkBackend):
         self, base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
     ) -> float:
         return wait_health(base_url, timeout_s, headers, proc)
+
+    async def probe_context(
+        self,
+        base_url: str,
+        prompt_target: int,
+        endpoint_cfg: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Probe one llama.cpp context target through its native HTTP API."""
+        chunk = "The quick brown fox jumps over the lazy dog. "
+        repeats = max(1, int(prompt_target / 10))
+        prompt = chunk * repeats + "\nSummarize the preceding text in one short sentence."
+        timeout = float(endpoint_cfg.get("timeout_seconds", 600))
+        headers = auth_headers(endpoint_cfg)
+        payload = {
+            "prompt": prompt,
+            "n_predict": 32,
+            "temperature": 0.0,
+            "stream": False,
+            "cache_prompt": False,
+        }
+        started = time.perf_counter()
+        actual_tokens: int | None = None
+        try:
+            async with httpx.AsyncClient(headers=headers) as client:
+                try:
+                    response = await client.post(
+                        base_url.rstrip("/") + "/tokenize",
+                        json={"content": prompt, "add_special": False},
+                        timeout=120,
+                    )
+                    response.raise_for_status()
+                    tokens = response.json().get("tokens")
+                    if isinstance(tokens, list):
+                        actual_tokens = len(tokens)
+                except Exception:
+                    actual_tokens = None
+
+                response = await client.post(
+                    base_url.rstrip("/") + "/completion",
+                    json=payload,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return {
+                    "ok": True,
+                    "target_prompt_tokens": prompt_target,
+                    "actual_prompt_tokens": actual_tokens,
+                    "duration_seconds": time.perf_counter() - started,
+                    "http_status": response.status_code,
+                }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "target_prompt_tokens": prompt_target,
+                "actual_prompt_tokens": actual_tokens,
+                "duration_seconds": time.perf_counter() - started,
+                "error": str(exc),
+            }

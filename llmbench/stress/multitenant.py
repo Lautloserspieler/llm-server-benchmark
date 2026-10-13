@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from llmbench.backends.llama_cpp import LlamaCppBackend
+from llmbench.backends import backend_name, get_backend
 from llmbench.capacity import (
     current_hardware,
     is_gpu_profile,
@@ -15,8 +15,9 @@ from llmbench.capacity import (
     total_gpu_vram_bytes,
 )
 from llmbench.config import load_config, resolve_path
-from llmbench.endpoint import _run_endpoint_load_async, wait_health_async
+from llmbench.endpoint import _run_endpoint_load_async
 from llmbench.i18n import _
+from llmbench.stress.base import require_capabilities
 from llmbench.utils import (
     auth_headers,
     ensure_dir,
@@ -41,13 +42,11 @@ def _first_gpu_profile(model: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _multitenant_candidates(cfg: dict[str, Any], hardware: dict[str, Any]) -> list[dict[str, Any]]:
-    """Erzeugt nach Gewichtsgroesse sortierte, einzeln GPU-taugliche Kandidaten.
+    """Build the current local-model candidate set after capability gating.
 
-    Nicht vorhandene Dateien bleiben mit unbekannter Groesse im Kandidatensatz.
-    Das erhaelt die bisherige Fehlerbehandlung im eigentlichen Serverstart und
-    verhindert, dass Tests oder externe Backends allein durch den Preflight
-    anders semantisch behandelt werden. Reale vorhandene GGUFs werden dagegen
-    vollstaendig auf VRAM-Tauglichkeit geprueft.
+    This VRAM-aware selector is retained for the llama.cpp adapter. Backends that
+    cannot use this model-selection strategy advertise multi_model=False and are
+    skipped before this function is called.
     """
     candidates: list[dict[str, Any]] = []
     for model in cfg.get("models", []) or []:
@@ -78,7 +77,6 @@ def _select_multitenant_pair(
     cfg: dict[str, Any],
     hardware: dict[str, Any] | None = None,
 ) -> tuple[tuple[dict[str, Any], dict[str, Any]] | None, str | None]:
-    """Waehlt zwei kleine GPU-Modelle, die gemeinsam realistisch in VRAM passen."""
     hardware = hardware or current_hardware()
     candidates = _multitenant_candidates(cfg, hardware)
     if len(candidates) < 2:
@@ -100,7 +98,7 @@ def _select_multitenant_pair(
 
 
 async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str | Path | None = None) -> int:
-    """Startet zwei automatisch VRAM-kompatibel ausgewaehlte GPU-Modelle parallel."""
+    """Start two compatible models through the configured backend when supported."""
     cfg = load_config(config_path)
     if len(cfg.get("models", [])) < 2:
         print_err(_("Multi-Tenant Stresstest benoetigt mindestens 2 Modelle in der Konfiguration."))
@@ -109,9 +107,21 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_multitenant"
     out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
 
+    backend = get_backend(cfg)
+    name = backend_name(cfg)
+    skipped = require_capabilities(
+        backend,
+        name,
+        ("endpoint", "concurrency", "multi_model"),
+        workload="text.multi_tenant",
+        result_path=out_dir / "multitenant.json",
+    )
+    if skipped is not None:
+        return skipped
+
     pair, reason = _select_multitenant_pair(cfg)
     if not pair:
-        result = {"status": "skipped", "reason": reason or _("Kein geeignetes Modellpaar gefunden.")}
+        result = {"status": "skipped", "backend": name, "reason": reason or _("Kein geeignetes Modellpaar gefunden.")}
         write_json(out_dir / "multitenant.json", result)
         print_msg(_("Multi-Tenant uebersprungen: {reason}").format(reason=result["reason"]))
         return 2
@@ -128,14 +138,13 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     load_dir1 = ensure_dir(out_dir / "model1")
     load_dir2 = ensure_dir(out_dir / "model2")
 
-    tools = cfg["tools"]
-    backend = LlamaCppBackend(tools["llama_bench"], tools["llama_server"])
-
     base_endpoint = deepcopy(cfg.get("endpoint", {}))
     ep_cfg1 = deepcopy(base_endpoint)
     ep_cfg1.update(model1.get("endpoint", {}) or {})
+    ep_cfg1 = backend.prepare_endpoint_config(ep_cfg1)
     ep_cfg2 = deepcopy(base_endpoint)
     ep_cfg2.update(model2.get("endpoint", {}) or {})
+    ep_cfg2 = backend.prepare_endpoint_config(ep_cfg2)
 
     parsed = urlparse(str(base_endpoint.get("base_url", "http://127.0.0.1:8080")))
     first_port = parsed.port or 8080
@@ -148,63 +157,39 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
     try:
         print_msg(_("Starte Server {n}...").format(n=1))
         proc1, command1 = backend.start_server(
-            model_path1,
-            prof1,
-            ep_cfg1,
-            cfg["benchmark"],
-            out_dir / "server1.log",
+            model_path1, prof1, ep_cfg1, cfg["benchmark"], out_dir / f"{name}-server1.log"
         )
 
         print_msg(_("Starte Server {n}...").format(n=2))
         proc2, command2 = backend.start_server(
-            model_path2,
-            prof2,
-            ep_cfg2,
-            cfg["benchmark"],
-            out_dir / "server2.log",
+            model_path2, prof2, ep_cfg2, cfg["benchmark"], out_dir / f"{name}-server2.log"
         )
 
         print_msg(_("Warte auf Health Checks..."))
         timeout = float(base_endpoint.get("startup_timeout_seconds", 300))
         await asyncio.gather(
-            wait_health_async(ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1), proc1),
-            wait_health_async(ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2), proc2),
+            asyncio.to_thread(backend.wait_health, ep_cfg1["base_url"], timeout, auth_headers(ep_cfg1), proc1),
+            asyncio.to_thread(backend.wait_health, ep_cfg2["base_url"], timeout, auth_headers(ep_cfg2), proc2),
         )
         print_msg(_("Beide Server bereit."), style="green")
 
         interval = float(cfg["benchmark"].get("resource_sample_interval", 0.5))
         print_msg(_("Starte parallele Endpoint-Last auf beide Server..."))
+        target_pids = [pid for pid in (getattr(proc1, "pid", None), getattr(proc2, "pid", None)) if pid]
         res1, res2 = await asyncio.gather(
             _run_endpoint_load_async(
-                ep_cfg1["base_url"],
-                ep_cfg1,
-                interval,
-                load_dir1,
-                target_pid=proc1.pid if proc1 else None,
-                target_pids=[
-                    pid for pid in (
-                        proc1.pid if proc1 else None,
-                        proc2.pid if proc2 else None,
-                    ) if pid
-                ],
+                ep_cfg1["base_url"], ep_cfg1, interval, load_dir1,
+                target_pid=getattr(proc1, "pid", None), target_pids=target_pids,
             ),
             _run_endpoint_load_async(
-                ep_cfg2["base_url"],
-                ep_cfg2,
-                interval,
-                load_dir2,
-                target_pid=proc2.pid if proc2 else None,
-                target_pids=[
-                    pid for pid in (
-                        proc1.pid if proc1 else None,
-                        proc2.pid if proc2 else None,
-                    ) if pid
-                ],
+                ep_cfg2["base_url"], ep_cfg2, interval, load_dir2,
+                target_pid=getattr(proc2, "pid", None), target_pids=target_pids,
             ),
         )
 
         result = {
             "status": "ok",
+            "backend": name,
             "duration_seconds": time.perf_counter() - started,
             "selection": {
                 "strategy": "two-smallest-vram-compatible-gpu-models",
@@ -213,35 +198,27 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
             },
             "models": [
                 {
-                    "name": model1["name"],
-                    "path": model_path1,
-                    "profile": prof1.get("name"),
-                    "base_url": ep_cfg1["base_url"],
-                    "server_command": command1,
-                    "average_system_tps": _average_system_tps(res1),
-                    "endpoint": res1,
+                    "name": model1["name"], "path": model_path1, "profile": prof1.get("name"),
+                    "base_url": ep_cfg1["base_url"], "server_command": command1,
+                    "average_system_tps": _average_system_tps(res1), "endpoint": res1,
                 },
                 {
-                    "name": model2["name"],
-                    "path": model_path2,
-                    "profile": prof2.get("name"),
-                    "base_url": ep_cfg2["base_url"],
-                    "server_command": command2,
-                    "average_system_tps": _average_system_tps(res2),
-                    "endpoint": res2,
+                    "name": model2["name"], "path": model_path2, "profile": prof2.get("name"),
+                    "base_url": ep_cfg2["base_url"], "server_command": command2,
+                    "average_system_tps": _average_system_tps(res2), "endpoint": res2,
                 },
             ],
         }
         write_json(out_dir / "multitenant.json", result)
-        for name, res in ((model1["name"], res1), (model2["name"], res2)):
+        for model_name, res in ((model1["name"], res1), (model2["name"], res2)):
             tps = f"{_average_system_tps(res):.2f}"
-            print_msg(_("{name}: {tps} System-TPS im Mittel").format(name=name, tps=tps))
+            print_msg(_("{name}: {tps} System-TPS im Mittel").format(name=model_name, tps=tps))
         print_msg(_("Ergebnis: {path}").format(path=out_dir / "multitenant.json"), style="green")
         return 0
     except Exception as exc:
         write_json(
             out_dir / "multitenant.json",
-            {"status": "failed", "error": str(exc), "duration_seconds": time.perf_counter() - started},
+            {"status": "failed", "backend": name, "error": str(exc), "duration_seconds": time.perf_counter() - started},
         )
         print_err(_("Fehler im Stresstest: {error}").format(error=exc))
         return 1

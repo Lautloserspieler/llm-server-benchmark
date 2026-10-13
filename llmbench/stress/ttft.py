@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llmbench.backends.llama_cpp import LlamaCppBackend
+from llmbench.backends import backend_name, get_backend
 from llmbench.config import load_config, resolve_path
 from llmbench.endpoint import run_endpoint_load
 from llmbench.i18n import _
+from llmbench.stress.base import require_capabilities
 from llmbench.utils import ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -38,8 +39,22 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
 
     default_out = Path(cfg.get("project", {}).get("output_dir", "results")) / "stress_ttft"
     out_dir = ensure_dir(Path(output_dir) if output_dir is not None else default_out)
+
+    backend = get_backend(cfg)
+    name = backend_name(cfg)
+    skipped = require_capabilities(
+        backend,
+        name,
+        ("endpoint", "concurrency"),
+        workload="text.ttft_stress",
+        result_path=out_dir / "ttft.json",
+    )
+    if skipped is not None:
+        return skipped
+
     endpoint_cfg = dict(cfg.get("endpoint", {}))
     endpoint_cfg.update(model.get("endpoint", {}) or {})
+    endpoint_cfg = backend.prepare_endpoint_config(endpoint_cfg)
     endpoint_cfg["enabled"] = True
     endpoint_cfg["concurrency"] = levels
     endpoint_cfg["requests_per_level"] = max(
@@ -49,8 +64,6 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
         int(endpoint_cfg.get("parallel_slots", 1)), max(levels)
     )
 
-    tools = cfg["tools"]
-    backend = LlamaCppBackend(tools["llama_bench"], tools["llama_server"])
     profile = profiles[0]
     model_path = resolve_path(model["path"], cfg)
     proc = None
@@ -63,7 +76,7 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
             profile,
             endpoint_cfg,
             cfg["benchmark"],
-            out_dir / "llama-server.log",
+            out_dir / f"{name}-server.log",
         )
         cold_start = backend.wait_health(
             endpoint_cfg["base_url"],
@@ -76,10 +89,11 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
             endpoint_cfg,
             float(cfg["benchmark"].get("resource_sample_interval", 0.5)),
             out_dir,
-            target_pid=proc.pid,
+            target_pid=getattr(proc, "pid", None),
         )
         result["model"] = model["name"]
         result["profile"] = profile.get("name")
+        result["backend"] = name
         result["server_command"] = command
         result["cold_start_seconds"] = cold_start
         write_json(out_dir / "ttft.json", result)
@@ -95,7 +109,7 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
         print_msg(_("Ergebnis: {path}").format(path=out_dir / "ttft.json"), style="green")
         return 0
     except Exception as exc:
-        write_json(out_dir / "ttft.json", {"status": "failed", "error": str(exc)})
+        write_json(out_dir / "ttft.json", {"status": "failed", "backend": name, "error": str(exc)})
         print_err(_("TTFT-Stresstest fehlgeschlagen: {error}").format(error=exc))
         return 1
     finally:

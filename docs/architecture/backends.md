@@ -52,7 +52,7 @@ Er ist **nicht** verantwortlich für:
 
 ## Capabilities statt Backend-Namensprüfungen
 
-Ab Phase 1 sollen optionale Fähigkeiten explizit beschrieben werden, z. B.:
+Seit Phase 1 werden optionale Fähigkeiten über `BackendCapabilities` explizit beschrieben:
 
 ```text
 endpoint
@@ -65,8 +65,25 @@ quantization
 multi_model
 ```
 
-Code soll eine Fähigkeit prüfen und nicht auf `backend == "..." ` verzweigen, wenn die
-fachliche Entscheidung eigentlich capability-basiert ist.
+Code prüft eine Fähigkeit und verzweigt nicht auf `backend == "..."`, wenn die
+fachliche Entscheidung capability-basiert ist.
+
+Aktueller Adapterstand:
+
+| Capability | llama.cpp | vLLM |
+| --- | --- | --- |
+| endpoint | ✅ | ✅ |
+| streaming | ✅ | ✅ |
+| concurrency | ✅ | ✅ |
+| long_context | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ |
+| oom_probe | ✅ | — |
+| quantization | ✅ | — |
+| multi_model | ✅ | — |
+
+Ein fehlendes Häkchen bedeutet nicht, dass die Upstream-Runtime diese Funktion grundsätzlich
+nicht besitzt. Es bedeutet, dass der aktuelle llmbench-Adapter dafür noch keinen
+reproduzierbaren Benchmarkvertrag anbietet.
 
 ## Install/Remove-Symmetrie
 

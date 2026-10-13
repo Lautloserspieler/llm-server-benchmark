@@ -16,9 +16,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .base import BenchmarkBackend
+from .capabilities import BackendCapabilities
 from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
-from ..http_bench import run_http_bench
+from ..http_bench import API_STYLE_OPENAI_COMPLETIONS, run_http_bench
 from ..kv_cache import KvCacheObservation
 from ..utils import auth_headers
 
@@ -142,6 +143,17 @@ def _looks_like_path(model_path: str) -> bool:
 
 class VllmBackend(BenchmarkBackend):
     """Startet vLLM als Container und misst pp/tg/long_context ueber HTTP."""
+
+    capabilities = BackendCapabilities(
+        endpoint=True,
+        streaming=True,
+        concurrency=True,
+        long_context=True,
+        kv_cache_observation=True,
+        oom_probe=False,
+        quantization=False,
+        multi_model=False,
+    )
 
     def __init__(
         self,
@@ -373,6 +385,11 @@ class VllmBackend(BenchmarkBackend):
         )
 
     # --------------------------------------------------------- Endpoint-Pfad
+
+    def prepare_endpoint_config(self, endpoint_cfg: dict[str, Any]) -> dict[str, Any]:
+        cfg = dict(endpoint_cfg)
+        cfg["api_style"] = API_STYLE_OPENAI_COMPLETIONS
+        return cfg
 
     def start_server(
         self,

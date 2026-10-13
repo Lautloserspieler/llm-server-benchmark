@@ -55,6 +55,22 @@ ersetzt wird.
 Siehe [docs/architecture/](docs/architecture/README.md) für Core, Backends/Runtimes,
 Tasks/Workloads, Telemetrie, Resultate und Kompatibilität.
 
+## Phase 1 — Backend-Capabilities und backend-unabhängige Stresstests ✅ *umgesetzt (unveröffentlicht)*
+
+`BenchmarkBackend` besitzt jetzt eine explizite `BackendCapabilities`-Beschreibung.
+TTFT, OOM/Kontext, Quantisierung und Multi-Tenant instanziieren kein llama.cpp-Backend
+mehr direkt, sondern verwenden `get_backend()` und prüfen benötigte Fähigkeiten.
+
+Ein nicht unterstützter Workload ist kein Benchmarkfehler: Er schreibt ein strukturiertes
+`status: skipped` mit `reason: backend_capability_missing` und liefert Exitcode 2.
+llama.cpp unterstützt die vorhandenen vier Stresspfade. vLLM kann den generischen
+TTFT/Concurrency-Stresstest ausführen; OOM-Probe, lokaler Quantisierungsvergleich und
+Multi-Model-Stress bleiben dort bis zu einer belastbaren Adapter-Implementierung explizit
+unsupported.
+
+Die llama.cpp-spezifischen HTTP-Endpunkte für den Kontext-/OOM-Probe liegen nun im
+llama.cpp-Backend statt im generischen Stress-Runner.
+
 ## Nächste Schritte (Stand: nach 1.6.0)
 
 Für alles gilt: **Das Sprachsystem (de/en) muss überall funktionieren**, und alles läuft über
@@ -66,9 +82,7 @@ eine einheitliche, schöne Terminal-Oberfläche.
 2. **Setup/Installer fertigstellen** ✅ *umgesetzt (unveröffentlicht)* — NVIDIA-Treiberprüfung
    unter Windows, nach Neustart automatisch weitermachen, Backend-Auswahl im Setup, Tests der
    Installer in CI.
-3. **Stresstests für alle Backends** — TTFT/Multi-Tenant/OOM/Quant sind heute fest an
-   llama.cpp gebunden; künftig über `get_backend()`, nicht unterstützte Tests werden mit
-   Begründung übersprungen.
+3. **Stresstests über Backend-Capabilities** ✅ *umgesetzt (unveröffentlicht)* — die Stress-Pfade laufen über `get_backend()`; nicht unterstützte Workloads werden strukturiert mit Begründung übersprungen.
 4. **TGI-Backend** (Phase C), danach **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs).
 
 ## Phasenplan (ursprünglich)

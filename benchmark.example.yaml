@@ -108,7 +108,7 @@ soak:
 stress:
   # stress-ttft erhoeht die Parallelitaet deutlich ueber den normalen Endpoint-Test.
   ttft_concurrency: [1, 2, 4, 8, 16, 32]
-  # stress-oom startet llama-server fuer jede Stufe neu und stoppt beim ersten
+  # stress-oom startet den konfigurierten Backend-Server fuer jede Stufe neu und stoppt beim ersten
   # echten Fehler. Die Leiter reicht bewusst ueber 130K hinaus, damit starke
   # Systeme ihre praktische KV-/Kontextgrenze tatsaechlich erreichen koennen.
   oom_contexts: [4096, 8192, 16384, 32768, 65536, 98304, 131072, 196608, 262144, 393216]

@@ -54,6 +54,7 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
 
     endpoint_cfg = dict(cfg.get("endpoint", {}))
     endpoint_cfg.update(model.get("endpoint", {}) or {})
+    endpoint_cfg = backend.prepare_endpoint_config(endpoint_cfg)
     endpoint_cfg["enabled"] = True
     endpoint_cfg["concurrency"] = levels
     endpoint_cfg["requests_per_level"] = max(

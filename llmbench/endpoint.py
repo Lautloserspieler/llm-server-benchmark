@@ -125,9 +125,13 @@ def server_exit_message(proc: Any, code: int) -> str:
 
 
 async def wait_health_async(
-    base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
+    base_url: str,
+    timeout_s: float,
+    headers: dict[str, str] | None = None,
+    proc: Any = None,
+    path: str = "/health",
 ) -> float:
-    """Wartet, bis /health antwortet.
+    """Wartet, bis ``path`` antwortet.
 
     Mit ``proc`` wird bei jedem Versuch geprueft, ob der Server noch laeuft:
     ein sofort abgestuerzter llama-server wird dann direkt mit Exitcode und
@@ -153,7 +157,7 @@ async def wait_health_async(
                 raise RuntimeError(server_exit_message(proc, code))
             try:
                 r = await client.get(
-                    base_url.rstrip("/") + "/health", timeout=5, headers=headers or {}
+                    base_url.rstrip("/") + path, timeout=5, headers=headers or {}
                 )
                 if r.status_code == 200:
                     return time.monotonic() - started
@@ -175,15 +179,19 @@ async def wait_health_async(
 
 
 def wait_health(
-    base_url: str, timeout_s: float, headers: dict[str, str] | None = None, proc: Any = None
+    base_url: str,
+    timeout_s: float,
+    headers: dict[str, str] | None = None,
+    proc: Any = None,
+    path: str = "/health",
 ) -> float:
     """Synchronous wrapper using nested event loop compatibility."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(wait_health_async(base_url, timeout_s, headers, proc))
+        return asyncio.run(wait_health_async(base_url, timeout_s, headers, proc, path=path))
 
-    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers, proc))
+    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers, proc, path=path))
 
 
 def port_in_use(host: str, port: int) -> bool:

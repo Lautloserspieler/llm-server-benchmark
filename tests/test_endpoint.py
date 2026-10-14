@@ -46,6 +46,43 @@ def test_auth_headers_bearer_token_with_api_key():
 
 # --------------------------------------------------------------------------- backend-aware sanity check
 
+def test_sanity_check_uses_openai_completion_dialect(monkeypatch):
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append({
+            "path": request.url.path,
+            "payload": json.loads(request.content.decode("utf-8")),
+        })
+        body = (
+            'data: {"choices":[{"text":"READY"}]}\n'
+            'data: {"choices":[],"usage":{"completion_tokens":1}}\n'
+            'data: [DONE]\n'
+        )
+        return httpx.Response(200, text=body)
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr("llmbench.endpoint.httpx.AsyncClient", Client)
+    passed, message = asyncio.run(
+        run_sanity_check(
+            "http://testserver",
+            {"api_style": "openai_completions", "timeout_seconds": 5},
+            {"tests": [{"prompt": "health", "expected_regex": "^READY$", "max_tokens": 4}]},
+        )
+    )
+
+    assert passed is True
+    assert "1/1" in message
+    assert seen[0]["path"] == "/v1/completions"
+    assert seen[0]["payload"]["max_tokens"] == 4
+
+
 def test_sanity_check_uses_ollama_native_dialect(monkeypatch):
     seen: list[dict] = []
 

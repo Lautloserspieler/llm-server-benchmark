@@ -16,7 +16,12 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import normalize_flash_attention
-from .http_bench import API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, one_completion_async
+from .http_bench import (
+    API_STYLE_LLAMA_CPP,
+    API_STYLE_LLAMA_CPP_CHAT,
+    one_completion_async,
+    sanity_completion_async,
+)
 from .monitor import ResourceMonitor, strip_samples
 from .i18n import _
 from .llama_flags import load_flags, no_op_offload_flags
@@ -50,41 +55,40 @@ async def run_sanity_check(
     cfg: dict[str, Any],
     quality_gate_cfg: dict[str, Any],
 ) -> tuple[bool, str]:
-    """Prueft anhand definierter Tests, ob das Modell sinnvolle Ausgaben erzeugt."""
+    """Prueft Quality-Gate-Prompts ueber den konfigurierten API-Dialekt."""
     tests = quality_gate_cfg.get("tests", [])
     if not tests:
         return True, "Keine Tests im Quality Gate definiert."
 
     passed = 0
-    errors = []
+    errors: list[str] = []
+    api_style = api_style_for(cfg)
 
     async with httpx.AsyncClient(headers=auth_headers(cfg)) as client:
         for i, test in enumerate(tests):
-            prompt = test.get("prompt", "")
+            prompt = str(test.get("prompt", ""))
             expected_regex = test.get("expected_regex")
-            max_tokens = test.get("max_tokens", 50)
-
-            payload = {
-                "prompt": prompt,
-                "n_predict": max_tokens,
-                "temperature": 0.0,
-                "stream": False,
-            }
+            request_cfg = dict(cfg)
+            request_cfg["max_tokens"] = int(test.get("max_tokens", 50))
+            request_cfg["temperature"] = 0.0
+            request_cfg["timeout_seconds"] = float(
+                test.get("timeout_seconds", cfg.get("timeout_seconds", 30))
+            )
             try:
-                r = await client.post(
-                    base_url.rstrip("/") + "/completion",
-                    json=payload,
-                    timeout=30,
+                content = await sanity_completion_async(
+                    client,
+                    base_url,
+                    prompt,
+                    request_cfg,
+                    api_style=api_style,
                 )
-                r.raise_for_status()
-                content = r.json().get("content", "").strip()
-
                 if expected_regex:
-                    if re.search(expected_regex, content):
+                    if re.search(str(expected_regex), content):
                         passed += 1
                     else:
                         errors.append(
-                            f"Test {i+1} fehlgeschlagen. Erwartet Regex '{expected_regex}', erhalten: {content!r}"
+                            f"Test {i+1} fehlgeschlagen. Erwartet Regex "
+                            f"'{expected_regex}', erhalten: {content!r}"
                         )
                 else:
                     passed += 1

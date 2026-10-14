@@ -6,7 +6,7 @@ import pytest
 from llmbench.backends import DEFAULT_BACKEND, backend_name, get_backend
 from llmbench.backends.base import BenchmarkBackend
 from llmbench.backends.llama_cpp import LlamaCppBackend
-from llmbench.runner import BENCH_KINDS, SOAK_LABELS, _resolve_endpoint_profile, count_tests, filter_profiles_by_hardware, run_suite
+from llmbench.runner import BENCH_KINDS, SOAK_LABELS, _resolve_endpoint_profile, _tool_info, count_tests, filter_profiles_by_hardware, run_suite
 from llmbench.tuner import TuneSelection, tune_gpu_layers, tune_gpu_layers_selection
 
 
@@ -154,9 +154,24 @@ def test_get_backend_dispatches_to_vllm():
     assert backend.image == "vllm/vllm-openai:latest"
 
 
+def test_get_backend_dispatches_to_tgi():
+    from llmbench.backends.tgi import TgiBackend
+
+    backend = get_backend({"tools": _tools(backend="tgi"), "endpoint": {}})
+    assert isinstance(backend, TgiBackend)
+    assert backend.image == "ghcr.io/huggingface/text-generation-inference:latest"
+
+
 def test_get_backend_rejects_unknown_backend():
     with pytest.raises(ValueError, match="Unbekanntes Backend"):
         get_backend({"tools": _tools(backend="sglang")})
+
+
+def test_tool_info_records_tgi_image(monkeypatch):
+    monkeypatch.setattr("llmbench.docker_backend.image_digest", lambda _image: "sha256:test")
+    info = _tool_info({"project": {}, "tools": _tools(backend="tgi", tgi_image="tgi:test")})
+    assert info["tgi"]["image"] == "tgi:test"
+    assert info["tgi"]["digest"] == "sha256:test"
 
 
 # ------------------------------------------------- Lifecycle-Hooks (Regression)

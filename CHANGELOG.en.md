@@ -2,6 +2,22 @@
 
 [🇩🇪 Deutsch](CHANGELOG.md) | 🇬🇧 English
 
+## Unreleased
+
+### TGI backend (Phase C)
+
+- New `tgi` backend: `TgiBackend` runs `ghcr.io/huggingface/text-generation-inference` as a
+  Docker container and measures prompt processing, text generation, and long context via the
+  OpenAI-compatible `/v1/completions` endpoint.
+- `TgiBackend` is registered in the backend factory (`llmbench/backends/__init__.py`), project
+  config (`tools.backend: tgi`, `tools.tgi_image`), the setup image catalog, and the runner
+  alongside `VllmBackend`.
+- Supports the base capabilities `endpoint`, `streaming`, `concurrency`, and `long_context`.
+  KV-cache observation, OOM probing, and local quantization comparison are not yet implemented
+  for TGI.
+- Added tests and updated documentation (`docs/architecture/backends.en.md`,
+  `docs/architecture/backends.md`, `ROADMAP.en.md`, `ROADMAP.md`).
+
 ## 1.6.0
 
 ### Phase 1: backend capabilities and stress-test decoupling

@@ -35,7 +35,8 @@
         "id": {
           "enum": [
             "llama_cpp",
-            "vllm"
+            "vllm",
+            "tgi"
           ],
           "title": "Id",
           "type": "string"
@@ -2070,6 +2071,7 @@
                 "runtime",
                 "sysfs",
                 "system_profiler",
+                "tgi",
                 "vllm",
                 "wall_power_provider",
                 "wmi"

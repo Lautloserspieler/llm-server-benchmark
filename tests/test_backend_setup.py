@@ -58,8 +58,8 @@ def test_unknown_backend_is_rejected(tmp_path: Path):
         backend_setup.ensure_backend("ollama", tmp_path)
 
 
-def test_supported_backends_currently_only_vllm():
-    assert backend_setup.SUPPORTED_BACKENDS == ("vllm",)
+def test_supported_backends_include_vllm_and_tgi():
+    assert backend_setup.SUPPORTED_BACKENDS == ("tgi", "vllm")
 
 
 def test_state_file_path_follows_runtime_convention(tmp_path: Path):

@@ -22,7 +22,7 @@ Beweismaterial belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 | --- | --- | --- | --- |
 | llama.cpp | ✅ fertig | lokales Binary (`llama-bench`/`llama-server`) | Referenz-Backend |
 | vLLM | ✅ fertig (1.6.0) | Docker-Container (`vllm/vllm-openai`) | Phase A |
-| TGI | 📋 geplant | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase C, baut auf Phase A auf |
+| TGI | 🚧 in Arbeit | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase C; wird als containerisiertes, OpenAI-kompatibles HTTP-Backend neben vLLM registriert |
 | Ollama | 📋 geplant | Docker-Container (`ollama/ollama`) | Phase B, eigene native API statt OpenAI-kompatibel |
 
 Neue Backends (vLLM/Ollama/TGI) laufen bewusst **ausschließlich als Docker-Container** —
@@ -44,7 +44,7 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
 (seit 1.6.0) alle verfügbaren Provider parallel.
 
-## Phase 0 — Architekturverträge ✅ *umgesetzt (unveröffentlicht)*
+## Phase 0 — Architekturverträge ✅ *umgesetzt/merged*
 
 Bevor weitere Backends und spätere multimodale Workloads in den Core einziehen, sind die
 Schichtgrenzen und Kompatibilitätsregeln verbindlich dokumentiert. Die Verträge trennen
@@ -55,7 +55,7 @@ ersetzt wird.
 Siehe [docs/architecture/](docs/architecture/README.md) für Core, Backends/Runtimes,
 Tasks/Workloads, Telemetrie, Resultate und Kompatibilität.
 
-## Phase 1 — Backend-Capabilities und backend-unabhängige Stresstests ✅ *umgesetzt (unveröffentlicht)*
+## Phase 1 — Backend-Capabilities und backend-unabhängige Stresstests ✅ *umgesetzt/merged*
 
 `BenchmarkBackend` besitzt jetzt eine explizite `BackendCapabilities`-Beschreibung.
 TTFT, OOM/Kontext, Quantisierung und Multi-Tenant instanziieren kein llama.cpp-Backend
@@ -82,8 +82,8 @@ eine einheitliche, schöne Terminal-Oberfläche.
 2. **Setup/Installer fertigstellen** ✅ *umgesetzt (unveröffentlicht)* — NVIDIA-Treiberprüfung
    unter Windows, nach Neustart automatisch weitermachen, Backend-Auswahl im Setup, Tests der
    Installer in CI.
-3. **Stresstests über Backend-Capabilities** ✅ *umgesetzt (unveröffentlicht)* — die Stress-Pfade laufen über `get_backend()`; nicht unterstützte Workloads werden strukturiert mit Begründung übersprungen.
-4. **TGI-Backend** (Phase C), danach **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs).
+3. **Stresstests über Backend-Capabilities** ✅ *umgesetzt/merged* — die Stress-Pfade laufen über `get_backend()`; nicht unterstützte Workloads werden strukturiert mit Begründung übersprungen.
+4. **TGI-Backend** (Phase C) — in Arbeit; `TgiBackend` ist in der Backend-Factory, der Konfiguration, dem Setup und dem Runner neben `VllmBackend` als containerisiertes, OpenAI-kompatibles HTTP-Backend registriert. Danach **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs).
 
 ## Phasenplan (ursprünglich)
 

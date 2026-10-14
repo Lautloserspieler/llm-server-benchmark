@@ -234,6 +234,7 @@
   "{quant} konnte nicht vollstaendig gemessen werden.": "{quant} could not be measured completely.",
   "Auswahl [1-{count}, Enter = {default}]: ": "Choice [1-{count}, Enter = {default}]: ",
   "Backend": "Backend",
+  "TGI": "TGI",
   "Backend-Auswahl abgebrochen.": "Backend selection cancelled.",
   "Backends fuer den Benchmark auswaehlen und installieren": "Choose and install backends for the benchmark",
   "Backends": "Backends",
@@ -251,6 +252,7 @@
   "{name} wird installiert (LLMBENCH_AUTO_INSTALL=1).": "Installing {name} (LLMBENCH_AUTO_INSTALL=1).",
   "braucht NVIDIA-GPU in Docker": "needs NVIDIA GPU in Docker",
   "vLLM braucht eine NVIDIA-GPU, die Docker an Container durchreicht (NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten.": "vLLM needs an NVIDIA GPU that Docker passes through to containers (NVIDIA driver + NVIDIA Container Toolkit) - not offered here.",
+  "{name} braucht eine NVIDIA-GPU, die Docker an Container durchreicht (NVIDIA-Treiber + NVIDIA Container Toolkit) - wird hier nicht angeboten.": "{name} needs an NVIDIA GPU that Docker passes through to containers (NVIDIA driver + NVIDIA Container Toolkit) - not offered here.",
   "{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.": "{name} is not installed - default backend reset to {default}.",
   "kein Exitcode": "no exit code",
   "Absturz (Zugriffsverletzung)": "crash (access violation)",
@@ -335,5 +337,8 @@
   "Gueltig: {path}": "Valid: {path}",
   "Ungueltig: {path}: {error}": "Invalid: {path}: {error}",
   "Stresstest wird fuer Backend '{backend}' uebersprungen: fehlende Faehigkeiten: {capabilities}.": "Stress test skipped for backend '{backend}': missing capabilities: {capabilities}.",
-  "Zwei aktive Modellserver gleichzeitig": "Two active model servers at the same time"
+  "Zwei aktive Modellserver gleichzeitig": "Two active model servers at the same time",
+  "TGI-Container wurde nicht bereit: {error}": "TGI container did not become ready: {error}",
+  "Container-Log (Ende):": "Container log (tail):",
+  "Es laeuft kein TGI-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No TGI container is running. run_benchmark expects begin_profile to have started the server."
 }

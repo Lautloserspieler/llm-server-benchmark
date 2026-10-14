@@ -70,20 +70,60 @@ capability-based.
 
 Current adapter state:
 
-| Capability | llama.cpp | vLLM |
-| --- | --- | --- |
-| endpoint | ✅ | ✅ |
-| streaming | ✅ | ✅ |
-| concurrency | ✅ | ✅ |
-| long_context | ✅ | ✅ |
-| kv_cache_observation | ✅ | ✅ |
-| oom_probe | ✅ | — |
-| quantization | ✅ | — |
-| multi_model | ✅ | — |
+| Capability | llama.cpp | vLLM | TGI |
+| --- | --- | --- | --- |
+| endpoint | ✅ | ✅ | ✅ |
+| streaming | ✅ | ✅ | ✅ |
+| concurrency | ✅ | ✅ | ✅ |
+| long_context | ✅ | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ | — |
+| oom_probe | ✅ | — | — |
+| quantization | ✅ | — | — |
+| multi_model | ✅ | — | — |
 
 A missing check mark does not mean the upstream runtime can never perform that operation.
 It means the current llmbench adapter does not yet expose a reproducible benchmark contract
 for it.
+
+## Containerized backends
+
+In addition to the native llama.cpp backend, llmbench supports server-based backends as
+Docker containers. Containers unify installation (image pull), removal (container, image,
+volume), and behavior between Windows (Docker Desktop/WSL2) and Linux (native Docker).
+
+### vLLM
+
+`VllmBackend` runs the official image `vllm/vllm-openai`. The server listens on port 8000
+inside the container and is published to the host port from `endpoint.base_url`. Measurements
+use the OpenAI-compatible `/v1/completions` endpoint (`llmbench/http_bench.py`).
+
+Relevant serve arguments:
+
+- `--model` (model reference, local or HuggingFace repo)
+- `--tensor-parallel-size` (via `profile.tensor_parallel_size`)
+- `--quantization` (via `profile.quantization`)
+- `--max-model-len` (via `endpoint.context_size`)
+- `--gpu-memory-utilization`, `--dtype`, additional `profile.additional_args`
+
+### TGI
+
+`TgiBackend` runs the official image `ghcr.io/huggingface/text-generation-inference`.
+The container listens internally on port 80 and is likewise published to the host port from
+`endpoint.base_url`. Like vLLM, TGI is measured through the OpenAI-compatible
+`/v1/completions` endpoint.
+
+Relevant launcher arguments:
+
+- `--model-id` (model reference, local or HuggingFace repo)
+- `--num-shard` (via `profile.tensor_parallel_size`)
+- `--quantize` (via `profile.quantization`)
+- `--max-input-length` (via `profile.max_input_length` or `endpoint.context_size`)
+- `--max-total-tokens` (via `profile.max_total_tokens`)
+- `--dtype`, additional `profile.additional_args`
+
+Currently the TGI adapter supports the base capabilities `endpoint`, `streaming`,
+`concurrency`, and `long_context`. KV-cache observation, OOM probing, and local
+quantization comparison are not yet implemented.
 
 ## Install/remove symmetry
 

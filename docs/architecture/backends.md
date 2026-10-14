@@ -70,20 +70,62 @@ fachliche Entscheidung capability-basiert ist.
 
 Aktueller Adapterstand:
 
-| Capability | llama.cpp | vLLM |
-| --- | --- | --- |
-| endpoint | ✅ | ✅ |
-| streaming | ✅ | ✅ |
-| concurrency | ✅ | ✅ |
-| long_context | ✅ | ✅ |
-| kv_cache_observation | ✅ | ✅ |
-| oom_probe | ✅ | — |
-| quantization | ✅ | — |
-| multi_model | ✅ | — |
+| Capability | llama.cpp | vLLM | TGI |
+| --- | --- | --- | --- |
+| endpoint | ✅ | ✅ | ✅ |
+| streaming | ✅ | ✅ | ✅ |
+| concurrency | ✅ | ✅ | ✅ |
+| long_context | ✅ | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ | — |
+| oom_probe | ✅ | — | — |
+| quantization | ✅ | — | — |
+| multi_model | ✅ | — | — |
 
 Ein fehlendes Häkchen bedeutet nicht, dass die Upstream-Runtime diese Funktion grundsätzlich
 nicht besitzt. Es bedeutet, dass der aktuelle llmbench-Adapter dafür noch keinen
 reproduzierbaren Benchmarkvertrag anbietet.
+
+## Containerisierte Backends
+
+Neben dem nativen llama.cpp-Backend unterstützt llmbench serverbasierte Backends als
+Docker-Container. Container vereinheitlichen Installation (Image-Pull), Deinstallation
+(Container, Image, Volume) und das Verhalten zwischen Windows (Docker Desktop/WSL2) und
+Linux (natives Docker).
+
+### vLLM
+
+`VllmBackend` startet das offizielle Image `vllm/vllm-openai`. Der Server lauscht im
+Container auf Port 8000 und wird auf den Host-Port aus `endpoint.base_url` veröffentlicht.
+Messungen laufen über die OpenAI-kompatible `/v1/completions`-Schnittstelle
+(`llmbench/http_bench.py`).
+
+Relevante Serve-Argumente:
+
+- `--model` (Modellreferenz, lokal oder HuggingFace-Repo)
+- `--tensor-parallel-size` (über `profile.tensor_parallel_size`)
+- `--quantization` (über `profile.quantization`)
+- `--max-model-len` (über `endpoint.context_size`)
+- `--gpu-memory-utilization`, `--dtype`, zusätzliche `profile.additional_args`
+
+### TGI
+
+`TgiBackend` startet das offizielle Image `ghcr.io/huggingface/text-generation-inference`.
+Der Container lauscht intern auf Port 80 und wird ebenfalls auf den Host-Port aus
+`endpoint.base_url` veröffentlicht. Wie vLLM wird TGI über die OpenAI-kompatible
+`/v1/completions`-Schnittstelle gemessen.
+
+Relevante Launcher-Argumente:
+
+- `--model-id` (Modellreferenz, lokal oder HuggingFace-Repo)
+- `--num-shard` (über `profile.tensor_parallel_size`)
+- `--quantize` (über `profile.quantization`)
+- `--max-input-length` (über `profile.max_input_length` oder `endpoint.context_size`)
+- `--max-total-tokens` (über `profile.max_total_tokens`)
+- `--dtype`, zusätzliche `profile.additional_args`
+
+Aktuell unterstützt der TGI-Adapter die Basiscapabilities `endpoint`, `streaming`,
+`concurrency` und `long_context`. KV-Cache-Beobachtung, OOM-Probe und der lokale
+Quantisierungsvergleich sind noch nicht implementiert.
 
 ## Install/Remove-Symmetrie
 

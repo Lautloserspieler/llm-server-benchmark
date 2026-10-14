@@ -144,12 +144,16 @@ def test_tools_vllm_image_has_default():
     assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:latest"
 
 
+def test_tools_tgi_image_has_default():
+    assert DEFAULT_CONFIG["tools"]["tgi_image"] == "ghcr.io/huggingface/text-generation-inference:latest"
+
+
 def test_tools_ollama_image_has_default():
     assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:latest"
 
 
 def test_validation_accepts_known_backends():
-    for name in ("llama_cpp", "vllm", "ollama"):
+    for name in ("llama_cpp", "vllm", "tgi", "ollama"):
         cfg = _valid_cfg(tools={"backend": name})
         assert validate_config(cfg) == [], name
 
@@ -168,6 +172,11 @@ def test_validation_rejects_backend_typo():
 
 def test_vllm_image_is_overridable():
     cfg = _valid_cfg(tools={"backend": "vllm", "vllm_image": "vllm/vllm-openai:v0.6.0"})
+    assert validate_config(cfg) == []
+
+
+def test_tgi_image_is_overridable():
+    cfg = _valid_cfg(tools={"backend": "tgi", "tgi_image": "ghcr.io/huggingface/text-generation-inference:2.0.0"})
     assert validate_config(cfg) == []
 
 
@@ -203,6 +212,34 @@ def test_profile_vllm_fields_are_optional_for_llama_cpp():
     assert profile.dtype is None
 
 
+# ------------------------------------------------------- TGI-Profilfelder
+
+def test_profile_accepts_tgi_passthrough_fields():
+    cfg = _valid_cfg(
+        tools={"backend": "tgi"},
+        models=[{
+            "name": "M", "path": "x", "profiles": [{
+                "name": "TGI", "gpu_layers": -1,
+                "tensor_parallel_size": 2, "quantization": "eetq",
+                "dtype": "float16", "max_input_length": 4096,
+                "max_total_tokens": 8192,
+            }],
+        }],
+    )
+    assert validate_config(cfg) == []
+
+
+def test_profile_tgi_fields_are_optional_for_llama_cpp():
+    """llama.cpp-Profile lassen die neuen TGI-Felder ebenfalls weg."""
+    from llmbench.config import ProfileConfig
+
+    profile = ProfileConfig(name="Full-GPU", gpu_layers=-1)
+    assert profile.max_input_length is None
+    assert profile.max_total_tokens is None
+
+
+# ------------------------------------------------------- Ollama-Profilfelder
+
 def test_profile_accepts_ollama_passthrough_fields():
     cfg = _valid_cfg(
         tools={"backend": "ollama"},
@@ -218,7 +255,6 @@ def test_profile_accepts_ollama_passthrough_fields():
 
 
 def test_profile_ollama_fields_are_optional_for_llama_cpp():
-    """llama.cpp-Profile lassen die Ollama-Felder einfach weg."""
     from llmbench.config import ProfileConfig
 
     profile = ProfileConfig(name="Full-GPU", gpu_layers=-1)
@@ -241,6 +277,8 @@ def test_backend_is_not_part_of_the_config_fingerprint():
 
     assert "backend" not in FINGERPRINT_KEYS
     assert "vllm_image" not in FINGERPRINT_KEYS
+    assert "tgi_image" not in FINGERPRINT_KEYS
+    assert "ollama_image" not in FINGERPRINT_KEYS
 
 
 def test_load_config_records_only_explicit_gpu_layer_origin(tmp_path):

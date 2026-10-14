@@ -22,11 +22,13 @@ from .i18n import _
 LogFn = Callable[[str], None]
 
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
+DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
 DEFAULT_OLLAMA_IMAGE = "ollama/ollama:latest"
 
 # Standard-Image je Backend. Ueber ToolsConfig bzw. --image uebersteuerbar.
 BACKEND_IMAGES: dict[str, str] = {
     "vllm": DEFAULT_VLLM_IMAGE,
+    "tgi": DEFAULT_TGI_IMAGE,
     "ollama": DEFAULT_OLLAMA_IMAGE,
 }
 
@@ -34,6 +36,7 @@ BACKEND_IMAGES: dict[str, str] = {
 # einem Absturz von llmbench noch aufraeumen kann.
 BACKEND_CONTAINERS: dict[str, str] = {
     "vllm": "llmbench-vllm",
+    "tgi": "llmbench-tgi",
     "ollama": "llmbench-ollama",
 }
 
@@ -42,6 +45,7 @@ BACKEND_CONTAINERS: dict[str, str] = {
 # Gigabyte waere gegen die sonstige Praxis dieses Projekts.
 BACKEND_VOLUMES: dict[str, str] = {
     "vllm": "llmbench-vllm-cache",
+    "tgi": "llmbench-tgi-cache",
     "ollama": "llmbench-ollama-cache",
 }
 

@@ -4,20 +4,35 @@
 
 ## Unreleased
 
-### Ollama backend
+### TGI backend (Phase C)
 
-- New `ollama` backend: `tools.backend: ollama` in `benchmark.yaml` benchmarks an Ollama
-  server instead of llama.cpp. Ollama runs exclusively as a Docker container (`ollama/ollama`)
-  and uses the native `/api/generate` endpoint on port `11434`.
-- Local GGUFs are mounted read-only into the container, a minimal `Modelfile` is generated,
-  and the model is registered via `POST /api/create` before benchmarking. An existing Ollama
-  model name can also be used.
-- Prompt, generation, and long-context measurements run through the shared HTTP benchmark
-  layer with the `ollama_native` style, so reports produce the same comparable metrics as
-  llama.cpp and vLLM.
-- New commands `llmbench install-backend --backend ollama` and
-  `llmbench uninstall-backend --backend ollama`: automated installation (image pull) and
-  complete removal (container, image).
+- New `tgi` backend: `TgiBackend` runs `ghcr.io/huggingface/text-generation-inference` as a
+  Docker container and measures prompt processing, text generation, and long context via the
+  OpenAI-compatible `/v1/completions` endpoint.
+- `TgiBackend` is registered in the backend factory (`llmbench/backends/__init__.py`), project
+  config (`tools.backend: tgi`, `tools.tgi_image`), the setup image catalog, and the runner
+  alongside `VllmBackend`.
+- Supports the base capabilities `endpoint`, `streaming`, `concurrency`, and `long_context`.
+  KV-cache observation, OOM probing, and local quantization comparison are not yet implemented
+  for TGI.
+- Added tests and updated documentation (`docs/architecture/backends.en.md`,
+  `docs/architecture/backends.md`, `ROADMAP.en.md`, `ROADMAP.md`).
+
+
+### Ollama backend (Phase 3)
+
+- New `ollama` backend: `OllamaBackend` runs `ollama/ollama` as a Docker container and
+  benchmarks through the native `/api/generate` API.
+- Existing Ollama model names are reused from the persistent `/root/.ollama` volume; missing
+  library models are pulled automatically before the benchmark.
+- Local GGUFs are imported through Ollama's current blob/create API. Split GGUF sets are
+  validated and uploaded shard by shard; import errors are surfaced instead of being ignored.
+- `profile.ollama_num_ctx` and `profile.ollama_num_gpu` are forwarded to the native request.
+  CPU profiles do not request the NVIDIA container runtime.
+- Prompt, generation, long-context, endpoint-load, and quality-gate paths share the same
+  `ollama_native` request dialect and keep benchmark prompts raw to avoid template changes.
+- Community export, setup/install/remove flows, tests, and backend documentation now include
+  Ollama alongside llama.cpp, vLLM, and TGI.
 
 ## 1.6.0
 

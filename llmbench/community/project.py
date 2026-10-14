@@ -265,7 +265,7 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
         raise ProjectionError("unsupported summary schema")
     raw_backend = summary.get("backend")
     backend_id = raw_backend if isinstance(raw_backend, str) else _mapping(raw_backend).get("id")
-    if backend_id not in {"llama_cpp", "vllm"}:
+    if backend_id not in {"llama_cpp", "vllm", "tgi"}:
         raise ProjectionError("summary lacks a supported backend")
     started, finished = _utc(summary.get("started_at")), _utc(summary.get("finished_at"))
     timestamp_status = "recorded" if started and finished else ("partial" if started or finished else "unknown")
@@ -349,12 +349,12 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
             measurement["binary_sha256"] = binary_hash
         measurement["id"] = "llama_bench"
         backend["measurement_tool"] = measurement
-    vllm = _mapping(tools.get("vllm"))
-    digest = vllm.get("digest")
+    container_tool = _mapping(tools.get(backend_id)) if backend_id in {"vllm", "tgi"} else {}
+    digest = container_tool.get("digest")
     if isinstance(digest, str) and re.search(r"(?:^|@)sha256:[0-9a-f]{64}$", digest):
         backend["container_digest"] = digest.rsplit("@", 1)[-1]
-    elif isinstance(vllm.get("image"), str):
-        match = re.search(r"@(?P<digest>sha256:[0-9a-f]{64})$", vllm["image"])
+    elif isinstance(container_tool.get("image"), str):
+        match = re.search(r"@(?P<digest>sha256:[0-9a-f]{64})$", container_tool["image"])
         if match:
             backend["container_digest"] = match.group("digest")
     runtime = _mapping(raw_backend.get("runtime")) if isinstance(raw_backend, Mapping) else {}

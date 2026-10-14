@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from llmbench.backends import get_backend
-from llmbench.backends.ollama import CONTAINER_PORT, DEFAULT_HOST_PORT, MODEL_MOUNT, OllamaBackend
+from llmbench.backends.ollama import CONTAINER_PORT, DEFAULT_HOST_PORT, OLLAMA_DATA_MOUNT, OllamaBackend
 
 IMAGE = "ollama/ollama:latest"
 
@@ -46,8 +46,9 @@ def docker(monkeypatch):
         lambda *_a, **_k: {"image": IMAGE},
     )
     monkeypatch.setattr("llmbench.backends.ollama.wait_health", lambda *_a, **_k: 1.5)
-    # Modell-Erzeugung per /api/create unterdruecken; sie wird separat getestet.
+    # Modellvorbereitung per API unterdruecken; sie wird separat getestet.
     monkeypatch.setattr("llmbench.backends.ollama.OllamaBackend._create_model", lambda _s, _p: None)
+    monkeypatch.setattr("llmbench.backends.ollama.OllamaBackend._ensure_registry_model", lambda _s, _m: None)
     return fake
 
 
@@ -73,11 +74,28 @@ def test_begin_profile_starts_container_with_empty_args(docker, tmp_path: Path):
     assert backend.container_id == "CONTAINERID"
 
 
-def test_begin_profile_mounts_gguf_parent_and_prepares_create(docker, tmp_path: Path, monkeypatch):
-    create_calls: list[dict] = []
+def test_begin_profile_cpu_profile_does_not_request_nvidia_runtime(docker, tmp_path: Path):
+    backend = _backend()
+    backend.begin_profile("mistral", {"name": "CPU", "gpu_layers": 0}, {}, tmp_path)
+    assert docker.runs[0]["gpu"] is False
+
+
+def test_begin_profile_explicit_num_gpu_zero_uses_cpu(docker, tmp_path: Path):
+    backend = _backend()
+    backend.begin_profile(
+        "mistral",
+        {"name": "CPU", "gpu_layers": -1, "ollama_num_gpu": 0},
+        {},
+        tmp_path,
+    )
+    assert docker.runs[0]["gpu"] is False
+
+
+def test_begin_profile_prepares_local_gguf_via_api(docker, tmp_path: Path, monkeypatch):
+    create_calls: list[str] = []
     monkeypatch.setattr(
         "llmbench.backends.ollama.OllamaBackend._create_model",
-        lambda _self, payload: create_calls.append(payload),
+        lambda _self, model_path: create_calls.append(model_path),
     )
 
     model_file = tmp_path / "model.gguf"
@@ -87,18 +105,10 @@ def test_begin_profile_mounts_gguf_parent_and_prepares_create(docker, tmp_path: 
 
     run = docker.runs[0]
     assert run["args"] == []
-    assert run["volumes"][str(tmp_path.resolve())] == f"{MODEL_MOUNT}:ro"
+    assert run["volumes"]["llmbench-ollama-cache"] == OLLAMA_DATA_MOUNT
     assert backend._created_model == "llmbench-model"
-
-    assert len(create_calls) == 1
-    payload = create_calls[0]
-    assert payload["name"] == "llmbench-model"
-    assert 'FROM "/models/model.gguf"' in payload["modelfile"]
-    assert payload["stream"] is False
-
-    modelfile_path = tmp_path / "Modelfile"
-    assert modelfile_path.exists()
-    assert 'FROM "/models/model.gguf"' in modelfile_path.read_text(encoding="utf-8")
+    assert create_calls == [str(model_file)]
+    assert not (tmp_path / "Modelfile").exists()
 
 
 def test_begin_profile_uses_existing_ollama_model_name(docker, tmp_path: Path):
@@ -107,7 +117,7 @@ def test_begin_profile_uses_existing_ollama_model_name(docker, tmp_path: Path):
 
     run = docker.runs[0]
     assert run["args"] == []
-    assert not run["volumes"]
+    assert run["volumes"]["llmbench-ollama-cache"] == OLLAMA_DATA_MOUNT
     assert backend._model_for_request("mistral:latest") == "mistral:latest"
 
 
@@ -178,6 +188,21 @@ def test_run_benchmark_delegates_to_run_http_bench(tmp_path: Path, monkeypatch):
     assert captured["backend_name"] == "ollama"
     assert captured["target_pid"] == 4242
     assert captured["api_style"] == "ollama_native"
+
+
+@pytest.mark.usefixtures("docker")
+def test_run_benchmark_passes_ollama_profile_options(tmp_path: Path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "llmbench.backends.ollama.run_http_bench",
+        lambda _u, _h, bench_cfg, *_a, **_k: captured.setdefault("bench_cfg", bench_cfg) or {"status": "ok"},
+    )
+    backend = _backend()
+    profile = {"name": "Ollama", "ollama_num_ctx": 16384, "ollama_num_gpu": 24}
+    backend.begin_profile("mistral", profile, {}, tmp_path)
+    backend.run_benchmark("mistral", profile, "generation", tmp_path, {})
+    assert captured["bench_cfg"]["ollama_num_ctx"] == 16384
+    assert captured["bench_cfg"]["ollama_num_gpu"] == 24
 
 
 @pytest.mark.usefixtures("docker")
@@ -274,6 +299,21 @@ def test_start_server_sets_model_in_endpoint_cfg(tmp_path: Path):
     endpoint_cfg = {"base_url": f"http://127.0.0.1:{DEFAULT_HOST_PORT}"}
     backend.start_server("mistral", {}, endpoint_cfg, {}, tmp_path / "ollama.log")
     assert endpoint_cfg["model"] == "mistral"
+
+
+@pytest.mark.usefixtures("docker")
+def test_start_server_sets_ollama_profile_options_in_endpoint_cfg(tmp_path: Path):
+    backend = _backend()
+    endpoint_cfg = {"base_url": f"http://127.0.0.1:{DEFAULT_HOST_PORT}"}
+    backend.start_server(
+        "mistral",
+        {"ollama_num_ctx": 8192, "ollama_num_gpu": 0, "gpu_layers": 0},
+        endpoint_cfg,
+        {},
+        tmp_path / "ollama.log",
+    )
+    assert endpoint_cfg["ollama_num_ctx"] == 8192
+    assert endpoint_cfg["ollama_num_gpu"] == 0
 
 
 @pytest.mark.usefixtures("docker")

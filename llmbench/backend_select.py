@@ -1,6 +1,6 @@
 """Backend-Auswahl im Setup.
 
-llama.cpp ist immer dabei. Die Container-Backends (vLLM, spaeter TGI/Ollama)
+llama.cpp ist immer dabei. Die Container-Backends (Ollama, TGI, vLLM)
 sind mehrere Gigabyte gross - deshalb wird fuer jedes einzeln gefragt, bevor
 ein Image geladen wird. Anschliessend kann das Backend gewaehlt werden, mit dem
 der Benchmark standardmaessig laeuft (``tools.backend`` in benchmark.yaml).

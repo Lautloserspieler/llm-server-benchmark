@@ -73,7 +73,7 @@ def test_begin_profile_starts_container_with_serve_args(docker, tmp_path: Path):
     assert run["volumes"][expected_source] == f"{MODEL_MOUNT}:ro"
     assert args[args.index("--hostname") + 1] == "0.0.0.0"
     assert args[args.index("--port") + 1] == str(CONTAINER_PORT)
-    assert args[args.index("--max-input-length") + 1] == "32768"
+    assert args[args.index("--max-total-tokens") + 1] == "32768"
     assert backend.container_id == "CONTAINERID"
 
 
@@ -96,7 +96,7 @@ def test_begin_profile_passes_profile_fields(docker, tmp_path: Path):
     assert args[args.index("--num-shard") + 1] == "2"
     assert args[args.index("--quantize") + 1] == "awq"
     assert args[args.index("--dtype") + 1] == "bfloat16"
-    assert args[args.index("--max-input-length") + 1] == "8192"
+    assert args[args.index("--max-input-tokens") + 1] == "8192"
     assert args[args.index("--max-total-tokens") + 1] == "32768"
 
 
@@ -105,22 +105,22 @@ def test_begin_profile_omits_unset_profile_fields(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080"})
     backend.begin_profile("/models/M", {"name": "Full-GPU"}, {}, tmp_path)
     args = docker.runs[0]["args"]
-    for flag in ("--num-shard", "--quantize", "--dtype", "--max-input-length", "--max-total-tokens"):
+    for flag in ("--num-shard", "--quantize", "--dtype", "--max-input-tokens", "--max-total-tokens"):
         assert flag not in args
 
 
-def test_context_size_maps_to_max_input_length(docker, tmp_path: Path):
+def test_context_size_maps_to_max_total_tokens(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080", "context_size": 16384})
     backend.begin_profile("/models/M", {"name": "TGI"}, {}, tmp_path)
     args = docker.runs[0]["args"]
-    assert args[args.index("--max-input-length") + 1] == "16384"
+    assert args[args.index("--max-total-tokens") + 1] == "16384"
 
 
 def test_profile_max_input_length_overrides_context_size(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080", "context_size": 16384})
     backend.begin_profile("/models/M", {"name": "TGI", "max_input_length": 4096}, {}, tmp_path)
     args = docker.runs[0]["args"]
-    assert args[args.index("--max-input-length") + 1] == "4096"
+    assert args[args.index("--max-input-tokens") + 1] == "4096"
 
 
 def test_begin_profile_publishes_port_from_base_url(docker, tmp_path: Path):
@@ -140,15 +140,15 @@ def test_begin_profile_mounts_model_directory_read_only(docker, tmp_path: Path):
     assert docker.runs[0]["args"][1] == MODEL_MOUNT
 
 
-def test_begin_profile_mounts_parent_for_single_model_file(docker, tmp_path: Path):
+def test_begin_profile_rejects_single_model_file(docker, tmp_path: Path):
     model_file = tmp_path / "model.gguf"
     model_file.write_bytes(b"x")
     backend = _backend()
-    backend.begin_profile(str(model_file), {}, {}, tmp_path)
 
-    volumes = docker.runs[0]["volumes"]
-    assert volumes[str(tmp_path.resolve())] == f"{MODEL_MOUNT}:ro"
-    assert docker.runs[0]["args"][1] == f"{MODEL_MOUNT}/model.gguf"
+    with pytest.raises(RuntimeError, match="Transformers-Modellverzeichnis"):
+        backend.begin_profile(str(model_file), {}, {}, tmp_path)
+
+    assert docker.runs == []
 
 
 def test_huggingface_repo_id_is_not_mounted(docker, tmp_path: Path):
@@ -278,8 +278,12 @@ def test_end_profile_writes_container_log(tmp_path: Path):
 
 def test_prepare_endpoint_config_selects_openai_completions():
     backend = _backend()
-    cfg = backend.prepare_endpoint_config({"base_url": "http://127.0.0.1:8080"})
+    cfg = backend.prepare_endpoint_config({
+        "base_url": "http://127.0.0.1:8080",
+        "ignore_eos": True,
+    })
     assert cfg["api_style"] == "openai_completions"
+    assert cfg["ignore_eos"] is False
 
 
 def test_start_server_reuses_container_start_path(docker, tmp_path: Path):
@@ -292,7 +296,7 @@ def test_start_server_reuses_container_start_path(docker, tmp_path: Path):
     assert proc.name == "llmbench-tgi"
     assert proc.pid == 4242
     assert "--model-id" in command
-    assert docker.runs[0]["args"][docker.runs[0]["args"].index("--max-input-length") + 1] == "8192"
+    assert docker.runs[0]["args"][docker.runs[0]["args"].index("--max-total-tokens") + 1] == "8192"
 
 
 @pytest.mark.usefixtures("docker")

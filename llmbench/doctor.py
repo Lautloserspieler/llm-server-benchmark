@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from .config import config_fingerprint, resolve_path
@@ -94,36 +95,68 @@ def _power_state_warning() -> str | None:
 def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
     hardware = collect_hardware(resolve_path(cfg["project"]["output_dir"], cfg))
     checks: list[dict[str, Any]] = []
+    backend = str((cfg.get("tools") or {}).get("backend") or "llama_cpp")
 
-    for key in ("llama_bench", "llama_server"):
-        value = cfg.get("tools", {}).get(key)
-        ok = command_exists(value)
-        item: dict[str, Any] = {"name": key, "configured": value, "ok": ok}
-        if ok:
-            try:
-                exe = resolve_executable(value)
-                item["resolved"] = exe
-                if key == "llama_bench":
-                    flags = _check_flags(exe)
-                    item["flags"] = flags
-                    if not flags.get("ok"):
-                        item["ok"] = False
-                        item["error"] = (
-                            "Der installierte Build kennt folgende benoetigte Optionen nicht: "
-                            + ", ".join(flags.get("missing_required", []))
-                        )
-                    item["build"] = probe_build(exe, with_hash=False)
-            except Exception as exc:
-                item["ok"] = False
-                item["error"] = str(exc)
-        checks.append(item)
+    if backend == "llama_cpp":
+        for key in ("llama_bench", "llama_server"):
+            value = cfg.get("tools", {}).get(key)
+            ok = command_exists(value)
+            item: dict[str, Any] = {"name": key, "configured": value, "ok": ok}
+            if ok:
+                try:
+                    exe = resolve_executable(value)
+                    item["resolved"] = exe
+                    if key == "llama_bench":
+                        flags = _check_flags(exe)
+                        item["flags"] = flags
+                        if not flags.get("ok"):
+                            item["ok"] = False
+                            item["error"] = (
+                                "Der installierte Build kennt folgende benoetigte Optionen nicht: "
+                                + ", ".join(flags.get("missing_required", []))
+                            )
+                        item["build"] = probe_build(exe, with_hash=False)
+                except Exception as exc:
+                    item["ok"] = False
+                    item["error"] = str(exc)
+            checks.append(item)
+    else:
+        from . import backend_setup, docker_backend
+
+        docker_ok = docker_backend.docker_available()
+        installed = backend in backend_setup.SUPPORTED_BACKENDS and backend_setup.is_installed(
+            backend, cfg.get("_config_dir") or "."
+        )
+        checks.append({
+            "name": f"{backend}_backend",
+            "configured": backend,
+            "resolved": backend_setup.default_image(backend) if backend in backend_setup.SUPPORTED_BACKENDS else None,
+            "ok": docker_ok and installed,
+            "error": None if docker_ok and installed else (
+                "Docker ist nicht verfuegbar." if not docker_ok else
+                f"Backend '{backend}' ist nicht installiert."
+            ),
+        })
 
     vram = _vram_total_bytes(hardware)
     ram = (hardware.get("memory") or {}).get("total_bytes")
     models = []
     for model in cfg.get("models", []):
-        configured_path = resolve_path(model["path"], cfg)
-        fingerprint = file_fingerprint(configured_path, with_hash=False)
+        raw_path = str(model["path"])
+        path_obj = Path(raw_path)
+        is_runtime_reference = (
+            backend != "llama_cpp"
+            and not path_obj.exists()
+            and not path_obj.is_absolute()
+            and not raw_path.startswith((".", "~"))
+            and "\\" not in raw_path
+        )
+        if is_runtime_reference:
+            fingerprint = {"exists": True, "path": raw_path, "size_bytes": None}
+            configured_path = raw_path
+        else:
+            configured_path = resolve_path(raw_path, cfg)
+            fingerprint = file_fingerprint(configured_path, with_hash=False)
         exists = bool(fingerprint.get("exists"))
         size = fingerprint.get("size_bytes")
         entry: dict[str, Any] = {
@@ -132,6 +165,8 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
             "exists": exists,
             "size_bytes": size,
         }
+        if is_runtime_reference:
+            entry["hint"] = "Runtime-Modellreferenz; Verfuegbarkeit wird beim Backend-Start geprueft."
         if fingerprint.get("shard_count"):
             entry["shard_count"] = fingerprint["shard_count"]
         if fingerprint.get("error"):

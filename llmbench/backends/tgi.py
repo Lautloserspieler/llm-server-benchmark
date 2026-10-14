@@ -107,9 +107,13 @@ class TgiBackend(BenchmarkBackend):
             volumes[f"{p.resolve()}"] = f"{MODEL_MOUNT}:ro"
             return MODEL_MOUNT, volumes
 
-        parent = p.parent.resolve()
-        volumes[f"{parent}"] = f"{MODEL_MOUNT}:ro"
-        return f"{MODEL_MOUNT}/{p.name}", volumes
+        if p.is_file():
+            raise ValueError(
+                "TGI erwartet bei lokalen Modellen ein Transformers-Modellverzeichnis "
+                "(z. B. aus save_pretrained), keine einzelne Modelldatei."
+            )
+
+        raise ValueError(f"Lokaler TGI-Modellpfad existiert nicht: {model_path}")
 
     def _serve_args(
         self,
@@ -133,13 +137,16 @@ class TgiBackend(BenchmarkBackend):
         max_input_length = profile.get("max_input_length")
         max_total_tokens = profile.get("max_total_tokens")
         if max_input_length:
-            args.extend(["--max-input-length", str(int(max_input_length))])
+            # --max-input-length ist nur noch der Legacy-Alias. Neue TGI-Versionen
+            # dokumentieren --max-input-tokens als kanonischen Launcher-Schalter.
+            args.extend(["--max-input-tokens", str(int(max_input_length))])
         if max_total_tokens:
             args.extend(["--max-total-tokens", str(int(max_total_tokens))])
-        if not max_input_length:
-            context_size = endpoint_cfg.get("context_size")
-            if context_size:
-                args.extend(["--max-input-length", str(int(context_size))])
+        elif endpoint_cfg.get("context_size"):
+            # endpoint.context_size beschreibt das gesamte Request-Kontextbudget
+            # (Prompt + Generierung) und entspricht damit TGI max-total-tokens,
+            # nicht der reinen Input-Grenze.
+            args.extend(["--max-total-tokens", str(int(endpoint_cfg["context_size"]))])
 
         tensor_parallel = profile.get("tensor_parallel_size")
         if tensor_parallel:
@@ -273,6 +280,9 @@ class TgiBackend(BenchmarkBackend):
     def prepare_endpoint_config(self, endpoint_cfg: dict[str, Any]) -> dict[str, Any]:
         cfg = dict(endpoint_cfg)
         cfg["api_style"] = API_STYLE_OPENAI_COMPLETIONS
+        # TGI's OpenAI CompletionRequest does not expose llama.cpp's ignore_eos
+        # extension. Keep the shared client from sending that non-standard field.
+        cfg["ignore_eos"] = False
         return cfg
 
     def start_server(

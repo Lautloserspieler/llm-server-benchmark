@@ -162,6 +162,121 @@ def test_begin_profile_cleans_up_and_reports_logs_on_failure(docker, tmp_path: P
     assert (tmp_path / "ollama-server.log").exists()
 
 
+# --------------------------------------------------------- Model preparation
+
+
+class _ApiResponse:
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_create_model_uploads_gguf_blob_and_uses_current_api(tmp_path: Path, monkeypatch):
+    model_file = tmp_path / "model.gguf"
+    model_file.write_bytes(b"gguf-bytes")
+    calls: list[dict] = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ARG002
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def head(self, url, **kwargs):  # noqa: ARG002
+            calls.append({"method": "HEAD", "url": url})
+            return _ApiResponse(404)
+
+        def post(self, url, **kwargs):
+            content = kwargs.get("content")
+            body = b"".join(content) if content is not None else None
+            calls.append({
+                "method": "POST",
+                "url": url,
+                "json": kwargs.get("json"),
+                "body": body,
+                "headers": kwargs.get("headers"),
+            })
+            return _ApiResponse(201 if "/api/blobs/" in url else 200)
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
+    backend = _backend()
+    backend._created_model = "llmbench-model"
+    backend._create_model(str(model_file))
+
+    upload = next(call for call in calls if call["method"] == "POST" and "/api/blobs/" in call["url"])
+    assert upload["body"] == b"gguf-bytes"
+    assert upload["headers"]["Content-Length"] == str(len(b"gguf-bytes"))
+
+    create = next(call for call in calls if call["url"].endswith("/api/create"))
+    payload = create["json"]
+    assert payload["model"] == "llmbench-model"
+    assert payload["stream"] is False
+    assert set(payload["files"]) == {"model.gguf"}
+    assert payload["files"]["model.gguf"].startswith("sha256:")
+    assert "name" not in payload
+    assert "modelfile" not in payload
+
+
+def test_create_model_propagates_create_failure(tmp_path: Path, monkeypatch):
+    model_file = tmp_path / "model.gguf"
+    model_file.write_bytes(b"gguf")
+
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ARG002
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def head(self, *_args, **_kwargs):
+            return _ApiResponse(200)
+
+        def post(self, url, **kwargs):  # noqa: ARG002
+            return _ApiResponse(500 if url.endswith("/api/create") else 201)
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
+    backend = _backend()
+    backend._created_model = "llmbench-model"
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        backend._create_model(str(model_file))
+
+
+def test_missing_registry_model_is_pulled_with_current_model_field(monkeypatch):
+    calls: list[dict] = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ARG002
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, **kwargs):
+            calls.append({"url": url, "json": kwargs.get("json")})
+            return _ApiResponse(404 if url.endswith("/api/show") else 200)
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
+    backend = _backend()
+    backend._ensure_registry_model("mistral:latest")
+
+    pull = next(call for call in calls if call["url"].endswith("/api/pull"))
+    assert pull["json"] == {"model": "mistral:latest", "stream": False}
+
+
 # -------------------------------------------------------------- run_benchmark
 
 

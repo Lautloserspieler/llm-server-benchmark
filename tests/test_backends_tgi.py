@@ -58,8 +58,10 @@ def _backend(**kwargs):
 
 
 def test_begin_profile_starts_container_with_serve_args(docker, tmp_path: Path):
+    model_dir = tmp_path / "Mistral-7B"
+    model_dir.mkdir()
     backend = _backend()
-    backend.begin_profile("/models/Mistral-7B", {"name": "TGI"}, {}, tmp_path)
+    backend.begin_profile(str(model_dir), {"name": "TGI"}, {}, tmp_path)
 
     assert len(docker.runs) == 1
     run = docker.runs[0]
@@ -68,8 +70,8 @@ def test_begin_profile_starts_container_with_serve_args(docker, tmp_path: Path):
     assert run["gpu"] is True
 
     args = run["args"]
-    assert args[:2] == ["--model-id", f"{MODEL_MOUNT}/Mistral-7B"]
-    expected_source = str(Path("/models/Mistral-7B").parent.resolve())
+    assert args[:2] == ["--model-id", MODEL_MOUNT]
+    expected_source = str(model_dir.resolve())
     assert run["volumes"][expected_source] == f"{MODEL_MOUNT}:ro"
     assert args[args.index("--hostname") + 1] == "0.0.0.0"
     assert args[args.index("--port") + 1] == str(CONTAINER_PORT)
@@ -80,7 +82,7 @@ def test_begin_profile_starts_container_with_serve_args(docker, tmp_path: Path):
 def test_begin_profile_passes_profile_fields(docker, tmp_path: Path):
     backend = _backend()
     backend.begin_profile(
-        "/models/M",
+        "org/M",
         {
             "name": "TGI-2GPU",
             "tensor_parallel_size": 2,
@@ -103,7 +105,7 @@ def test_begin_profile_passes_profile_fields(docker, tmp_path: Path):
 def test_begin_profile_omits_unset_profile_fields(docker, tmp_path: Path):
     """Ein llama.cpp-Profil ohne TGI-Felder darf keine leeren Flags erzeugen."""
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080"})
-    backend.begin_profile("/models/M", {"name": "Full-GPU"}, {}, tmp_path)
+    backend.begin_profile("org/M", {"name": "Full-GPU"}, {}, tmp_path)
     args = docker.runs[0]["args"]
     for flag in ("--num-shard", "--quantize", "--dtype", "--max-input-tokens", "--max-total-tokens"):
         assert flag not in args
@@ -111,21 +113,21 @@ def test_begin_profile_omits_unset_profile_fields(docker, tmp_path: Path):
 
 def test_context_size_maps_to_max_total_tokens(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080", "context_size": 16384})
-    backend.begin_profile("/models/M", {"name": "TGI"}, {}, tmp_path)
+    backend.begin_profile("org/M", {"name": "TGI"}, {}, tmp_path)
     args = docker.runs[0]["args"]
     assert args[args.index("--max-total-tokens") + 1] == "16384"
 
 
 def test_profile_max_input_length_overrides_context_size(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080", "context_size": 16384})
-    backend.begin_profile("/models/M", {"name": "TGI", "max_input_length": 4096}, {}, tmp_path)
+    backend.begin_profile("org/M", {"name": "TGI", "max_input_length": 4096}, {}, tmp_path)
     args = docker.runs[0]["args"]
     assert args[args.index("--max-input-tokens") + 1] == "4096"
 
 
 def test_begin_profile_publishes_port_from_base_url(docker, tmp_path: Path):
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:9100", "context_size": 4096})
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     assert docker.runs[0]["port_map"] == {9100: CONTAINER_PORT}
 
 
@@ -164,14 +166,14 @@ def test_huggingface_repo_id_is_not_mounted(docker, tmp_path: Path):
 
 def test_begin_profile_clears_stale_container_first(docker, tmp_path: Path):
     backend = _backend()
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     assert docker.stopped[0] == "llmbench-tgi"
 
 
 @pytest.mark.usefixtures("docker")
 def test_begin_profile_records_container_pid_for_telemetry(tmp_path: Path):
     backend = _backend()
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     assert backend.target_pid == 4242
 
 
@@ -179,7 +181,7 @@ def test_begin_profile_tolerates_missing_container_pid(docker, tmp_path: Path):
     """Unter Docker Desktop gibt es keine host-sichtbare PID."""
     docker.pid = None
     backend = _backend()
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     assert backend.target_pid is None
 
 
@@ -190,7 +192,7 @@ def test_begin_profile_cleans_up_and_reports_logs_on_failure(docker, tmp_path: P
     )
     backend = _backend()
     with pytest.raises(RuntimeError, match="nicht bereit"):
-        backend.begin_profile("/models/M", {}, {}, tmp_path)
+        backend.begin_profile("org/M", {}, {}, tmp_path)
 
     assert backend.container_id is None
     assert docker.stopped.count("llmbench-tgi") >= 2  # vorher und beim Aufraeumen
@@ -214,8 +216,8 @@ def test_run_benchmark_delegates_to_run_http_bench(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("llmbench.backends.tgi.run_http_bench", _fake)
 
     backend = _backend()
-    backend.begin_profile("/models/M", {"name": "TGI"}, {}, tmp_path)
-    result = backend.run_benchmark("/models/M", {"name": "TGI"}, "prompt", tmp_path, {"repetitions": 2})
+    backend.begin_profile("org/M", {"name": "TGI"}, {}, tmp_path)
+    result = backend.run_benchmark("org/M", {"name": "TGI"}, "prompt", tmp_path, {"repetitions": 2})
 
     assert result == {"status": "ok", "kind": "prompt"}
     assert captured["base_url"] == "http://127.0.0.1:8080"
@@ -227,7 +229,7 @@ def test_run_benchmark_delegates_to_run_http_bench(tmp_path: Path, monkeypatch):
 @pytest.mark.usefixtures("docker")
 def test_run_benchmark_without_running_container_fails_clearly(tmp_path: Path):
     backend = _backend()
-    result = backend.run_benchmark("/models/M", {}, "prompt", tmp_path, {})
+    result = backend.run_benchmark("org/M", {}, "prompt", tmp_path, {})
     assert result["status"] == "failed"
     assert "TGI-Container" in result["error"]
 
@@ -240,8 +242,8 @@ def test_run_benchmark_forwards_api_key_header(tmp_path: Path, monkeypatch):
         lambda _u, headers, *_a, **_k: captured.setdefault("headers", headers) or {"status": "ok"},
     )
     backend = _backend(endpoint_cfg={"base_url": "http://127.0.0.1:8080", "api_key": "tok"})
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
-    backend.run_benchmark("/models/M", {}, "prompt", tmp_path, {})
+    backend.begin_profile("org/M", {}, {}, tmp_path)
+    backend.run_benchmark("org/M", {}, "prompt", tmp_path, {})
     assert captured["headers"] == {"Authorization": "Bearer tok"}
 
 
@@ -250,7 +252,7 @@ def test_run_benchmark_forwards_api_key_header(tmp_path: Path, monkeypatch):
 
 def test_end_profile_stops_container(docker, tmp_path: Path):
     backend = _backend()
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     docker.stopped.clear()
     backend.end_profile()
 
@@ -268,7 +270,7 @@ def test_end_profile_without_container_is_noop(docker):
 @pytest.mark.usefixtures("docker")
 def test_end_profile_writes_container_log(tmp_path: Path):
     backend = _backend()
-    backend.begin_profile("/models/M", {}, {}, tmp_path)
+    backend.begin_profile("org/M", {}, {}, tmp_path)
     backend.end_profile()
     assert (tmp_path / "tgi-server.log").read_text(encoding="utf-8") == "server log"
 
@@ -289,7 +291,7 @@ def test_prepare_endpoint_config_selects_openai_completions():
 def test_start_server_reuses_container_start_path(docker, tmp_path: Path):
     backend = _backend()
     proc, command = backend.start_server(
-        "/models/M", {"name": "TGI"},
+        "org/M", {"name": "TGI"},
         {"base_url": "http://127.0.0.1:8080", "context_size": 8192},
         {}, tmp_path / "tgi.log",
     )
@@ -303,7 +305,7 @@ def test_start_server_reuses_container_start_path(docker, tmp_path: Path):
 def test_start_server_does_not_leak_api_key_in_command(tmp_path: Path):
     backend = _backend()
     _proc, command = backend.start_server(
-        "/models/M", {},
+        "org/M", {},
         {"base_url": "http://127.0.0.1:8080", "api_key": "topsecret"},
         {}, tmp_path / "tgi.log",
     )
@@ -312,7 +314,7 @@ def test_start_server_does_not_leak_api_key_in_command(tmp_path: Path):
 
 def test_stop_server_removes_container(docker, tmp_path: Path):
     backend = _backend()
-    proc, _ = backend.start_server("/models/M", {}, {}, {}, tmp_path / "tgi.log")
+    proc, _ = backend.start_server("org/M", {}, {}, {}, tmp_path / "tgi.log")
     docker.stopped.clear()
     backend.stop_server(proc)
     assert docker.stopped == ["llmbench-tgi"]
@@ -327,7 +329,7 @@ def test_wait_health_delegates_to_endpoint_wait_health():
 def test_additional_args_are_passed_through(docker, tmp_path: Path):
     backend = _backend()
     backend.begin_profile(
-        "/models/M", {"additional_args": ["--sharded", "--trust-remote-code"]}, {}, tmp_path
+        "org/M", {"additional_args": ["--sharded", "--trust-remote-code"]}, {}, tmp_path
     )
     args = docker.runs[0]["args"]
     assert args[args.index("--sharded"):] == ["--sharded", "--trust-remote-code"]

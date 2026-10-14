@@ -39,6 +39,7 @@
 [start.suite_download]="Mindestens ein ausgewähltes Modell fehlt oder ist unvollständig – lade es von HuggingFace nach ..."
 [start.backend_title]="Backend auswählen"
 [start.backend_select_failed]="Backend-Auswahl fehlgeschlagen (Exitcode %s)."
+[start.model_select_failed]="Modellauswahl fehlgeschlagen (Exitcode %s)."
 [start.doctor_title]="Vorprüfung"
 [run.title]="Benchmark"
 [run.duration_question]="Wie lange soll der Test laufen?"

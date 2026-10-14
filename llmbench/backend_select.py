@@ -30,6 +30,7 @@ from .utils import ask_yes_no, console, print_err, print_msg, print_section
 BACKEND_DOWNLOAD_GIB: dict[str, int] = {
     "vllm": 10,
     "tgi": 10,
+    "ollama": 1,
 }
 
 # Backends, deren Container immer mit --gpus starten (NVIDIA-only).
@@ -39,6 +40,7 @@ BACKEND_LABELS: dict[str, str] = {
     "llama_cpp": "llama.cpp",
     "vllm": "vLLM",
     "tgi": "TGI",
+    "ollama": "Ollama",
 }
 
 

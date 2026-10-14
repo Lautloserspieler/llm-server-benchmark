@@ -36,7 +36,8 @@
           "enum": [
             "llama_cpp",
             "vllm",
-            "tgi"
+            "tgi",
+            "ollama"
           ],
           "title": "Id",
           "type": "string"
@@ -2061,6 +2062,7 @@
                 "nvidia-smi",
                 "nvidia_smi",
                 "nvml",
+                "ollama",
                 "powercap",
                 "powermetrics",
                 "psutil",

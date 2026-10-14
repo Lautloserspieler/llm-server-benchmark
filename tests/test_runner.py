@@ -162,6 +162,15 @@ def test_get_backend_dispatches_to_tgi():
     assert backend.image == "ghcr.io/huggingface/text-generation-inference:latest"
 
 
+def test_get_backend_dispatches_to_ollama():
+    from llmbench.backends.ollama import DEFAULT_BASE_URL, OllamaBackend
+
+    backend = get_backend({"tools": _tools(backend="ollama"), "endpoint": {}})
+    assert isinstance(backend, OllamaBackend)
+    assert backend.image == "ollama/ollama:latest"
+    assert backend.base_url == DEFAULT_BASE_URL
+
+
 def test_get_backend_rejects_unknown_backend():
     with pytest.raises(ValueError, match="Unbekanntes Backend"):
         get_backend({"tools": _tools(backend="sglang")})
@@ -172,6 +181,13 @@ def test_tool_info_records_tgi_image(monkeypatch):
     info = _tool_info({"project": {}, "tools": _tools(backend="tgi", tgi_image="tgi:test")})
     assert info["tgi"]["image"] == "tgi:test"
     assert info["tgi"]["digest"] == "sha256:test"
+
+
+def test_tool_info_records_ollama_image(monkeypatch):
+    monkeypatch.setattr("llmbench.docker_backend.image_digest", lambda _image: "sha256:test")
+    info = _tool_info({"project": {}, "tools": _tools(backend="ollama", ollama_image="ollama:test")})
+    assert info["ollama"]["image"] == "ollama:test"
+    assert info["ollama"]["digest"] == "sha256:test"
 
 
 # ------------------------------------------------- Lifecycle-Hooks (Regression)
@@ -499,6 +515,8 @@ def test_tool_info_keeps_llama_cpp_probe_by_default(suite_env, monkeypatch):
     info = _tool_info(suite_env)
     assert "llama_bench" in info
     assert "vllm" not in info
+    assert "tgi" not in info
+    assert "ollama" not in info
 
 def test_run_suite_persists_verified_context_capability(suite_env, monkeypatch):
     class ContextBackend(_RecordingBackend):

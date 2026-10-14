@@ -70,16 +70,16 @@ capability-based.
 
 Current adapter state:
 
-| Capability | llama.cpp | vLLM | TGI |
-| --- | --- | --- | --- |
-| endpoint | ✅ | ✅ | ✅ |
-| streaming | ✅ | ✅ | ✅ |
-| concurrency | ✅ | ✅ | ✅ |
-| long_context | ✅ | ✅ | ✅ |
-| kv_cache_observation | ✅ | ✅ | — |
-| oom_probe | ✅ | — | — |
-| quantization | ✅ | — | — |
-| multi_model | ✅ | — | — |
+| Capability | llama.cpp | vLLM | TGI | Ollama |
+| --- | --- | --- | --- | --- |
+| endpoint | ✅ | ✅ | ✅ | ✅ |
+| streaming | ✅ | ✅ | ✅ | ✅ |
+| concurrency | ✅ | ✅ | ✅ | ✅ |
+| long_context | ✅ | ✅ | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ | — | — |
+| oom_probe | ✅ | — | — | — |
+| quantization | ✅ | — | — | — |
+| multi_model | ✅ | — | — | — |
 
 A missing check mark does not mean the upstream runtime can never perform that operation.
 It means the current llmbench adapter does not yet expose a reproducible benchmark contract
@@ -117,13 +117,34 @@ Relevant launcher arguments:
 - `--model-id` (model reference, local or HuggingFace repo)
 - `--num-shard` (via `profile.tensor_parallel_size`)
 - `--quantize` (via `profile.quantization`)
-- `--max-input-length` (via `profile.max_input_length` or `endpoint.context_size`)
-- `--max-total-tokens` (via `profile.max_total_tokens`)
+- `--max-input-tokens` (via `profile.max_input_length`)
+- `--max-total-tokens` (via `profile.max_total_tokens` or `endpoint.context_size`)
 - `--dtype`, additional `profile.additional_args`
 
 Currently the TGI adapter supports the base capabilities `endpoint`, `streaming`,
 `concurrency`, and `long_context`. KV-cache observation, OOM probing, and local
 quantization comparison are not yet implemented.
+
+### Ollama
+
+`OllamaBackend` runs the official `ollama/ollama` image and uses the native
+`/api/generate` API on port 11434. Ollama can run with CPU-only profiles or with an
+NVIDIA GPU passed through by Docker.
+
+Existing Ollama model names are stored in the persistent `/root/.ollama` backend volume.
+A missing library model is pulled before the benchmark. Local GGUF files are imported via
+Ollama's blob and create APIs; split GGUF sets are validated and uploaded shard by shard.
+
+Relevant profile settings:
+
+- `ollama_num_ctx` -> Ollama `num_ctx`
+- `ollama_num_gpu` -> Ollama `num_gpu`
+- `gpu_layers: 0` or `ollama_num_gpu: 0` keeps the container in CPU mode
+
+Benchmark requests use `raw: true` so an Ollama model template does not rewrite the
+synthetic benchmark prompt. The current adapter exposes `endpoint`, `streaming`,
+`concurrency`, and `long_context`; KV-cache observation, OOM probing, quantization
+comparison, and multi-model stress are not yet exposed.
 
 ## Install/remove symmetry
 

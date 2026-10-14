@@ -148,8 +148,12 @@ def test_tools_tgi_image_has_default():
     assert DEFAULT_CONFIG["tools"]["tgi_image"] == "ghcr.io/huggingface/text-generation-inference:latest"
 
 
+def test_tools_ollama_image_has_default():
+    assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:latest"
+
+
 def test_validation_accepts_known_backends():
-    for name in ("llama_cpp", "vllm", "tgi"):
+    for name in ("llama_cpp", "vllm", "tgi", "ollama"):
         cfg = _valid_cfg(tools={"backend": name})
         assert validate_config(cfg) == [], name
 
@@ -173,6 +177,11 @@ def test_vllm_image_is_overridable():
 
 def test_tgi_image_is_overridable():
     cfg = _valid_cfg(tools={"backend": "tgi", "tgi_image": "ghcr.io/huggingface/text-generation-inference:2.0.0"})
+    assert validate_config(cfg) == []
+
+
+def test_ollama_image_is_overridable():
+    cfg = _valid_cfg(tools={"backend": "ollama", "ollama_image": "ollama/ollama:0.3.0"})
     assert validate_config(cfg) == []
 
 
@@ -229,6 +238,30 @@ def test_profile_tgi_fields_are_optional_for_llama_cpp():
     assert profile.max_total_tokens is None
 
 
+# ------------------------------------------------------- Ollama-Profilfelder
+
+def test_profile_accepts_ollama_passthrough_fields():
+    cfg = _valid_cfg(
+        tools={"backend": "ollama"},
+        models=[{
+            "name": "M", "path": "x",
+            "profiles": [{
+                "name": "Ollama", "gpu_layers": -1,
+                "ollama_num_ctx": 8192, "ollama_num_gpu": 1,
+            }],
+        }],
+    )
+    assert validate_config(cfg) == []
+
+
+def test_profile_ollama_fields_are_optional_for_llama_cpp():
+    from llmbench.config import ProfileConfig
+
+    profile = ProfileConfig(name="Full-GPU", gpu_layers=-1)
+    assert profile.ollama_num_ctx is None
+    assert profile.ollama_num_gpu is None
+
+
 def test_profile_rejects_non_numeric_tensor_parallel_size():
     cfg = _valid_cfg(models=[{
         "name": "M", "path": "x",
@@ -245,6 +278,7 @@ def test_backend_is_not_part_of_the_config_fingerprint():
     assert "backend" not in FINGERPRINT_KEYS
     assert "vllm_image" not in FINGERPRINT_KEYS
     assert "tgi_image" not in FINGERPRINT_KEYS
+    assert "ollama_image" not in FINGERPRINT_KEYS
 
 
 def test_load_config_records_only_explicit_gpu_layer_origin(tmp_path):

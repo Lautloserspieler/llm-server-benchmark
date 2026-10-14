@@ -29,12 +29,12 @@ import httpx
 from .monitor import ResourceMonitor, strip_samples
 from .utils import utc_now_iso, write_json
 
-# Unterstuetzte API-Dialekte. "ollama_native" kommt in einer spaeteren Phase
-# dazu und braucht dann nur je einen Zweig in _build_request/_extract_delta.
+# Unterstuetzte API-Dialekte.
 API_STYLE_LLAMA_CPP = "llama_cpp"
 API_STYLE_LLAMA_CPP_CHAT = "llama_cpp_chat"
 API_STYLE_OPENAI_COMPLETIONS = "openai_completions"
-API_STYLES = (API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, API_STYLE_OPENAI_COMPLETIONS)
+API_STYLE_OLLAMA_NATIVE = "ollama_native"
+API_STYLES = (API_STYLE_LLAMA_CPP, API_STYLE_LLAMA_CPP_CHAT, API_STYLE_OPENAI_COMPLETIONS, API_STYLE_OLLAMA_NATIVE)
 
 # Grobe Umrechnung fuer die Fuelltexte. Der Schaetzwert wird nur zum Bauen des
 # Prompts benutzt; gemessen wird anschliessend mit usage.prompt_tokens, also mit
@@ -128,6 +128,36 @@ def _build_request(
             payload["seed"] = int(cfg["seed"])
         return "/v1/completions", payload
 
+    if api_style == API_STYLE_OLLAMA_NATIVE:
+        # Ollama native API: POST /api/generate mit Streaming-JSON-Objekten.
+        options: dict[str, Any] = {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        }
+        if cfg.get("ollama_num_ctx") is not None:
+            options["num_ctx"] = int(cfg["ollama_num_ctx"])
+        if cfg.get("ollama_num_gpu") is not None:
+            options["num_gpu"] = int(cfg["ollama_num_gpu"])
+        if "top_p" in cfg:
+            options["top_p"] = float(cfg["top_p"])
+        if "top_k" in cfg:
+            options["top_k"] = int(cfg["top_k"])
+        if "repeat_penalty" in cfg:
+            options["repeat_penalty"] = float(cfg["repeat_penalty"])
+        if cfg.get("seed") is not None:
+            options["seed"] = int(cfg["seed"])
+        # "min_tokens" und "ignore_eos" gibt es in Ollama nicht; num_predict
+        # begrenzt die Ausgabe und fuellt damit dieselbe Rolle wie max_tokens.
+        return "/api/generate", {
+            "model": str(cfg.get("model", "llmbench")),
+            "prompt": str(prompt_or_messages),
+            "stream": True,
+            # Benchmark-Prompts sollen nicht durch ein modellabhängiges
+            # Ollama-Template verändert werden.
+            "raw": True,
+            "options": options,
+        }
+
     payload = {
         "n_predict": max_tokens,
         "temperature": temperature,
@@ -163,6 +193,20 @@ def _extract_delta(api_style: str, data: dict[str, Any]) -> tuple[int, str]:
     if api_style == API_STYLE_LLAMA_CPP:
         tokens = data.get("tokens") or []
         return len(tokens), data.get("content") or ""
+
+    if api_style == API_STYLE_OLLAMA_NATIVE:
+        # Ollama liefert pro Stream-Chunk ein "response"-Feld; der letzte Chunk
+        # mit "done": true enthaelt stattdessen die finalen Zaehler.
+        if data.get("done"):
+            eval_count = data.get("eval_count")
+            if eval_count is not None:
+                try:
+                    return int(eval_count), ""
+                except Exception:
+                    pass
+            return 0, ""
+        content = data.get("response") or ""
+        return (1 if content else 0), content
 
     choices = data.get("choices") or []
     if not choices:
@@ -243,13 +287,18 @@ async def one_completion_async(
         timings.get("predicted_n")
         or timings.get("tokens_predicted")
         or usage.get("completion_tokens")
+        or final_data.get("eval_count")
     )
     if exact_total is not None:
         with contextlib.suppress(Exception):
             token_count = int(exact_total)
 
     prompt_tokens: int | None = None
-    raw_prompt_tokens = timings.get("prompt_n") or usage.get("prompt_tokens")
+    raw_prompt_tokens = (
+        timings.get("prompt_n")
+        or usage.get("prompt_tokens")
+        or final_data.get("prompt_eval_count")
+    )
     if raw_prompt_tokens is not None:
         with contextlib.suppress(Exception):
             prompt_tokens = int(raw_prompt_tokens)
@@ -374,9 +423,10 @@ async def _measure(
     prompt: str,
     cfg: dict[str, Any],
     request_id: int,
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> dict[str, Any]:
     return await one_completion_async(
-        client, base_url, prompt, cfg, request_id, api_style=API_STYLE_OPENAI_COMPLETIONS
+        client, base_url, prompt, cfg, request_id, api_style=api_style
     )
 
 
@@ -389,6 +439,7 @@ async def _run_prompt_kind(
     details: list[dict[str, Any]],
     errors: list[str],
     report: Callable[[str], None],
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> list[dict[str, Any]]:
     """Prompt-Verarbeitung: TTFT bei max_tokens=1 ist reine Prefill-Zeit."""
     rows: list[dict[str, Any]] = []
@@ -400,7 +451,7 @@ async def _run_prompt_kind(
             prompt = build_filler_prompt(int(n), _nonce(f"pp{n}", rep))
             cfg = _completion_cfg(bench_cfg, max_tokens=1)
             report(f"pp{n} · Wiederholung {rep + 1}/{reps}")
-            res = await _measure(client, base_url, prompt, cfg, request_id)
+            res = await _measure(client, base_url, prompt, cfg, request_id, api_style=api_style)
             request_id += 1
             details.append({"test": f"pp{n}", "repetition": rep, **_detail(res)})
             if not res["ok"]:
@@ -427,6 +478,7 @@ async def _run_generation_kind(
     details: list[dict[str, Any]],
     errors: list[str],
     report: Callable[[str], None],
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> list[dict[str, Any]]:
     """Textgenerierung: Tokens nach dem ersten, geteilt durch die Zeit danach."""
     rows: list[dict[str, Any]] = []
@@ -444,7 +496,7 @@ async def _run_generation_kind(
                 bench_cfg, max_tokens=int(n), min_tokens=int(n), ignore_eos=True
             )
             report(f"tg{n} · Wiederholung {rep + 1}/{reps}")
-            res = await _measure(client, base_url, prompt, cfg, request_id)
+            res = await _measure(client, base_url, prompt, cfg, request_id, api_style=api_style)
             request_id += 1
             details.append({"test": f"tg{n}", "repetition": rep, **_detail(res)})
             if not res["ok"]:
@@ -472,6 +524,7 @@ async def _run_long_context_kind(
     details: list[dict[str, Any]],
     errors: list[str],
     report: Callable[[str], None],
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> list[dict[str, Any]]:
     """Kombinierter pp+tg-Durchsatz bei wachsender Kontexttiefe.
 
@@ -493,7 +546,7 @@ async def _run_long_context_kind(
                 bench_cfg, max_tokens=gen_tokens, min_tokens=gen_tokens, ignore_eos=True
             )
             report(f"{name} · Wiederholung {rep + 1}/{reps}")
-            res = await _measure(client, base_url, prompt, cfg, request_id)
+            res = await _measure(client, base_url, prompt, cfg, request_id, api_style=api_style)
             request_id += 1
             details.append({"test": name, "repetition": rep, **_detail(res)})
             if not res["ok"]:
@@ -538,6 +591,7 @@ async def _run_http_bench_async(
     on_progress: ProgressFn | None,
     backend_name: str,
     target_pid: int | None,
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> dict[str, Any]:
     runner = _KIND_RUNNERS.get(kind)
     if runner is None:
@@ -566,7 +620,8 @@ async def _run_http_bench_async(
     try:
         async with httpx.AsyncClient(headers=headers or {}) as client:
             rows = await runner(
-                client, base_url, bench_cfg, backend_name, reps, details, errors, report
+                client, base_url, bench_cfg, backend_name, reps, details, errors, report,
+                api_style=api_style,
             )
     except Exception as exc:
         fatal = str(exc)
@@ -579,7 +634,7 @@ async def _run_http_bench_async(
         "duration_seconds": duration,
         "backend": backend_name,
         "base_url": base_url,
-        "api_style": API_STYLE_OPENAI_COMPLETIONS,
+        "api_style": api_style,
         "profile": profile,
         "kind": kind,
         "repetitions": reps,
@@ -631,6 +686,7 @@ def run_http_bench(
     *,
     backend_name: str = "vllm",
     target_pid: int | None = None,
+    api_style: str = API_STYLE_OPENAI_COMPLETIONS,
 ) -> dict[str, Any]:
     """Misst eine Testart gegen einen bereits laufenden HTTP-Server.
 
@@ -639,7 +695,7 @@ def run_http_bench(
     """
     coro = _run_http_bench_async(
         base_url, headers, bench_cfg, profile, kind, Path(out_dir),
-        on_progress, backend_name, target_pid,
+        on_progress, backend_name, target_pid, api_style=api_style,
     )
     try:
         loop = asyncio.get_running_loop()

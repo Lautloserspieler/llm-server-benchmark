@@ -22,8 +22,8 @@ Beweismaterial belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 | --- | --- | --- | --- |
 | llama.cpp | ✅ fertig | lokales Binary (`llama-bench`/`llama-server`) | Referenz-Backend |
 | vLLM | ✅ fertig (1.6.0) | Docker-Container (`vllm/vllm-openai`) | Phase A |
-| TGI | 🚧 in Arbeit | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase C; wird als containerisiertes, OpenAI-kompatibles HTTP-Backend neben vLLM registriert |
-| Ollama | 📋 geplant | Docker-Container (`ollama/ollama`) | Phase B, eigene native API statt OpenAI-kompatibel |
+| TGI | ✅ fertig (unveröffentlicht) | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-kompatibles `/v1/completions`-Backend |
+| Ollama | ✅ fertig (unveröffentlicht) | Docker-Container (`ollama/ollama`) | Phase 3, native `/api/generate`-API; lokaler GGUF-Import über Blob/Create-APIs |
 
 Neue Backends (vLLM/Ollama/TGI) laufen bewusst **ausschließlich als Docker-Container** —
 kein natives/bare-metal-Setup wie bei llama.cpp. Docker (inklusive

@@ -18,6 +18,22 @@
 - Added tests and updated documentation (`docs/architecture/backends.en.md`,
   `docs/architecture/backends.md`, `ROADMAP.en.md`, `ROADMAP.md`).
 
+
+### Ollama backend (Phase 3)
+
+- New `ollama` backend: `OllamaBackend` runs `ollama/ollama` as a Docker container and
+  benchmarks through the native `/api/generate` API.
+- Existing Ollama model names are reused from the persistent `/root/.ollama` volume; missing
+  library models are pulled automatically before the benchmark.
+- Local GGUFs are imported through Ollama's current blob/create API. Split GGUF sets are
+  validated and uploaded shard by shard; import errors are surfaced instead of being ignored.
+- `profile.ollama_num_ctx` and `profile.ollama_num_gpu` are forwarded to the native request.
+  CPU profiles do not request the NVIDIA container runtime.
+- Prompt, generation, long-context, endpoint-load, and quality-gate paths share the same
+  `ollama_native` request dialect and keep benchmark prompts raw to avoid template changes.
+- Community export, setup/install/remove flows, tests, and backend documentation now include
+  Ollama alongside llama.cpp, vLLM, and TGI.
+
 ## 1.6.0
 
 ### Phase 1: backend capabilities and stress-test decoupling

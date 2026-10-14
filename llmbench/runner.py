@@ -137,6 +137,19 @@ def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
         info["tgi"] = {"image": image, "digest": digest}
         return info
 
+    if name == "ollama":
+        from .backend_setup import DEFAULT_OLLAMA_IMAGE
+        from .docker_backend import image_digest
+
+        image = cfg["tools"].get("ollama_image") or DEFAULT_OLLAMA_IMAGE
+        digest = None
+        try:
+            digest = image_digest(image)
+        except Exception:
+            digest = None
+        info["ollama"] = {"image": image, "digest": digest}
+        return info
+
     info["llama_bench"] = probe_build(cfg["tools"]["llama_bench"], with_hash=with_hash)
     server_exe = cfg["tools"].get("llama_server")
     if server_exe:

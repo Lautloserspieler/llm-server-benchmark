@@ -23,11 +23,13 @@ LogFn = Callable[[str], None]
 
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
+DEFAULT_OLLAMA_IMAGE = "ollama/ollama:latest"
 
 # Standard-Image je Backend. Ueber ToolsConfig bzw. --image uebersteuerbar.
 BACKEND_IMAGES: dict[str, str] = {
     "vllm": DEFAULT_VLLM_IMAGE,
     "tgi": DEFAULT_TGI_IMAGE,
+    "ollama": DEFAULT_OLLAMA_IMAGE,
 }
 
 # Container-Name je Backend. Fest vergeben, damit `uninstall-backend` auch nach
@@ -35,6 +37,7 @@ BACKEND_IMAGES: dict[str, str] = {
 BACKEND_CONTAINERS: dict[str, str] = {
     "vllm": "llmbench-vllm",
     "tgi": "llmbench-tgi",
+    "ollama": "llmbench-ollama",
 }
 
 # Benanntes Volume fuer heruntergeladene Modell-Gewichte / HF-Cache.
@@ -43,6 +46,7 @@ BACKEND_CONTAINERS: dict[str, str] = {
 BACKEND_VOLUMES: dict[str, str] = {
     "vllm": "llmbench-vllm-cache",
     "tgi": "llmbench-tgi-cache",
+    "ollama": "llmbench-ollama-cache",
 }
 
 SUPPORTED_BACKENDS = tuple(sorted(BACKEND_IMAGES))

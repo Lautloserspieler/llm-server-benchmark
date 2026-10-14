@@ -70,16 +70,16 @@ fachliche Entscheidung capability-basiert ist.
 
 Aktueller Adapterstand:
 
-| Capability | llama.cpp | vLLM | TGI |
-| --- | --- | --- | --- |
-| endpoint | ✅ | ✅ | ✅ |
-| streaming | ✅ | ✅ | ✅ |
-| concurrency | ✅ | ✅ | ✅ |
-| long_context | ✅ | ✅ | ✅ |
-| kv_cache_observation | ✅ | ✅ | — |
-| oom_probe | ✅ | — | — |
-| quantization | ✅ | — | — |
-| multi_model | ✅ | — | — |
+| Capability | llama.cpp | vLLM | TGI | Ollama |
+| --- | --- | --- | --- | --- |
+| endpoint | ✅ | ✅ | ✅ | ✅ |
+| streaming | ✅ | ✅ | ✅ | ✅ |
+| concurrency | ✅ | ✅ | ✅ | ✅ |
+| long_context | ✅ | ✅ | ✅ | ✅ |
+| kv_cache_observation | ✅ | ✅ | — | — |
+| oom_probe | ✅ | — | — | — |
+| quantization | ✅ | — | — | — |
+| multi_model | ✅ | — | — | — |
 
 Ein fehlendes Häkchen bedeutet nicht, dass die Upstream-Runtime diese Funktion grundsätzlich
 nicht besitzt. Es bedeutet, dass der aktuelle llmbench-Adapter dafür noch keinen
@@ -119,13 +119,35 @@ Relevante Launcher-Argumente:
 - `--model-id` (Modellreferenz, lokal oder HuggingFace-Repo)
 - `--num-shard` (über `profile.tensor_parallel_size`)
 - `--quantize` (über `profile.quantization`)
-- `--max-input-length` (über `profile.max_input_length` oder `endpoint.context_size`)
-- `--max-total-tokens` (über `profile.max_total_tokens`)
+- `--max-input-tokens` (über `profile.max_input_length`)
+- `--max-total-tokens` (über `profile.max_total_tokens` oder `endpoint.context_size`)
 - `--dtype`, zusätzliche `profile.additional_args`
 
 Aktuell unterstützt der TGI-Adapter die Basiscapabilities `endpoint`, `streaming`,
 `concurrency` und `long_context`. KV-Cache-Beobachtung, OOM-Probe und der lokale
 Quantisierungsvergleich sind noch nicht implementiert.
+
+### Ollama
+
+`OllamaBackend` startet das offizielle Image `ollama/ollama` und verwendet die native
+`/api/generate`-API auf Port 11434. Ollama kann mit reinen CPU-Profilen oder mit einer
+durch Docker bereitgestellten NVIDIA-GPU laufen.
+
+Vorhandene Ollama-Modellnamen liegen im persistenten Backend-Volume unter
+`/root/.ollama`. Fehlt ein Library-Modell, wird es vor dem Benchmark geladen. Lokale
+GGUF-Dateien werden über Ollamas Blob- und Create-APIs importiert; gesplittete GGUF-Sätze
+werden geprüft und Shard für Shard hochgeladen.
+
+Relevante Profileinstellungen:
+
+- `ollama_num_ctx` -> Ollama `num_ctx`
+- `ollama_num_gpu` -> Ollama `num_gpu`
+- `gpu_layers: 0` oder `ollama_num_gpu: 0` hält den Container im CPU-Modus
+
+Benchmark-Anfragen verwenden `raw: true`, damit ein Ollama-Modelltemplate den synthetischen
+Benchmark-Prompt nicht verändert. Der aktuelle Adapter stellt `endpoint`, `streaming`,
+`concurrency` und `long_context` bereit; KV-Cache-Beobachtung, OOM-Probe,
+Quantisierungsvergleich und Multi-Model-Stress sind noch nicht angebunden.
 
 ## Install/Remove-Symmetrie
 

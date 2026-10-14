@@ -55,11 +55,11 @@ def docker(monkeypatch):
 
 def test_unknown_backend_is_rejected(tmp_path: Path):
     with pytest.raises(ValueError, match="Unbekanntes Backend"):
-        backend_setup.ensure_backend("ollama", tmp_path)
+        backend_setup.ensure_backend("sglang", tmp_path)
 
 
-def test_supported_backends_include_vllm_and_tgi():
-    assert backend_setup.SUPPORTED_BACKENDS == ("tgi", "vllm")
+def test_supported_backends_include_vllm_tgi_and_ollama():
+    assert backend_setup.SUPPORTED_BACKENDS == ("ollama", "tgi", "vllm")
 
 
 def test_state_file_path_follows_runtime_convention(tmp_path: Path):
@@ -93,6 +93,26 @@ def test_ensure_backend_honours_image_override(docker, tmp_path: Path):
     assert state["image"] == "vllm/vllm-openai:v0.6.0"
     assert state["tag"] == "v0.6.0"
     assert ("pull", "vllm/vllm-openai:v0.6.0") in docker.calls
+
+
+def test_ensure_backend_ollama_pulls_and_writes_state(docker, tmp_path: Path):
+    state = backend_setup.ensure_backend("ollama", tmp_path)
+    assert ("pull", "ollama/ollama:latest") in docker.calls
+    path = backend_setup.state_file("ollama", tmp_path)
+    assert path.exists()
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written == state
+    assert written["backend"] == "ollama"
+    assert written["image"] == "ollama/ollama:latest"
+    assert written["container"] == "llmbench-ollama"
+    assert written["volume"] == "llmbench-ollama-cache"
+
+
+def test_ensure_backend_ollama_honours_image_override(docker, tmp_path: Path):
+    state = backend_setup.ensure_backend("ollama", tmp_path, image="ollama/ollama:0.3.0")
+    assert state["image"] == "ollama/ollama:0.3.0"
+    assert state["tag"] == "0.3.0"
+    assert ("pull", "ollama/ollama:0.3.0") in docker.calls
 
 
 def test_ensure_backend_is_idempotent_and_skips_second_pull(docker, tmp_path: Path):
@@ -177,6 +197,15 @@ def test_remove_backend_uses_image_recorded_in_state(docker, tmp_path: Path):
     backend_setup.ensure_backend("vllm", tmp_path, image="vllm/vllm-openai:v0.6.0")
     backend_setup.remove_backend("vllm", tmp_path)
     assert ("rmi", "vllm/vllm-openai:v0.6.0") in docker.calls
+
+
+def test_remove_backend_ollama_removes_container_image_and_state(docker, tmp_path: Path):
+    backend_setup.ensure_backend("ollama", tmp_path)
+    backend_setup.remove_backend("ollama", tmp_path)
+    assert ("stop", "llmbench-ollama") in docker.calls
+    assert ("rmi", "ollama/ollama:latest") in docker.calls
+    assert not backend_setup.state_file("ollama", tmp_path).exists()
+    assert not backend_setup.is_installed("ollama", tmp_path)
 
 
 @pytest.mark.usefixtures("docker")

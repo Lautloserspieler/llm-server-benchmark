@@ -265,7 +265,7 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
         raise ProjectionError("unsupported summary schema")
     raw_backend = summary.get("backend")
     backend_id = raw_backend if isinstance(raw_backend, str) else _mapping(raw_backend).get("id")
-    if backend_id not in {"llama_cpp", "vllm", "tgi"}:
+    if backend_id not in {"llama_cpp", "vllm", "tgi", "ollama"}:
         raise ProjectionError("summary lacks a supported backend")
     started, finished = _utc(summary.get("started_at")), _utc(summary.get("finished_at"))
     timestamp_status = "recorded" if started and finished else ("partial" if started or finished else "unknown")
@@ -352,7 +352,7 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
     # Preserve the v1 projection contract: historic llama.cpp fixtures may
     # carry a container digest in tools.vllm. New container backends use their
     # own tool entry without changing that legacy behavior.
-    container_tool_key = "tgi" if backend_id == "tgi" else "vllm"
+    container_tool_key = backend_id if backend_id in {"tgi", "ollama"} else "vllm"
     container_tool = _mapping(tools.get(container_tool_key))
     digest = container_tool.get("digest")
     if isinstance(digest, str) and re.search(r"(?:^|@)sha256:[0-9a-f]{64}$", digest):

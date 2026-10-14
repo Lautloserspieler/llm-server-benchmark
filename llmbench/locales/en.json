@@ -340,5 +340,8 @@
   "Zwei aktive Modellserver gleichzeitig": "Two active model servers at the same time",
   "TGI-Container wurde nicht bereit: {error}": "TGI container did not become ready: {error}",
   "Container-Log (Ende):": "Container log (tail):",
-  "Es laeuft kein TGI-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No TGI container is running. run_benchmark expects begin_profile to have started the server."
+  "Es laeuft kein TGI-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No TGI container is running. run_benchmark expects begin_profile to have started the server.",
+  "Es laeuft kein Ollama-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No Ollama container is running. run_benchmark expects begin_profile to have already started the server.",
+  "Ollama-Container wurde nicht bereit: {exc}": "Ollama container did not become ready: {exc}",
+  "Ollama": "Ollama"
 }

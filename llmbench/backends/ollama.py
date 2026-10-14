@@ -10,6 +10,7 @@ registriert, bevor der eigentliche Health-Check laeuft.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -20,6 +21,7 @@ from .base import BenchmarkBackend
 from .capabilities import BackendCapabilities
 from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
+from ..bootstrap import model_shards, shard_set_complete
 from ..http_bench import API_STYLE_OLLAMA_NATIVE, run_http_bench
 from ..i18n import _
 from ..utils import auth_headers
@@ -29,8 +31,10 @@ CONTAINER_PORT = 11434
 DEFAULT_HOST_PORT = 11434
 DEFAULT_BASE_URL = f"http://127.0.0.1:{DEFAULT_HOST_PORT}"
 
-# Lokale Modelle/Modelfiles landen in diesem Container-Pfad.
-MODEL_MOUNT = "/models"
+# Ollamas persistenter Modell-/Blob-Speicher. Das benannte Backend-Volume
+# wird immer hier eingehängt, analog zur offiziellen Docker-Empfehlung.
+OLLAMA_DATA_MOUNT = "/root/.ollama"
+UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
 STARTUP_TIMEOUT_SECONDS = 1800.0
 
@@ -47,12 +51,28 @@ def _model_name_for(model_path: str) -> str:
     return f"llmbench-{p.stem}"
 
 
-def _build_modelfile(gguf_name: str) -> str:
-    """Minimales Modelfile, das auf das gemountete GGUF verweist."""
-    return (
-        f'FROM "{MODEL_MOUNT}/{gguf_name}"\n'
-        "PARAMETER temperature 0.0\n"
-    )
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(UPLOAD_CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _file_chunks(path: Path):
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            yield chunk
+
+
+def _use_gpu(profile: dict[str, Any]) -> bool:
+    explicit = profile.get("ollama_num_gpu")
+    if explicit is not None:
+        return int(explicit) != 0
+    return int(profile.get("gpu_layers", -1)) != 0
 
 
 class OllamaBackend(BenchmarkBackend):
@@ -110,21 +130,8 @@ class OllamaBackend(BenchmarkBackend):
         """Container starten; bei lokalem GGUF wird das Modell vorab angelegt."""
         backend_setup.ensure_backend("ollama", self.root, self.image, log=log)
 
-        # GGUF einmounten und Modelfile erzeugen, falls noetig.
-        volumes: dict[str, str] = {}
-        create_payload: dict[str, Any] | None = None
-        if _looks_like_gguf(model_path):
-            p = Path(model_path).resolve()
-            volumes[f"{p.parent}"] = f"{MODEL_MOUNT}:ro"
-            modelfile = _build_modelfile(p.name)
-            modelfile_path = p.parent / "Modelfile"
-            modelfile_path.write_text(modelfile, encoding="utf-8")
-            self._created_model = _model_name_for(model_path)
-            create_payload = {
-                "name": self._created_model,
-                "modelfile": modelfile,
-                "stream": False,
-            }
+        self._created_model = None
+        volumes: dict[str, str] = {self.volume_name: OLLAMA_DATA_MOUNT}
 
         docker_backend.stop_container(self.container_name, log=log)
 
@@ -132,7 +139,7 @@ class OllamaBackend(BenchmarkBackend):
             self.container_name,
             self.image,
             [],  # Ollama-Image startet den Server als Entrypoint/Command.
-            gpu=True,
+            gpu=_use_gpu(profile),
             port_map={self._host_port(endpoint_cfg): CONTAINER_PORT},
             volumes=volumes,
             log=log,
@@ -142,21 +149,85 @@ class OllamaBackend(BenchmarkBackend):
         self.base_url = self._base_url_for(endpoint_cfg)
         self.target_pid = docker_backend.container_pid(self.container_name)
 
-        if create_payload is not None:
-            self._create_model(create_payload)
+        # Das Modell muss vor dem ersten Benchmark-Request wirklich verfügbar sein.
+        # Lokale GGUFs werden über Ollamas aktuelle Blob/Create-API importiert;
+        # Registry-Modelle werden bei Bedarf in das persistente Volume gezogen.
+        wait_health(self.base_url, 60.0, self._headers(), path="/api/tags")
+        if _looks_like_gguf(model_path):
+            self._created_model = _model_name_for(model_path)
+            self._create_model(model_path)
+        else:
+            self._ensure_registry_model(str(model_path).strip())
 
         return container_id, self.command
 
-    def _create_model(self, payload: dict[str, Any]) -> None:
-        """Warte kurz, bis die API bereit ist, dann POST /api/create."""
-        wait_health(self.base_url, 60.0, path="/api/tags")
-        with contextlib.suppress(Exception):
-            response = httpx.post(
+    def _request_timeout(self) -> float:
+        return float(self.endpoint_cfg.get("timeout_seconds") or 3600.0)
+
+    def _create_model(self, model_path: str) -> None:
+        """Importiert lokale GGUF-Dateien über Blob-Upload + /api/create."""
+        path = Path(model_path).resolve()
+        if not shard_set_complete(path):
+            raise RuntimeError(f"GGUF-Shard-Satz ist unvollstaendig: {path}")
+
+        shards = model_shards(path)
+        if not shards:
+            raise RuntimeError(f"GGUF-Datei nicht gefunden: {path}")
+
+        files: dict[str, str] = {}
+        timeout = self._request_timeout()
+        with httpx.Client(headers=self._headers()) as client:
+            for shard in shards:
+                digest = _sha256_file(shard)
+                blob_url = f"{self.base_url.rstrip('/')}/api/blobs/{digest}"
+                head = client.head(blob_url, timeout=60.0)
+                if head.status_code == 404:
+                    headers = {"Content-Length": str(shard.stat().st_size)}
+                    upload = client.post(
+                        blob_url,
+                        content=_file_chunks(shard),
+                        headers=headers,
+                        timeout=timeout,
+                    )
+                    upload.raise_for_status()
+                else:
+                    head.raise_for_status()
+                files[shard.name] = digest
+
+            response = client.post(
                 f"{self.base_url.rstrip('/')}/api/create",
-                json=payload,
-                timeout=600.0,
+                json={
+                    "model": self._created_model or _model_name_for(model_path),
+                    "files": files,
+                    "stream": False,
+                },
+                timeout=timeout,
             )
             response.raise_for_status()
+
+    def _ensure_registry_model(self, model: str) -> None:
+        """Nutzt ein persistiertes Modell oder zieht es einmal aus der Ollama-Library."""
+        if not model:
+            raise ValueError("Ollama-Modellname darf nicht leer sein.")
+
+        timeout = self._request_timeout()
+        with httpx.Client(headers=self._headers()) as client:
+            show = client.post(
+                f"{self.base_url.rstrip('/')}/api/show",
+                json={"model": model},
+                timeout=60.0,
+            )
+            if show.status_code == 200:
+                return
+            if show.status_code != 404:
+                show.raise_for_status()
+
+            pull = client.post(
+                f"{self.base_url.rstrip('/')}/api/pull",
+                json={"model": model, "stream": False},
+                timeout=timeout,
+            )
+            pull.raise_for_status()
 
     def _stop(self) -> None:
         if self.container_id is None and not docker_backend.container_exists(self.container_name):
@@ -233,9 +304,14 @@ class OllamaBackend(BenchmarkBackend):
                     "begin_profile den Server bereits gestartet hat."
                 ),
             }
-        # Model-Name muss in jede Request-Payload gelangen.
+        # Model-Name und Ollama-spezifische Profilwerte müssen in jede
+        # Request-Payload gelangen.
         cfg = dict(bench_cfg)
         cfg["model"] = self._model_for_request(model_path)
+        if profile.get("ollama_num_ctx") is not None:
+            cfg["ollama_num_ctx"] = int(profile["ollama_num_ctx"])
+        if profile.get("ollama_num_gpu") is not None:
+            cfg["ollama_num_gpu"] = int(profile["ollama_num_gpu"])
         return run_http_bench(
             self.base_url,
             self._headers(),
@@ -268,8 +344,12 @@ class OllamaBackend(BenchmarkBackend):
         self.endpoint_cfg = dict(endpoint_cfg or {})
         self._log_path = Path(log_path)
         container_id, command = self._start(model_path, profile, self.endpoint_cfg)
-        # Ollamas /api/generate braucht den Modellnamen in jeder Request.
+        # Ollamas /api/generate braucht Modellname und Profiloptionen in jeder Request.
         endpoint_cfg["model"] = self._model_for_request(model_path)
+        if profile.get("ollama_num_ctx") is not None:
+            endpoint_cfg["ollama_num_ctx"] = int(profile["ollama_num_ctx"])
+        if profile.get("ollama_num_gpu") is not None:
+            endpoint_cfg["ollama_num_gpu"] = int(profile["ollama_num_gpu"])
         return _ContainerHandle(self.container_name, container_id, self.target_pid), command
 
     def stop_server(self, proc: Any) -> None:

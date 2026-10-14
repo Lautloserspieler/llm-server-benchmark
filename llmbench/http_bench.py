@@ -134,6 +134,10 @@ def _build_request(
             "temperature": temperature,
             "num_predict": max_tokens,
         }
+        if cfg.get("ollama_num_ctx") is not None:
+            options["num_ctx"] = int(cfg["ollama_num_ctx"])
+        if cfg.get("ollama_num_gpu") is not None:
+            options["num_gpu"] = int(cfg["ollama_num_gpu"])
         if "top_p" in cfg:
             options["top_p"] = float(cfg["top_p"])
         if "top_k" in cfg:
@@ -148,6 +152,9 @@ def _build_request(
             "model": str(cfg.get("model", "llmbench")),
             "prompt": str(prompt_or_messages),
             "stream": True,
+            # Benchmark-Prompts sollen nicht durch ein modellabhängiges
+            # Ollama-Template verändert werden.
+            "raw": True,
             "options": options,
         }
 

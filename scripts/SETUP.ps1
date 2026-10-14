@@ -45,8 +45,11 @@ try {
         Invoke-ChildScript 'DOCKER_BENCHMARK.ps1' @('-Action', 'Setup')
         $rc = $script:ChildExitCode
         if ($rc -eq 0) {
-            Write-UiDone (T 'setup.done_docker') @((T 'setup.done_hint'))
-            exit 0
+            if ($mode -eq 'docker') {
+                Write-UiDone (T 'setup.done_docker') @((T 'setup.done_hint'))
+                exit 0
+            }
+            Write-UiOk (T 'setup.docker_host_ready')
         }
         if ($rc -eq $RebootExitCode) {
             Invoke-RebootFlow 'setup.bat'
@@ -87,7 +90,7 @@ try {
     # Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
     Invoke-Checked $venvPython @('-m', 'llmbench.backend_select', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
 
-    Write-UiDone (T 'setup.done_native') @((T 'setup.done_hint'))
+    Write-UiDone (T $(if ($mode -eq 'auto') { 'setup.done_host' } else { 'setup.done_native' })) @((T 'setup.done_hint'))
     exit 0
 } catch {
     Write-Host ''

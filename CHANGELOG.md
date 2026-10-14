@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### Backend-Auswahl in Setup und Benchmarkstart
+
+- `setup.bat` / `setup.sh` führen im Standardmodus die Host-Orchestrierung weiter und bieten
+  Ollama, TGI und vLLM nach der Docker-Einrichtung zur Installation und Auswahl an.
+- `START_BENCHMARK.bat` / `START_BENCHMARK.sh` zeigen vor dem Lauf die bereits installierten
+  Backends an; `--choose-only` verhindert dabei neue Downloads.
+- Der komplette llmbench-Docker-Container wird nur noch im expliziten
+  `LLMBENCH_EXECUTION_MODE=docker` verwendet. Im Standardmodus `auto` startet llmbench die
+  Backend-Container vom Host aus, damit Ollama/TGI/vLLM funktionieren.
+
+
 ### TGI-Backend (Phase C)
 
 - Neues Backend `tgi`: `TgiBackend` startet `ghcr.io/huggingface/text-generation-inference`

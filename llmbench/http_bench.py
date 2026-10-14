@@ -320,6 +320,52 @@ async def one_completion_async(
     }
 
 
+
+async def sanity_completion_async(
+    client: httpx.AsyncClient,
+    base_url: str,
+    prompt: str,
+    cfg: dict[str, Any],
+    *,
+    api_style: str,
+) -> str:
+    """Run one non-persisted completion and return only its generated text.
+
+    This shares the exact request dialect/parser used by the endpoint benchmark
+    without adding generated content to benchmark result artifacts.
+    """
+    if api_style not in API_STYLES:
+        raise ValueError(
+            f"Unbekannter API-Stil: {api_style!r}. Erlaubt: {', '.join(API_STYLES)}"
+        )
+
+    path, payload = _build_request(api_style, prompt, cfg, 0)
+    timeout = float(cfg.get("timeout_seconds", 30))
+    parts: list[str] = []
+
+    async with client.stream(
+        "POST", base_url.rstrip("/") + path, json=payload, timeout=timeout
+    ) as response:
+        response.raise_for_status()
+        async for line in response.aiter_lines():
+            if not line:
+                continue
+            text = line.strip()
+            if text.startswith("data:"):
+                text = text[5:].strip()
+            if text == "[DONE]":
+                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            _tokens, content = _extract_delta(api_style, data)
+            if content:
+                parts.append(content)
+
+    return "".join(parts).strip()
+
+
 # ------------------------------------------------------------- Messschleifen
 
 

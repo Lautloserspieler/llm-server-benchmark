@@ -13,6 +13,7 @@ from rich.table import Table
 
 from .bootstrap import discover_models
 from .i18n import _
+from .download import find_downloaded_model, get_catalog_models
 from .model_select import ensure_model_selection
 from .utils import console
 
@@ -58,6 +59,11 @@ def _existing_remote_refs(cfg: dict[str, Any], backend: str) -> list[str]:
 
 
 def _default_profiles(backend: str) -> list[dict[str, Any]]:
+    if backend == "llama_cpp":
+        return [
+            {"name": "Full-GPU", "gpu_layers": -1, "threads": "auto"},
+            {"name": "CPU-Only", "gpu_layers": 0, "threads": "auto"},
+        ]
     if backend == "ollama":
         return [
             {"name": "Ollama-GPU", "gpu_layers": -1, "ollama_num_ctx": 32768},
@@ -171,7 +177,15 @@ def select_models_for_backend(
     cfg = _load_config(config)
     backend = _backend(cfg)
     if backend == "llama_cpp":
-        return ensure_model_selection(models, force_select=force_select)
+        selected = ensure_model_selection(models, force_select=force_select)
+        catalog = get_catalog_models()
+        references: list[str] = []
+        for name in selected:
+            model_path = find_downloaded_model(models, catalog[name])
+            if model_path is not None:
+                references.append(str(model_path))
+        _write_runtime_models(config, backend, references)
+        return references
     if backend not in {"ollama", "vllm", "tgi"}:
         raise ValueError(_("Unbekanntes Backend: {backend}").format(backend=backend))
     return _prompt_runtime_models(backend, config, models)

@@ -203,6 +203,35 @@ def test_bootstrap_keeps_chosen_language(tmp_path, monkeypatch):
     assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["project"]["language"] == "en"
 
 
+
+def test_setup_launchers_offer_backend_install_and_selection():
+    win = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "setup.sh").read_text(encoding="utf-8")
+
+    assert "llmbench.backend_select" in win
+    assert "--choose-only" not in win
+    assert "llmbench.backend_select" in linux
+    assert "--choose-only" not in linux
+
+
+def test_benchmark_launchers_offer_installed_backend_selection():
+    win = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
+
+    assert "llmbench.backend_select" in win
+    assert "--choose-only" in win
+    assert "llmbench.backend_select" in linux
+    assert "--choose-only" in linux
+
+
+def test_auto_mode_keeps_backend_orchestration_on_host():
+    win = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
+
+    assert 'if ($Mode -eq "docker") {' in win
+    assert 'if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" = "docker" ]; then' in linux
+
+
 # --------------------------------------------------------------------------- llama.cpp (Windows)
 
 _LLAMA_MODULES = (

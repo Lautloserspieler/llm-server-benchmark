@@ -43,6 +43,16 @@ def get_backend(cfg: dict[str, Any]) -> BenchmarkBackend:
             root=Path(cfg.get("_config_dir") or "."),
         )
 
+    if name == "tgi":
+        from ..backend_setup import DEFAULT_TGI_IMAGE
+        from .tgi import TgiBackend
+
+        return TgiBackend(
+            tools.get("tgi_image") or DEFAULT_TGI_IMAGE,
+            endpoint_cfg=cfg.get("endpoint") or {},
+            root=Path(cfg.get("_config_dir") or "."),
+        )
+
     if name == "ollama":
         from ..backend_setup import DEFAULT_OLLAMA_IMAGE
         from .ollama import OllamaBackend
@@ -53,7 +63,7 @@ def get_backend(cfg: dict[str, Any]) -> BenchmarkBackend:
             root=Path(cfg.get("_config_dir") or "."),
         )
 
-    raise ValueError(f"Unbekanntes Backend: {name!r}. Erlaubt: llama_cpp, vllm, ollama")
+    raise ValueError(f"Unbekanntes Backend: {name!r}. Erlaubt: llama_cpp, vllm, tgi, ollama")
 
 
 __all__ = [

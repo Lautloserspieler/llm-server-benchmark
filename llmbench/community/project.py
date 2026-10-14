@@ -352,10 +352,7 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
     # Preserve the v1 projection contract: historic llama.cpp fixtures may
     # carry a container digest in tools.vllm. New container backends use their
     # own tool entry without changing that legacy behavior.
-    if backend_id in {"tgi", "ollama"}:
-        container_tool_key = backend_id
-    else:
-        container_tool_key = "vllm"
+    container_tool_key = backend_id if backend_id in {"tgi", "ollama"} else "vllm"
     container_tool = _mapping(tools.get(container_tool_key))
     digest = container_tool.get("digest")
     if isinstance(digest, str) and re.search(r"(?:^|@)sha256:[0-9a-f]{64}$", digest):

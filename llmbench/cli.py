@@ -88,7 +88,7 @@ def _auto_install_llama_cpp_windows(root: Path) -> bool:
                 "Bypass",
                 "-File",
                 str(core_script),
-                "-SetupOnly",
+                "-LlamaCppOnly",
             ],
             cwd=str(root),
             check=False,

@@ -163,11 +163,11 @@ function Invoke-BenchmarkRun {
     if ($LASTEXITCODE -ne 0) { throw (T 'start.bootstrap_failed') }
 
     Write-UiSection (T 'start.backend_title')
-    & $VenvPython -m llmbench.backend_select --root $Root --config $Config --choose-only
+    & $VenvPython -m llmbench select-backend --root $Root --config $Config --choose-only
     if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
     Write-UiSection (T 'setup.section_models')
-    & $VenvPython -m llmbench.backend_model_select --config $Config --models-dir $ModelsDir
+    & $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir
     if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
 
     $doctorData = Get-DoctorData

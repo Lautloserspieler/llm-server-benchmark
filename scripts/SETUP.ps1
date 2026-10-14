@@ -90,7 +90,8 @@ try {
     # Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
     Invoke-Checked $venvPython @('-m', 'llmbench.backend_select', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
 
-    Write-UiDone (T $(if ($mode -eq 'auto') { 'setup.done_host' } else { 'setup.done_native' })) @((T 'setup.done_hint'))
+    $doneKey = if ($mode -eq 'auto') { 'setup.done_host' } else { 'setup.done_native' }
+    Write-UiDone (T $doneKey) @((T 'setup.done_hint'))
     exit 0
 } catch {
     Write-Host ''

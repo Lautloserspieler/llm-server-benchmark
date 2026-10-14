@@ -75,11 +75,28 @@ def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware
 
 
 def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    path = resolve_path(model["path"], cfg)
-    fingerprint = file_fingerprint(
-        path,
-        with_hash=bool(cfg["project"].get("hash_models", True)),
+    raw_path = str(model["path"])
+    path_obj = Path(raw_path)
+    runtime_ref = (
+        backend_name(cfg) != "llama_cpp"
+        and not path_obj.exists()
+        and not path_obj.is_absolute()
+        and not raw_path.startswith((".", "~"))
+        and "\\" not in raw_path
     )
+    if runtime_ref:
+        fingerprint: dict[str, Any] = {
+            "path": raw_path,
+            "exists": True,
+            "size_bytes": None,
+        }
+        path = raw_path
+    else:
+        path = resolve_path(raw_path, cfg)
+        fingerprint = file_fingerprint(
+            path,
+            with_hash=bool(cfg["project"].get("hash_models", True)),
+        )
     meta: dict[str, Any] = {
         "name": model["name"],
         "path": str(fingerprint.get("path") or path),
@@ -88,6 +105,8 @@ def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         "quality_gate": model.get("quality_gate"),
         "notes": model.get("notes"),
     }
+    if runtime_ref:
+        meta["runtime_reference"] = True
     if fingerprint.get("sha256"):
         meta["sha256"] = fingerprint["sha256"]
     if fingerprint.get("shard_count"):

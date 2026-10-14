@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from llmbench.endpoint import (
     percentile,
     run_endpoint_load,
+    run_sanity_check,
     start_llama_server,
     stop_llama_server,
 )
@@ -40,6 +42,51 @@ def test_auth_headers_empty_without_api_key():
 
 def test_auth_headers_bearer_token_with_api_key():
     assert auth_headers({"api_key": "secret"}) == {"Authorization": "Bearer secret"}
+
+
+# --------------------------------------------------------------------------- backend-aware sanity check
+
+def test_sanity_check_uses_ollama_native_dialect(monkeypatch):
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append({
+            "path": request.url.path,
+            "payload": json.loads(request.content.decode("utf-8")),
+        })
+        body = (
+            '{"response":"READY","done":false}\n'
+            '{"done":true,"eval_count":1,"prompt_eval_count":1}\n'
+        )
+        return httpx.Response(200, text=body)
+
+    transport = httpx.MockTransport(handler)
+
+    class Client(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr("llmbench.endpoint.httpx.AsyncClient", Client)
+    passed, message = asyncio.run(
+        run_sanity_check(
+            "http://testserver",
+            {
+                "api_style": "ollama_native",
+                "model": "mistral",
+                "timeout_seconds": 5,
+                "ollama_num_ctx": 4096,
+            },
+            {"tests": [{"prompt": "health", "expected_regex": "^READY$", "max_tokens": 4}]},
+        )
+    )
+
+    assert passed is True
+    assert "1/1" in message
+    assert seen[0]["path"] == "/api/generate"
+    assert seen[0]["payload"]["model"] == "mistral"
+    assert seen[0]["payload"]["raw"] is True
+    assert seen[0]["payload"]["options"]["num_ctx"] == 4096
 
 
 # --------------------------------------------------------------------------- start/stop server

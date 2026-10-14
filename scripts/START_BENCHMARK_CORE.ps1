@@ -3,6 +3,7 @@ param(
     [string]$Config = "benchmark.yaml",
     [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
+    [switch]$LlamaCppOnly,
     [switch]$ForceUpdateLlamaCpp
 )
 
@@ -220,6 +221,11 @@ if ($LASTEXITCODE -ne 0) { throw (T 'core.pip_failed') }
 & $VenvPython -m pip install --quiet -e "."
 if ($LASTEXITCODE -ne 0) { throw (T 'core.deps_failed') }
 Write-UiOk (T 'setup.packages_ready')
+
+if ($LlamaCppOnly) {
+    Install-LlamaCpp
+    exit 0
+}
 
 Write-UiSection (T 'setup.section_config')
 New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null

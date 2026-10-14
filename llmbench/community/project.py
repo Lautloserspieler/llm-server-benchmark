@@ -349,7 +349,11 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
             measurement["binary_sha256"] = binary_hash
         measurement["id"] = "llama_bench"
         backend["measurement_tool"] = measurement
-    container_tool = _mapping(tools.get(backend_id)) if backend_id in {"vllm", "ollama"} else {}
+    # Preserve the v1 projection contract: historic llama.cpp fixtures may
+    # carry a container digest in tools.vllm. New container backends use their
+    # own tool entry without changing that legacy behavior.
+    container_tool_key = "ollama" if backend_id == "ollama" else "vllm"
+    container_tool = _mapping(tools.get(container_tool_key))
     digest = container_tool.get("digest")
     if isinstance(digest, str) and re.search(r"(?:^|@)sha256:[0-9a-f]{64}$", digest):
         backend["container_digest"] = digest.rsplit("@", 1)[-1]

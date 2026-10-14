@@ -107,13 +107,18 @@ if ($ResolvedPython -and (Test-Path $ResolvedPython)) {
 function Test-BenchmarkInstallationReady {
     if (-not (Test-Path $VenvPython -PathType Leaf)) { return $false }
     if (-not (Test-Path $ConfigPath -PathType Leaf)) { return $false }
-    if (-not (Test-Path $LlamaBench -PathType Leaf)) { return $false }
-    if (-not (Test-Path $LlamaServer -PathType Leaf)) { return $false }
-    if (-not (Test-Path $LlamaState -PathType Leaf)) { return $false }
 
     try {
         & $VenvPython -c "import llmbench, yaml, pydantic, psutil, rich, huggingface_hub" *> $null
-        return ($LASTEXITCODE -eq 0)
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        $backend = (& $VenvPython -c "import yaml; c=yaml.safe_load(open(r'$ConfigPath',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()
+        if ($backend -eq 'llama_cpp') {
+            if (-not (Test-Path $LlamaBench -PathType Leaf)) { return $false }
+            if (-not (Test-Path $LlamaServer -PathType Leaf)) { return $false }
+            if (-not (Test-Path $LlamaState -PathType Leaf)) { return $false }
+        }
+        return $true
     } catch {
         return $false
     }
@@ -154,16 +159,16 @@ function Ensure-V2ModelSuite {
 function Invoke-BenchmarkRun {
     Write-UiOk (T 'start.installation_found')
 
-    Ensure-V2ModelSuite
-
-    # Bootstrap entfernt auch alte, versehentlich eingetragene Folge-Shards und
-    # bindet gesplittete GGUFs nur ueber 00001-of-XXXXX ein.
     & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
     if ($LASTEXITCODE -ne 0) { throw (T 'start.bootstrap_failed') }
 
     Write-UiSection (T 'start.backend_title')
     & $VenvPython -m llmbench.backend_select --root $Root --config $Config --choose-only
     if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
+
+    Write-UiSection (T 'setup.section_models')
+    & $VenvPython -m llmbench.backend_model_select --config $Config --models-dir $ModelsDir
+    if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
 
     $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)

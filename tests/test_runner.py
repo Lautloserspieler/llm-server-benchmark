@@ -183,6 +183,21 @@ def test_tool_info_records_tgi_image(monkeypatch):
     assert info["tgi"]["digest"] == "sha256:test"
 
 
+def test_model_meta_preserves_remote_container_model_reference(tmp_path):
+    from llmbench.runner import _model_meta
+
+    cfg = {
+        "project": {"hash_models": True},
+        "tools": {"backend": "vllm"},
+        "_config_dir": str(tmp_path),
+    }
+    meta = _model_meta({"name": "Qwen", "path": "Qwen/Qwen3-8B"}, cfg)
+    assert meta["path"] == "Qwen/Qwen3-8B"
+    assert meta["exists"] is True
+    assert meta["runtime_reference"] is True
+    assert meta["size_bytes"] is None
+
+
 def test_tool_info_records_ollama_image(monkeypatch):
     monkeypatch.setattr("llmbench.docker_backend.image_digest", lambda _image: "sha256:test")
     info = _tool_info({"project": {}, "tools": _tools(backend="ollama", ollama_image="ollama:test")})

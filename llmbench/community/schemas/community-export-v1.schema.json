@@ -76,8 +76,7 @@
         "backend": {
           "enum": [
             "llama_cpp",
-            "vllm",
-            "ollama"
+            "vllm"
           ],
           "title": "Backend",
           "type": "string"
@@ -216,9 +215,6 @@
         },
         "unit": {
           "const": "GB/s",
-          "enum": [
-            "GB/s"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -782,9 +778,6 @@
         },
         "unit": {
           "const": "bytes",
-          "enum": [
-            "bytes"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -815,9 +808,6 @@
         "completeness": {
           "const": "retained_configured_fields",
           "default": "retained_configured_fields",
-          "enum": [
-            "retained_configured_fields"
-          ],
           "title": "Completeness",
           "type": "string"
         },
@@ -996,9 +986,6 @@
         },
         "unit": {
           "const": "cores",
-          "enum": [
-            "cores"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -1112,9 +1099,6 @@
         },
         "unit": {
           "const": "tokens",
-          "enum": [
-            "tokens"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -1497,9 +1481,6 @@
           "anyOf": [
             {
               "const": "measured_components",
-              "enum": [
-                "measured_components"
-              ],
               "type": "string"
             },
             {
@@ -1938,9 +1919,6 @@
           "anyOf": [
             {
               "const": "soc_metrics.DRAMBWCombined",
-              "enum": [
-                "soc_metrics.DRAMBWCombined"
-              ],
               "type": "string"
             },
             {
@@ -2060,9 +2038,6 @@
           "anyOf": [
             {
               "const": "mactop-v2-headless-json",
-              "enum": [
-                "mactop-v2-headless-json"
-              ],
               "type": "string"
             },
             {
@@ -2113,9 +2088,6 @@
           "anyOf": [
             {
               "const": "at_current_memory_clock",
-              "enum": [
-                "at_current_memory_clock"
-              ],
               "type": "string"
             },
             {
@@ -2357,19 +2329,22 @@
         },
         "unit": {
           "const": "fraction",
-          "enum": [
-            "fraction"
-          ],
           "title": "Unit",
           "type": "string"
         },
         "value": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0,
+              "le": 1
             },
             {
               "type": "null"
@@ -2785,9 +2760,6 @@
           "anyOf": [
             {
               "const": "user_approved",
-              "enum": [
-                "user_approved"
-              ],
               "type": "string"
             },
             {
@@ -3058,19 +3030,21 @@
         },
         "unit": {
           "const": "J",
-          "enum": [
-            "J"
-          ],
           "title": "Unit",
           "type": "string"
         },
         "value": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
             },
             {
               "type": "null"
@@ -3176,9 +3150,6 @@
         },
         "unit": {
           "const": "J/1k tokens",
-          "enum": [
-            "J/1k tokens"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -3429,9 +3400,6 @@
         },
         "unit": {
           "const": "layers",
-          "enum": [
-            "layers"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -3519,7 +3487,7 @@
         "cpu_request_timeout_seconds": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -3558,7 +3526,7 @@
         "gpu_request_timeout_seconds": {
           "anyOf": [
             {
-              "exclusiveMinimum": 0.0,
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -4329,19 +4297,21 @@
         },
         "unit": {
           "const": "tokens/s",
-          "enum": [
-            "tokens/s"
-          ],
           "title": "Unit",
           "type": "string"
         },
         "value": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
             },
             {
               "type": "null"
@@ -5354,9 +5324,6 @@
         },
         "unit": {
           "const": "tokens/J",
-          "enum": [
-            "tokens/J"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -5472,19 +5439,21 @@
         },
         "unit": {
           "const": "W",
-          "enum": [
-            "W"
-          ],
           "title": "Unit",
           "type": "string"
         },
         "value": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
             },
             {
               "type": "null"
@@ -5590,19 +5559,21 @@
         },
         "unit": {
           "const": "Wh",
-          "enum": [
-            "Wh"
-          ],
           "title": "Unit",
           "type": "string"
         },
         "value": {
           "anyOf": [
             {
-              "type": "integer"
-            },
-            {
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0
             },
             {
               "type": "null"
@@ -5708,9 +5679,6 @@
         },
         "unit": {
           "const": "Wh/1k tokens",
-          "enum": [
-            "Wh/1k tokens"
-          ],
           "title": "Unit",
           "type": "string"
         },
@@ -5769,9 +5737,6 @@
     },
     "export_schema_version": {
       "const": 1,
-      "enum": [
-        1
-      ],
       "title": "Export Schema Version",
       "type": "integer"
     },

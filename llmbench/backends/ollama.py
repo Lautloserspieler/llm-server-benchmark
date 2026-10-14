@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -59,7 +60,7 @@ def _sha256_file(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
-def _file_chunks(path: Path):
+def _file_chunks(path: Path) -> Iterator[bytes]:
     with path.open("rb") as handle:
         while True:
             chunk = handle.read(UPLOAD_CHUNK_BYTES)

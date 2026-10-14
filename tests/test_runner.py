@@ -168,7 +168,7 @@ def test_get_backend_rejects_unknown_backend():
 
 
 def test_tool_info_records_tgi_image(monkeypatch):
-    monkeypatch.setattr("llmbench.docker_backend.image_digest", lambda image: "sha256:test")
+    monkeypatch.setattr("llmbench.docker_backend.image_digest", lambda _image: "sha256:test")
     info = _tool_info({"project": {}, "tools": _tools(backend="tgi", tgi_image="tgi:test")})
     assert info["tgi"]["image"] == "tgi:test"
     assert info["tgi"]["digest"] == "sha256:test"

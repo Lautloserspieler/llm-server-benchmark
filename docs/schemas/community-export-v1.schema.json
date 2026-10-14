@@ -36,6 +36,7 @@
           "enum": [
             "llama_cpp",
             "vllm",
+            "tgi",
             "ollama"
           ],
           "title": "Id",
@@ -76,8 +77,7 @@
         "backend": {
           "enum": [
             "llama_cpp",
-            "vllm",
-            "ollama"
+            "vllm"
           ],
           "title": "Backend",
           "type": "string"
@@ -2073,6 +2073,7 @@
                 "runtime",
                 "sysfs",
                 "system_profiler",
+                "tgi",
                 "vllm",
                 "wall_power_provider",
                 "wmi"

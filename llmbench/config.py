@@ -32,8 +32,9 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 
 # Unterstuetzte Mess-Backends. Ein Tippfehler soll sofort bei validate_config()
 # auffallen und nicht erst mitten im Lauf.
-VALID_BACKENDS = ("llama_cpp", "vllm", "ollama")
+VALID_BACKENDS = ("llama_cpp", "vllm", "tgi", "ollama")
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
+DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
 DEFAULT_OLLAMA_IMAGE = "ollama/ollama:latest"
 
 class ProjectConfig(BaseModel):
@@ -51,6 +52,7 @@ class ToolsConfig(BaseModel):
     # Schluessel unveraendert weiterlaufen.
     backend: str = "llama_cpp"
     vllm_image: str = DEFAULT_VLLM_IMAGE
+    tgi_image: str = DEFAULT_TGI_IMAGE
     ollama_image: str = DEFAULT_OLLAMA_IMAGE
 
     @field_validator("backend")
@@ -192,7 +194,8 @@ class ProfileConfig(BaseModel):
     quantization: str | None = None
     gpu_memory_utilization: float | None = None
     dtype: str | None = None
-    # Ollama-Profile passthrough fields (optional; Ollama nutzt sie, llama.cpp ignoriert sie).
+    max_input_length: int | None = None
+    max_total_tokens: int | None = None
     ollama_num_ctx: int | None = None
     ollama_num_gpu: int | None = None
 
@@ -255,6 +258,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "llama_server": "llama-server",
         "backend": "llama_cpp",
         "vllm_image": DEFAULT_VLLM_IMAGE,
+        "tgi_image": DEFAULT_TGI_IMAGE,
         "ollama_image": DEFAULT_OLLAMA_IMAGE,
     },
     "benchmark": {

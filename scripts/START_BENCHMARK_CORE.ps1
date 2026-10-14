@@ -227,11 +227,11 @@ New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 if ($LASTEXITCODE -ne 0) { throw (T 'core.bootstrap_failed') }
 
 Write-UiSection (T 'start.backend_title')
-& $VenvPython -m llmbench.backend_select --root $Root --config $Config
+& $VenvPython -m llmbench select-backend --root $Root --config $Config
 if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
 Write-UiSection (T 'setup.section_models')
-& $VenvPython -m llmbench.backend_model_select --config $Config --models-dir $ModelsDir
+& $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir
 if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
 
 $selectedBackend = (& $VenvPython -c "import yaml; c=yaml.safe_load(open(r'$Config',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()

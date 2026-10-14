@@ -344,5 +344,20 @@
   "Es laeuft kein Ollama-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No Ollama container is running. run_benchmark expects begin_profile to have already started the server.",
   "Ollama-Container wurde nicht bereit: {exc}": "Ollama container did not become ready: {exc}",
   "Ollama": "Ollama",
-  "Nur bereits installierte Backends zur Auswahl anbieten; nichts herunterladen.": "Only offer already installed backends for selection; do not download anything."
+  "Nur bereits installierte Backends zur Auswahl anbieten; nichts herunterladen.": "Only offer already installed backends for selection; do not download anything.",
+  "Backend-spezifische Modellauswahl": "Backend-specific model selection",
+  "Gespeicherte llama.cpp-Auswahl wiederverwenden": "Reuse the saved llama.cpp selection",
+  "Ollama-Modellname, z. B. qwen3:8b": "Ollama model name, e.g. qwen3:8b",
+  "lokale GGUF-Datei": "local GGUF file",
+  "Hugging-Face-Repo-ID, z. B. Qwen/Qwen3-8B": "Hugging Face repository ID, e.g. Qwen/Qwen3-8B",
+  "lokales Transformers-Verzeichnis": "local Transformers directory",
+  "Waehle ein Modell passend zum Backend {backend}.": "Choose a model compatible with backend {backend}.",
+  "bereits konfigurierte Modell-ID": "previously configured model ID",
+  "Runtime laedt das Modell bei Bedarf": "runtime downloads the model when needed",
+  "Keine Modelle konfigurieren": "Configure no models",
+  "Konfiguration bleibt ohne Modelle": "configuration remains without models",
+  "Bitte eine Modell-ID angeben.": "Please enter a model ID.",
+  "Ungueltige Modellauswahl.": "Invalid model selection.",
+  "Unbekanntes Backend: {backend}": "Unknown backend: {backend}",
+  "Modellauswahl fehlgeschlagen: {error}": "Model selection failed: {error}"
 }

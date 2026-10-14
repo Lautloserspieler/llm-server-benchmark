@@ -28,14 +28,18 @@ if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
     if [ "$EXECUTION_MODE" = "docker" ] || command -v nvidia-smi >/dev/null 2>&1; then
         ui_section_raw "Docker + NVIDIA CUDA"
         if llmbench_setup_docker; then
-            ui_done setup.done_docker setup.done_hint
-            exit 0
+            if [ "$EXECUTION_MODE" = "docker" ]; then
+                ui_done setup.done_docker setup.done_hint
+                exit 0
+            fi
+            ui_ok setup.docker_host_ready
+        else
+            if [ "$EXECUTION_MODE" = "docker" ]; then
+                ui_fail setup.docker_forced_failed
+                exit 1
+            fi
+            ui_warn setup.docker_fallback
         fi
-        if [ "$EXECUTION_MODE" = "docker" ]; then
-            ui_fail setup.docker_forced_failed
-            exit 1
-        fi
-        ui_warn setup.docker_fallback
     fi
 fi
 
@@ -92,7 +96,11 @@ export LLMBENCH_USE_SAVED_SELECTION=1
 ui_section setup.section_config
 python -m llmbench setup
 
-# Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
+# Optionale Container-Backends (Ollama, TGI, vLLM): fragt vor jedem Download.
 python -m llmbench.backend_select --root "$ROOT_DIR" --config benchmark.yaml
 
-ui_done setup.done_native setup.done_hint
+if [ "$EXECUTION_MODE" = "auto" ]; then
+    ui_done setup.done_host setup.done_hint
+else
+    ui_done setup.done_native setup.done_hint
+fi

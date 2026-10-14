@@ -58,6 +58,25 @@ def test_confirmed_ollama_backend_is_installed(monkeypatch, tmp_path):
     assert cfg["tools"]["backend"] == "ollama"
 
 
+
+def test_choose_only_never_installs_missing_backends(monkeypatch, tmp_path):
+    installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "")
+    backend_select.select_backends(tmp_path, "benchmark.yaml", install_missing=False)
+    assert installed == []
+
+
+def test_choose_only_can_select_already_installed_ollama(monkeypatch, tmp_path):
+    installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=False)
+    state = backend_setup.state_file("ollama", tmp_path)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text('{"image": "ollama/ollama:latest"}', encoding="utf-8")
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "2")
+    backend_select.select_backends(tmp_path, "benchmark.yaml", install_missing=False)
+    assert installed == []
+    cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
+    assert cfg["tools"]["backend"] == "ollama"
+
 def test_without_docker_nothing_is_attempted(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=False, tty=True, answer=True)
     monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")

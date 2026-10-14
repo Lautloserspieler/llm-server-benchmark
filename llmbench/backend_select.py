@@ -1,6 +1,6 @@
 """Backend-Auswahl im Setup.
 
-llama.cpp ist immer dabei. Die Container-Backends (vLLM, spaeter TGI/Ollama)
+llama.cpp ist immer dabei. Die Container-Backends (Ollama, TGI, vLLM)
 sind mehrere Gigabyte gross - deshalb wird fuer jedes einzeln gefragt, bevor
 ein Image geladen wird. Anschliessend kann das Backend gewaehlt werden, mit dem
 der Benchmark standardmaessig laeuft (``tools.backend`` in benchmark.yaml).
@@ -111,7 +111,7 @@ def _choose_default(config_path: Path, available: list[str]) -> None:
     print_msg(_("Standard-Backend: {name}").format(name=_label(choice)), style="green")
 
 
-def select_backends(root: Path | str, config_path: Path | str) -> int:
+def select_backends(root: Path | str, config_path: Path | str, *, install_missing: bool = True) -> int:
     root = Path(root).resolve()
     config_path = Path(config_path)
     if not config_path.is_absolute():
@@ -144,14 +144,15 @@ def select_backends(root: Path | str, config_path: Path | str) -> int:
                 style="yellow",
             )
 
-    for name in [n for n in missing if _usable(n, docker_ok, gpu_ok)]:
-        if not _confirm_install(name):
-            continue
-        try:
-            backend_setup.ensure_backend(name, root, log=lambda msg: print_msg(msg, style="dim"))
-            print_msg(_("{name} ist installiert.").format(name=_label(name)), style="green")
-        except Exception as exc:
-            print_err(_("{name} konnte nicht installiert werden: {error}").format(name=_label(name), error=exc))
+    if install_missing:
+        for name in [n for n in missing if _usable(n, docker_ok, gpu_ok)]:
+            if not _confirm_install(name):
+                continue
+            try:
+                backend_setup.ensure_backend(name, root, log=lambda msg: print_msg(msg, style="dim"))
+                print_msg(_("{name} ist installiert.").format(name=_label(name)), style="green")
+            except Exception as exc:
+                print_err(_("{name} konnte nicht installiert werden: {error}").format(name=_label(name), error=exc))
 
     available = [DEFAULT_BACKEND] + [
         name for name in backend_setup.SUPPORTED_BACKENDS if backend_setup.is_installed(name, root)
@@ -176,9 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=_("Backends fuer den Benchmark auswaehlen und installieren"))
     parser.add_argument("--root", default=".")
     parser.add_argument("--config", default="benchmark.yaml")
+    parser.add_argument(
+        "--choose-only",
+        action="store_true",
+        help=_("Nur bereits installierte Backends zur Auswahl anbieten; nichts herunterladen."),
+    )
     args = parser.parse_args(argv)
     try:
-        return select_backends(args.root, args.config)
+        return select_backends(args.root, args.config, install_missing=not args.choose_only)
     except (EOFError, KeyboardInterrupt):
         console.print("\n" + _("Backend-Auswahl abgebrochen."), style="yellow")
         return 130

@@ -25,7 +25,10 @@ esac
 
 ui_header start.title "$(ui_t setup.mode "$EXECUTION_MODE")"
 
-if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
+# Der komplette llmbench-Container wird nur bei explizitem docker-Modus
+# verwendet. Im Standardmodus auto laeuft die Orchestrierung auf dem Host,
+# damit Ollama/TGI/vLLM als separate Docker-Backends gestartet werden koennen.
+if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" = "docker" ]; then
     # shellcheck disable=SC1091
     source "$ROOT_DIR/scripts/docker_common.sh"
 
@@ -35,23 +38,10 @@ if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
         exit $?
     fi
 
-    if [ "$EXECUTION_MODE" = "docker" ]; then
-        ui_warn start.docker_setup_now
-        llmbench_setup_docker
-        llmbench_docker_run
-        exit $?
-    fi
-
-    # Im Auto-Modus richten wir Docker beim Start nur dann nach, wenn Docker
-    # bereits vorhanden ist. Eine systemweite Erstinstallation bleibt setup.sh vorbehalten.
-    if command -v docker >/dev/null 2>&1 && command -v nvidia-smi >/dev/null 2>&1; then
-        ui_step start.docker_repair
-        if llmbench_setup_docker; then
-            llmbench_docker_run
-            exit $?
-        fi
-        ui_warn start.docker_repair_failed
-    fi
+    ui_warn start.docker_setup_now
+    llmbench_setup_docker
+    llmbench_docker_run
+    exit $?
 fi
 
 if [ "$EXECUTION_MODE" = "docker" ]; then
@@ -96,6 +86,9 @@ python -m llmbench download --suite all --models-dir models --verify-only
 ui_section setup.section_config
 python -m llmbench bootstrap --config "$CONFIG" --root "$ROOT_DIR" \
     --llama-dir "tools/llama.cpp" --models-dir models
+
+ui_section start.backend_title
+python -m llmbench.backend_select --root "$ROOT_DIR" --config "$CONFIG" --choose-only
 
 ui_section start.doctor_title
 python -m llmbench doctor --config "$CONFIG"

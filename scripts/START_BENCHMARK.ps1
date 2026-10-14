@@ -36,13 +36,16 @@ if (Test-Path (Join-Path $ModelsDir ".llmbench-model-selection.json")) { $env:LL
 
 Write-UiHeader "LLM Server Benchmark" (T 'start.subtitle')
 
-# --- Docker-Modus (auto/docker) --------------------------------------------
+# --- Vollstaendiger llmbench-Docker-Modus ---------------------------------
+# Nur bei explizitem "docker". Im Standardmodus "auto" orchestriert llmbench
+# auf dem Host, damit Ollama/vLLM/TGI als separate Docker-Backends gestartet
+# werden koennen.
 $Mode = if ($env:LLMBENCH_EXECUTION_MODE) { $env:LLMBENCH_EXECUTION_MODE.ToLowerInvariant() } else { "auto" }
 if (@("auto", "docker", "native") -notcontains $Mode) {
     Write-UiFail (T 'setup.invalid_mode')
     exit 1
 }
-if ($Mode -ne "native") {
+if ($Mode -eq "docker") {
     & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $DockerScript -Action Check *> $null
     $dockerReady = ($LASTEXITCODE -eq 0)
     if (-not $dockerReady -and $Mode -eq "docker") {
@@ -157,6 +160,10 @@ function Invoke-BenchmarkRun {
     # bindet gesplittete GGUFs nur ueber 00001-of-XXXXX ein.
     & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
     if ($LASTEXITCODE -ne 0) { throw (T 'start.bootstrap_failed') }
+
+    Write-UiSection (T 'start.backend_title')
+    & $VenvPython -m llmbench.backend_select --root $Root --config $Config --choose-only
+    if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
     $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)

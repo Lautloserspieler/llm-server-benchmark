@@ -228,6 +228,10 @@ New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
 if ($LASTEXITCODE -ne 0) { throw (T 'core.bootstrap_failed') }
 
+Write-UiSection (T 'start.backend_title')
+& $VenvPython -m llmbench.backend_select --root $Root --config $Config
+if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
+
 $Models = Get-ChildItem -Path $ModelsDir -Filter "*.gguf" -Recurse -File -ErrorAction SilentlyContinue
 if (-not $Models -or $Models.Count -eq 0) {
     Write-UiDone (T 'core.setup_done') @((T 'core.no_models'), $ModelsDir)

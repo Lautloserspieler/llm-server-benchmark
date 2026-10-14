@@ -349,12 +349,12 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
             measurement["binary_sha256"] = binary_hash
         measurement["id"] = "llama_bench"
         backend["measurement_tool"] = measurement
-    vllm = _mapping(tools.get("vllm"))
-    digest = vllm.get("digest")
+    container_tool = _mapping(tools.get(backend_id)) if backend_id in {"vllm", "ollama"} else {}
+    digest = container_tool.get("digest")
     if isinstance(digest, str) and re.search(r"(?:^|@)sha256:[0-9a-f]{64}$", digest):
         backend["container_digest"] = digest.rsplit("@", 1)[-1]
-    elif isinstance(vllm.get("image"), str):
-        match = re.search(r"@(?P<digest>sha256:[0-9a-f]{64})$", vllm["image"])
+    elif isinstance(container_tool.get("image"), str):
+        match = re.search(r"@(?P<digest>sha256:[0-9a-f]{64})$", container_tool["image"])
         if match:
             backend["container_digest"] = match.group("digest")
     runtime = _mapping(raw_backend.get("runtime")) if isinstance(raw_backend, Mapping) else {}

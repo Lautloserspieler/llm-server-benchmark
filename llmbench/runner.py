@@ -324,6 +324,7 @@ def _run_suite(
             reporter.note(f"Fuehre Quality Gate / Sanity Checks fuer {model['name']} aus ...")
             endpoint_cfg = dict(cfg.get("endpoint", {}))
             endpoint_cfg.update(model.get("endpoint", {}) or {})
+            endpoint_cfg = backend.prepare_endpoint_config(endpoint_cfg)
             qg_profile, _ = _resolve_endpoint_profile(profiles, model["name"], endpoint_cfg)
             proc = None
             try:

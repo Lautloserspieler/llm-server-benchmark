@@ -115,6 +115,7 @@
     'start.model_missing' = '{0}: fehlt ({1})'
     'start.backend_title' = 'Backend auswählen'
     'start.backend_select_failed' = 'Backend-Auswahl fehlgeschlagen (Exitcode {0}).'
+    'start.model_select_failed' = 'Modellauswahl fehlgeschlagen (Exitcode {0}).'
     'start.doctor_title' = 'Vorprüfung'
     'start.doctor_failed' = 'Vorprüfung fehlgeschlagen. Siehe Ausgabe oben.'
     'start.cpu_on_gpu_build' = 'Das installierte llama.cpp ist ein GPU-Build ({0}).'

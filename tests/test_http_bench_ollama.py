@@ -71,12 +71,15 @@ def test_ollama_build_request_shape():
         "repeat_penalty": 1.1,
         "seed": 123,
         "model": "llmbench-model",
+        "ollama_num_ctx": 8192,
+        "ollama_num_gpu": 20,
     }
     path, payload = _build_request(API_STYLE_OLLAMA_NATIVE, "prompt text", cfg, 0)
     assert path == "/api/generate"
     assert payload["model"] == "llmbench-model"
     assert payload["prompt"] == "prompt text"
     assert payload["stream"] is True
+    assert payload["raw"] is True
     options = payload["options"]
     assert options["num_predict"] == 16
     assert options["temperature"] == 0.5
@@ -84,6 +87,8 @@ def test_ollama_build_request_shape():
     assert options["top_k"] == 40
     assert options["repeat_penalty"] == 1.1
     assert options["seed"] == 123
+    assert options["num_ctx"] == 8192
+    assert options["num_gpu"] == 20
     # Ollama kennt diese Felder nicht.
     assert "min_tokens" not in payload
     assert "ignore_eos" not in payload

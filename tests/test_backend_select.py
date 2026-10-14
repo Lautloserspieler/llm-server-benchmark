@@ -41,20 +41,19 @@ def test_declined_question_installs_nothing(monkeypatch, tmp_path):
 
 def test_confirmed_backend_is_installed(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
-    # Verfuegbar: 1 llama.cpp, 2 Ollama, 3 vLLM.
-    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "3")
+    # Verfuegbar: 1 llama.cpp, 2 Ollama, 3 TGI, 4 vLLM.
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "4")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    assert "vllm" in installed
+    assert installed == ["ollama", "tgi", "vllm"]
     cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
     assert cfg["tools"]["backend"] == "vllm"
 
 
 def test_confirmed_ollama_backend_is_installed(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
-    # Verfuegbar: 1 llama.cpp, 2 Ollama, 3 vLLM.
     monkeypatch.setattr(backend_select.console, "input", lambda *_args: "2")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    assert "ollama" in installed
+    assert installed == ["ollama", "tgi", "vllm"]
     cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
     assert cfg["tools"]["backend"] == "ollama"
 
@@ -70,20 +69,15 @@ def test_auto_install_env_controls_questions(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=False)
     monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    # Ollama braucht keine NVIDIA-GPU und wird deshalb ebenfalls installiert.
-    assert sorted(installed) == sorted(["vllm", "ollama"])
+    assert installed == ["ollama", "tgi", "vllm"]
 
 
-def test_vllm_is_not_offered_without_nvidia_gpu_in_docker(monkeypatch, tmp_path):
-    # vLLM startet immer mit --gpus; auf CPU-/AMD-Hosts waere der Download nutzlos.
+def test_nvidia_only_backends_are_not_offered_without_nvidia_gpu_in_docker(monkeypatch, tmp_path):
     installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True, gpu=False)
     monkeypatch.setenv("LLMBENCH_AUTO_INSTALL", "1")
-    # Ohne vLLM bleiben llama.cpp und Ollama; Enter behaelt llama.cpp als Standard.
     monkeypatch.setattr(backend_select.console, "input", lambda *_args: "")
     backend_select.select_backends(tmp_path, "benchmark.yaml")
-    # vLLM wird ohne NVIDIA nicht angeboten, Ollama hingegen schon.
-    assert "vllm" not in installed
-    assert "ollama" in installed
+    assert installed == ["ollama"]
 
 
 def test_configured_but_missing_backend_is_reset(monkeypatch, tmp_path):

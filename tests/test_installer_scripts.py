@@ -214,6 +214,18 @@ def test_setup_launchers_offer_backend_install_and_selection():
     assert "--choose-only" not in linux
 
 
+def test_backend_is_selected_before_backend_specific_models():
+    win_setup = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    linux_setup = (ROOT / "setup.sh").read_text(encoding="utf-8")
+    win_start = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    linux_start = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
+
+    for text in (win_setup, linux_setup, win_start, linux_start):
+        assert "llmbench.backend_select" in text
+        assert "llmbench.backend_model_select" in text
+        assert text.index("llmbench.backend_select") < text.index("llmbench.backend_model_select")
+
+
 def test_benchmark_launchers_offer_installed_backend_selection():
     win = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
     linux = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")

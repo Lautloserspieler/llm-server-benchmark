@@ -204,6 +204,36 @@ def test_bootstrap_keeps_chosen_language(tmp_path, monkeypatch):
 
 
 
+def test_auto_setup_does_not_run_legacy_container_project_setup():
+    windows_docker = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    linux_docker = (ROOT / "scripts" / "docker_common.sh").read_text(encoding="utf-8")
+
+    win_runtime = windows_docker.split("function Setup-DockerBenchmark", 1)[1].split(
+        "function Test-DockerBenchmarkReady", 1
+    )[0]
+    linux_runtime = linux_docker.split("llmbench_setup_docker()", 1)[1].split(
+        "llmbench_docker_ready()", 1
+    )[0]
+
+    assert "container-setup" not in win_runtime
+    assert "llmbench_docker_setup_project" not in linux_runtime
+
+
+def test_setup_launchers_do_not_reenter_full_setup_wizard():
+    windows = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "setup.sh").read_text(encoding="utf-8")
+
+    assert "'START_BENCHMARK_CORE.ps1' @('-LlamaCppOnly')" in windows
+    assert "'llmbench', 'setup'" not in windows
+    assert "python -m llmbench setup" not in linux
+
+
+def test_windows_successful_docker_setup_does_not_emit_fallback_path():
+    windows = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    assert "} elseif ($rc -eq $RebootExitCode) {" in windows
+    assert "} else {" in windows
+
+
 def test_setup_launchers_offer_backend_install_and_selection():
     win = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
     linux = (ROOT / "setup.sh").read_text(encoding="utf-8")

@@ -39,6 +39,7 @@
 [start.suite_download]="At least one selected model is missing or incomplete – downloading it from HuggingFace ..."
 [start.backend_title]="Choose backend"
 [start.backend_select_failed]="Backend selection failed (exit code %s)."
+[start.model_select_failed]="Model selection failed (exit code %s)."
 [start.doctor_title]="Pre-check"
 [run.title]="Benchmark"
 [run.duration_question]="How long should the test run?"

@@ -3,6 +3,7 @@ param(
     [string]$Config = "benchmark.yaml",
     [string]$LlamaCppTag = "",
     [switch]$SetupOnly,
+    [switch]$LlamaCppOnly,
     [switch]$ForceUpdateLlamaCpp
 )
 
@@ -221,7 +222,10 @@ if ($LASTEXITCODE -ne 0) { throw (T 'core.pip_failed') }
 if ($LASTEXITCODE -ne 0) { throw (T 'core.deps_failed') }
 Write-UiOk (T 'setup.packages_ready')
 
-Install-LlamaCpp
+if ($LlamaCppOnly) {
+    Install-LlamaCpp
+    exit 0
+}
 
 Write-UiSection (T 'setup.section_config')
 New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
@@ -229,17 +233,27 @@ New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 if ($LASTEXITCODE -ne 0) { throw (T 'core.bootstrap_failed') }
 
 Write-UiSection (T 'start.backend_title')
-& $VenvPython -m llmbench.backend_select --root $Root --config $Config
+& $VenvPython -m llmbench select-backend --root $Root --config $Config
 if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
-$Models = Get-ChildItem -Path $ModelsDir -Filter "*.gguf" -Recurse -File -ErrorAction SilentlyContinue
+Write-UiSection (T 'setup.section_models')
+& $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir
+if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
+
+$selectedBackend = (& $VenvPython -c "import yaml; c=yaml.safe_load(open(r'$Config',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()
+if ($selectedBackend -eq 'llama_cpp') {
+    Install-LlamaCpp
+}
+
+$doctorData = (& $VenvPython -m llmbench doctor --config $Config --json | Out-String).Trim() | ConvertFrom-Json
+$Models = @($doctorData.models)
 if (-not $Models -or $Models.Count -eq 0) {
     Write-UiDone (T 'core.setup_done') @((T 'core.no_models'), $ModelsDir)
     exit 0
 }
 
 Write-UiSection (T 'start.models_title' $Models.Count)
-$Models | ForEach-Object { Write-UiInfo "- $($_.Name)" }
+$Models | ForEach-Object { Write-UiInfo "- $($_.name)" }
 
 Write-UiSection (T 'start.doctor_title')
 & $VenvPython -m llmbench doctor --config $Config

@@ -88,7 +88,7 @@ def _auto_install_llama_cpp_windows(root: Path) -> bool:
                 "Bypass",
                 "-File",
                 str(core_script),
-                "-SetupOnly",
+                "-LlamaCppOnly",
             ],
             cwd=str(root),
             check=False,
@@ -120,120 +120,100 @@ def _auto_install_llama_cpp_unix(root: Path) -> bool:
 
 
 def run_setup_wizard(allow_system_search: bool = False) -> int:
-    from llmbench.download import download_models, verify_suite
-    from llmbench.utils import ask_yes_no, console, print_err, print_msg, print_panel
+    from llmbench import backend_model_select, backend_select
+    from llmbench.utils import print_err, print_msg, print_panel
     from rich.prompt import Prompt
 
     from llmbench.i18n import detect_language, language_preselected, save_language, set_language
 
-    # setup.bat/setup.sh fragen die Sprache bereits ganz am Anfang; nur bei
-    # direktem Aufruf von `llmbench setup` wird hier noch gefragt.
     if language_preselected():
         lang_val = detect_language()
     else:
         lang_val = Prompt.ask(
             "[cyan]Which language do you want to use? / Welche Sprache möchtest du nutzen? (de/en)[/cyan]",
             choices=["de", "en"],
-            default="de"
+            default="de",
         )
         save_language(lang_val)
     set_language(lang_val)
 
     print_panel(
-        _("Ich erstelle die Konfiguration und suche llama.cpp sowie deine Modelle."),
+        _("Zuerst wird das Backend gewaehlt, danach nur dazu passende Modelle."),
         title=_("LLM Server Benchmark - Einrichtung"),
     )
 
     root = Path(".").resolve()
-    config_path = "benchmark.yaml"
-    print_msg(_("Suche llama.cpp und Modelle im Projektordner..."), style="blue")
-    result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
-    llama_dir = result["llama_dir"]
-    ext = ".exe" if platform.system() == "Windows" else ""
+    config_path = root / "benchmark.yaml"
+    models_dir = root / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
 
-    if not result["llama_binaries_found"]:
-        print_err(_("llama.cpp wurde unter {path} nicht gefunden.").format(path=llama_dir))
-        if platform.system() == "Windows":
-            if not _auto_install_llama_cpp_windows(root):
-                print_err(_("Einrichtung abgebrochen, weil llama.cpp nicht automatisch installiert werden konnte."))
-                return 1
-            result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
-            llama_dir = result["llama_dir"]
-            if not result["llama_binaries_found"]:
-                print_err(
-                    _("Das automatische Setup wurde beendet, aber {files} fehlen weiterhin unter {path}.").format(
-                        files="llama-bench.exe / llama-server.exe", path="tools\\llama.cpp"
-                    )
-                )
-                return 1
-            print_msg(_("llama.cpp automatisch installiert: {path}").format(path=llama_dir), style="green")
-        elif _auto_install_llama_cpp_unix(root):
-            result = bootstrap_config(config_path, root, None, None, allow_system_search, language=lang_val)
-            llama_dir = result["llama_dir"]
-            if not result["llama_binaries_found"]:
-                print_err(
-                    _("Das automatische Setup wurde beendet, aber {files} fehlen weiterhin unter {path}.").format(
-                        files="llama-bench / llama-server", path="tools/llama.cpp"
-                    )
-                )
-                return 1
-            print_msg(_("llama.cpp automatisch installiert: {path}").format(path=llama_dir), style="green")
-        else:
-            val = Prompt.ask("[cyan]" + _("Pfad zum llama.cpp-Ordner (Enter zum Abbrechen)") + "[/cyan]")
-            if not val:
-                print_msg(_("Einrichtung abgebrochen."), style="red")
-                return 1
-            llama_dir = val
-            if not (
-                (Path(llama_dir) / f"llama-bench{ext}").exists()
-                and (Path(llama_dir) / f"llama-server{ext}").exists()
-            ):
-                print_err(_("Dort liegen weder llama-bench noch llama-server. Einrichtung abgebrochen."))
-                return 1
-    else:
-        print_msg(_("llama.cpp gefunden: {path}").format(path=llama_dir), style="green")
+    # Minimalen Config-Rahmen anlegen. Die Backend-Auswahl ersetzt anschliessend
+    # bewusst das Default-Backend und die Modellauswahl die Model-Liste.
+    bootstrap_config(
+        str(config_path),
+        root,
+        root / "tools" / "llama.cpp",
+        models_dir,
+        allow_system_search,
+        language=lang_val,
+    )
 
-    models_dir = result.get("models_dir") or str(root / "models")
-    complete, missing = verify_suite(models_dir, "all")
-    if not complete:
-        console.print("\n[bold yellow]" + _("Die Standard-Suite ist noch nicht vollstaendig.") + "[/bold yellow]")
-        console.print(_("Fehlend/unvollstaendig: {names}").format(names=", ".join(missing)))
-        if ask_yes_no(_("Fehlende Standard-Modelle automatisch von HuggingFace laden?"), default=True):
-            try:
-                download_models(models_dir, "all")
-            except Exception as exc:
-                print_err(_("Automatischer Modell-Download fehlgeschlagen: {error}").format(error=exc))
+    print_msg(_("Backend auswaehlen und bei Bedarf installieren..."), style="blue")
+    if backend_select.select_backends(root, config_path) != 0:
+        print_err(_("Backend-Auswahl fehlgeschlagen."))
+        return 1
+
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    backend = str((cfg.get("tools") or {}).get("backend") or "llama_cpp")
+
+    # llama.cpp ist das einzige Backend mit lokalen Binary-Voraussetzungen.
+    if backend == "llama_cpp":
+        llama_dir = root / "tools" / "llama.cpp"
+        ext = ".exe" if platform.system() == "Windows" else ""
+        bench = llama_dir / f"llama-bench{ext}"
+        server = llama_dir / f"llama-server{ext}"
+        if not (bench.exists() and server.exists()):
+            print_msg(_("llama.cpp fehlt und wird jetzt installiert."), style="blue")
+            ok = (
+                _auto_install_llama_cpp_windows(root)
+                if platform.system() == "Windows"
+                else _auto_install_llama_cpp_unix(root)
+            )
+            if not ok:
+                print_err(_("Einrichtung abgebrochen, weil llama.cpp nicht installiert werden konnte."))
                 return 1
-        elif result.get("models_found", 0) == 0:
-            val = Prompt.ask("[cyan]" + _("Pfad zu einem eigenen Modellordner (Enter zum Abbrechen)") + "[/cyan]")
-            if not val:
-                print_err(_("Keine Modelle vorhanden. Einrichtung abgebrochen."))
-                return 1
-            models_dir = val
-    else:
-        print_msg(_("Standard-Suite vollstaendig vorhanden."), style="green")
+
+    try:
+        backend_model_select.select_models_for_backend(
+            config_path,
+            models_dir,
+            force_select=True,
+        )
+    except Exception as exc:
+        print_err(_("Modellauswahl fehlgeschlagen: {error}").format(error=exc))
+        return 1
 
     import socket
 
-    server_name = Prompt.ask(
-        "[cyan]" + _("Name dieses Servers fuer den Vergleich") + "[/cyan]", default=socket.gethostname()
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    cfg.setdefault("project", {})["server_name"] = Prompt.ask(
+        "[cyan]" + _("Name dieses Servers fuer den Vergleich") + "[/cyan]",
+        default=socket.gethostname(),
     )
-    result = bootstrap_config(config_path, root, llama_dir, models_dir, allow_system_search)
-
-    cfg_file = Path(result["config"])
-    cfg = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
-    cfg.setdefault("project", {})["server_name"] = server_name
-    cfg_file.write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120), encoding="utf-8"
+    cfg.setdefault("project", {})["language"] = lang_val
+    config_path.write_text(
+        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120),
+        encoding="utf-8",
     )
-
-    for warning in result.get("warnings", []):
-        console.print(f"[bold yellow]{_('Hinweis:')}[/bold yellow] {warning}")
 
     print_panel(
-        _("Konfiguration gespeichert: {path}").format(path=cfg_file)
+        _("Konfiguration gespeichert: {path}").format(path=config_path)
         + "\n"
-        + _("Nächster Schritt: {command}").format(command="llmbench doctor --config benchmark.yaml"),
+        + _("Backend: {backend}").format(backend=backend)
+        + "\n"
+        + _("Nächster Schritt: {command}").format(
+            command="llmbench doctor --config benchmark.yaml"
+        ),
         title=_("Fertig"),
     )
     return 0
@@ -319,6 +299,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-system-search",
         action="store_true",
         help="Auch ausserhalb des Projekts nach llama.cpp und Modellen suchen (gefaehrdet die Vergleichbarkeit)",
+    )
+
+    select_backend = sub.add_parser(
+        "select-backend",
+        help="Benchmark-Backend installieren/auswaehlen",
+    )
+    select_backend.add_argument("--root", default=".")
+    select_backend.add_argument("--config", default="benchmark.yaml")
+    select_backend.add_argument(
+        "--choose-only",
+        action="store_true",
+        help="Nur bereits installierte Backends anzeigen; nichts installieren.",
+    )
+
+    select_models = sub.add_parser(
+        "select-models",
+        help="Modelle passend zum aktuell konfigurierten Backend auswaehlen",
+    )
+    select_models.add_argument("--config", default="benchmark.yaml")
+    select_models.add_argument("--models-dir", default="models")
+    select_models.add_argument(
+        "--reuse",
+        action="store_true",
+        help="Gespeicherte llama.cpp-Auswahl wiederverwenden.",
     )
 
     init = sub.add_parser("init", help="Beispielkonfiguration erzeugen")
@@ -674,6 +678,32 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         with _performance_mode(load_config(args.config), args.no_performance_mode):
             return _run_stress_command(args)
+
+    if args.cmd == "select-backend":
+        from llmbench.backend_select import select_backends
+
+        return select_backends(
+            Path(args.root).resolve(),
+            args.config,
+            install_missing=not args.choose_only,
+        )
+
+    if args.cmd == "select-models":
+        from llmbench.backend_model_select import select_models_for_backend
+
+        try:
+            select_models_for_backend(
+                args.config,
+                args.models_dir,
+                force_select=not args.reuse,
+            )
+            return 0
+        except Exception as exc:
+            print(
+                _("Modellauswahl fehlgeschlagen: {error}").format(error=exc),
+                file=sys.stderr,
+            )
+            return 1
 
     if args.cmd == "init":
         save_example(args.output)

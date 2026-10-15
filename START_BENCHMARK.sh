@@ -66,29 +66,28 @@ python -m pip install --quiet --upgrade pip setuptools wheel
 python -m pip install --quiet -e "."
 ui_ok setup.packages_ready
 
-ui_section_raw "llama.cpp"
-mkdir -p tools/llama.cpp
-ui_step setup.llama_check
-if ! python -m llmbench install-llama-cpp --root "$ROOT_DIR"; then
-    ui_fail start.llama_failed
-    ui_info start.llama_failed_hint
-    exit 1
-fi
-
-ui_section start.suite_title
-mkdir -p models
-if ! python -m llmbench download --suite all --models-dir models --verify-only >/dev/null 2>&1; then
-    ui_step start.suite_download
-    python -m llmbench download --suite all --models-dir models
-fi
-python -m llmbench download --suite all --models-dir models --verify-only
+mkdir -p models tools/llama.cpp
 
 ui_section setup.section_config
 python -m llmbench bootstrap --config "$CONFIG" --root "$ROOT_DIR" \
     --llama-dir "tools/llama.cpp" --models-dir models
 
 ui_section start.backend_title
-python -m llmbench.backend_select --root "$ROOT_DIR" --config "$CONFIG" --choose-only
+python -m llmbench select-backend --root "$ROOT_DIR" --config "$CONFIG" --choose-only
+
+ui_section setup.section_models
+python -m llmbench select-models --config "$CONFIG" --models-dir models
+
+selected_backend="$(python -c 'import yaml; c=yaml.safe_load(open("benchmark.yaml",encoding="utf-8")) or {}; print((c.get("tools") or {}).get("backend","llama_cpp"))')"
+if [ "$selected_backend" = "llama_cpp" ]; then
+    ui_section_raw "llama.cpp"
+    ui_step setup.llama_check
+    if ! python -m llmbench install-llama-cpp --root "$ROOT_DIR"; then
+        ui_fail start.llama_failed
+        ui_info start.llama_failed_hint
+        exit 1
+    fi
+fi
 
 ui_section start.doctor_title
 python -m llmbench doctor --config "$CONFIG"

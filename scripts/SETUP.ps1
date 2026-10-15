@@ -77,18 +77,23 @@ try {
     Write-UiOk (T 'setup.packages_ready')
     New-Item -ItemType Directory -Force -Path (Join-Path $Root 'models') | Out-Null
 
+    # Zuerst eine minimale Konfiguration erzeugen, damit die Backend-Auswahl
+    # direkt in benchmark.yaml gespeichert werden kann.
+    Invoke-Checked $venvPython @('-m', 'llmbench', 'bootstrap', '--config', 'benchmark.yaml', '--root', $Root, '--llama-dir', 'tools/llama.cpp', '--models-dir', 'models') 'setup.step_failed'
+
+    Write-UiSection (T 'start.backend_title')
+    Invoke-Checked $venvPython @('-m', 'llmbench', 'select-backend', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
+
     Write-UiSection (T 'setup.section_models')
-    Invoke-Checked $venvPython @('-m', 'llmbench.model_select', '--models-dir', 'models', '--select') 'setup.step_failed'
+    Invoke-Checked $venvPython @('-m', 'llmbench', 'select-models', '--config', 'benchmark.yaml', '--models-dir', 'models') 'setup.step_failed'
 
-    # Der Setup-Wizard darf nur die gespeicherte Auswahl pruefen und niemals
-    # stillschweigend die komplette Standard-Suite nachladen.
-    $env:LLMBENCH_USE_SAVED_SELECTION = '1'
-
-    Write-UiSection (T 'setup.section_config')
-    Invoke-Checked $venvPython @('-m', 'llmbench', 'setup') 'setup.step_failed'
-
-    # Optionale Container-Backends (vLLM ...): fragt vor jedem Download.
-    Invoke-Checked $venvPython @('-m', 'llmbench.backend_select', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
+    # Nur llama.cpp benoetigt den alten Setup-Wizard fuer Binary-/GGUF-Pruefung.
+    $selectedBackend = (& $venvPython -c "import yaml; c=yaml.safe_load(open('benchmark.yaml',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()
+    if ($selectedBackend -eq 'llama_cpp') {
+        $env:LLMBENCH_USE_SAVED_SELECTION = '1'
+        Write-UiSection (T 'setup.section_config')
+        Invoke-Checked $venvPython @('-m', 'llmbench', 'setup') 'setup.step_failed'
+    }
 
     $doneKey = if ($mode -eq 'auto') { 'setup.done_host' } else { 'setup.done_native' }
     Write-UiDone (T $doneKey) @((T 'setup.done_hint'))

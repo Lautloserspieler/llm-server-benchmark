@@ -81,23 +81,29 @@ python -m pip install --quiet --upgrade pip
 python -m pip install --quiet -e "."
 ui_ok setup.packages_ready
 
-ui_section_raw "llama.cpp"
-ui_step setup.llama_check
-python -m llmbench install-llama-cpp --root "$ROOT_DIR"
-ui_info setup.llama_hint
-
 mkdir -p models
+
+# Minimalen Config-Rahmen anlegen, dann zuerst die Runtime waehlen.
+python -m llmbench bootstrap --config benchmark.yaml --root "$ROOT_DIR" \
+    --llama-dir tools/llama.cpp --models-dir models
+
+ui_section start.backend_title
+python -m llmbench select-backend --root "$ROOT_DIR" --config benchmark.yaml
+
 ui_section setup.section_models
-python -m llmbench.model_select --models-dir models --select
+python -m llmbench select-models --config benchmark.yaml --models-dir models
 
-# Der anschliessende Setup-Wizard prueft nur die gespeicherte Auswahl.
-export LLMBENCH_USE_SAVED_SELECTION=1
+selected_backend="$(python -c 'import yaml; c=yaml.safe_load(open("benchmark.yaml",encoding="utf-8")) or {}; print((c.get("tools") or {}).get("backend","llama_cpp"))')"
+if [ "$selected_backend" = "llama_cpp" ]; then
+    ui_section_raw "llama.cpp"
+    ui_step setup.llama_check
+    python -m llmbench install-llama-cpp --root "$ROOT_DIR"
+    ui_info setup.llama_hint
 
-ui_section setup.section_config
-python -m llmbench setup
-
-# Optionale Container-Backends (Ollama, TGI, vLLM): fragt vor jedem Download.
-python -m llmbench.backend_select --root "$ROOT_DIR" --config benchmark.yaml
+    export LLMBENCH_USE_SAVED_SELECTION=1
+    ui_section setup.section_config
+    python -m llmbench setup
+fi
 
 if [ "$EXECUTION_MODE" = "auto" ]; then
     ui_done setup.done_host setup.done_hint

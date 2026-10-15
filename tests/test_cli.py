@@ -90,6 +90,74 @@ def test_download_parser_accepts_extreme_suite():
 
 
 
+
+def test_build_parser_select_backend_options():
+    args = build_parser().parse_args([
+        "select-backend",
+        "--root", "/srv/bench",
+        "--config", "custom.yaml",
+        "--choose-only",
+    ])
+    assert args.cmd == "select-backend"
+    assert args.root == "/srv/bench"
+    assert args.config == "custom.yaml"
+    assert args.choose_only is True
+
+
+def test_build_parser_select_models_options():
+    args = build_parser().parse_args([
+        "select-models",
+        "--config", "custom.yaml",
+        "--models-dir", "weights",
+        "--reuse",
+    ])
+    assert args.cmd == "select-models"
+    assert args.config == "custom.yaml"
+    assert args.models_dir == "weights"
+    assert args.reuse is True
+
+
+def test_main_select_backend_dispatches(monkeypatch, tmp_path: Path):
+    captured = {}
+
+    def fake_select(root, config, *, install_missing=True):
+        captured.update(root=root, config=config, install_missing=install_missing)
+        return 0
+
+    monkeypatch.setattr("llmbench.backend_select.select_backends", fake_select)
+    rc = main([
+        "select-backend",
+        "--root", str(tmp_path),
+        "--config", "bench.yaml",
+        "--choose-only",
+    ])
+    assert rc == 0
+    assert captured["root"] == tmp_path.resolve()
+    assert captured["config"] == "bench.yaml"
+    assert captured["install_missing"] is False
+
+
+def test_main_select_models_dispatches(monkeypatch, tmp_path: Path):
+    captured = {}
+
+    def fake_select(config, models_dir, *, force_select=True):
+        captured.update(config=config, models_dir=models_dir, force_select=force_select)
+        return []
+
+    monkeypatch.setattr(
+        "llmbench.backend_model_select.select_models_for_backend",
+        fake_select,
+    )
+    rc = main([
+        "select-models",
+        "--config", str(tmp_path / "bench.yaml"),
+        "--models-dir", str(tmp_path / "models"),
+        "--reuse",
+    ])
+    assert rc == 0
+    assert captured["force_select"] is False
+
+
 def test_build_parser_compare_requires_at_least_one_input():
     args = build_parser().parse_args(["compare", "results/A", "results/B", "--strict"])
     assert args.inputs == ["results/A", "results/B"]

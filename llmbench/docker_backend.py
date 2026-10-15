@@ -299,6 +299,57 @@ def run_container(
     return container_id
 
 
+def exec_container(
+    name_or_id: str,
+    args: list[str],
+    *,
+    log: LogFn | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Fuehrt einen Befehl in einem laufenden Container aus und faengt die Ausgabe ab."""
+    return _run(
+        ["exec", name_or_id, *[str(item) for item in args]],
+        log=log,
+        timeout=timeout,
+        check=check,
+    )
+
+
+def exec_container_live(
+    name_or_id: str,
+    args: list[str],
+    *,
+    log: LogFn | None = None,
+    timeout: float = PULL_TIMEOUT_SECONDS,
+) -> None:
+    """Fuehrt einen Container-Befehl mit direkt sichtbarer Terminalausgabe aus.
+
+    Das ist fuer lange Downloads gedacht. stdout/stderr werden absichtlich nicht
+    abgefangen, damit z. B. ollama pull seinen nativen Fortschritt direkt im
+    Setup-Terminal anzeigen kann.
+    """
+    log = log or _noop
+    exe = _require_docker()
+    cmd = [exe, "exec"]
+    if sys.stdout.isatty():
+        cmd.append("-t")
+    cmd.extend([name_or_id, *[str(item) for item in args]])
+    log("$ " + " ".join(cmd))
+    try:
+        proc = subprocess.run(cmd, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            _("docker-Befehl hat das Zeitlimit ueberschritten: {cmd}").format(cmd=" ".join(cmd))
+        ) from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            _("docker-Befehl fehlgeschlagen ({code}): {cmd}").format(
+                code=proc.returncode,
+                cmd=" ".join(cmd),
+            )
+        )
+
 def stop_container(name_or_id: str, log: LogFn | None = None) -> None:
     """Stoppt und entfernt einen Container. Fehlt er, ist das kein Fehler."""
     log = log or _noop

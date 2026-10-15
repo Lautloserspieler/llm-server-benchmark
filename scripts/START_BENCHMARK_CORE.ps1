@@ -237,7 +237,7 @@ Write-UiSection (T 'start.backend_title')
 if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
 Write-UiSection (T 'setup.section_models')
-& $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir
+& $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir --prepare
 if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
 
 $selectedBackend = (& $VenvPython -c "import yaml; c=yaml.safe_load(open(r'$Config',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()

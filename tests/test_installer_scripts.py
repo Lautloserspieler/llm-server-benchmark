@@ -208,7 +208,7 @@ def test_setup_launchers_offer_backend_install_and_selection():
     win = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
     linux = (ROOT / "setup.sh").read_text(encoding="utf-8")
 
-    assert "llmbench select-backend" in win
+    assert ("'llmbench', 'select-backend'" in win) or ("llmbench select-backend" in win)
     assert "--choose-only" not in win
     assert "llmbench select-backend" in linux
     assert "--choose-only" not in linux
@@ -220,17 +220,28 @@ def test_backend_is_selected_before_backend_specific_models():
     win_start = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
     linux_start = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
 
-    for text in (win_setup, linux_setup, win_start, linux_start):
-        assert "llmbench select-backend" in text
-        assert "llmbench select-models" in text
-        assert text.index("llmbench select-backend") < text.index("llmbench select-models")
+    assert "'llmbench', 'select-backend'" in win_setup
+    assert "'llmbench', 'select-models'" in win_setup
+    assert win_setup.index("'llmbench', 'select-backend'") < win_setup.index("'llmbench', 'select-models'")
+
+    assert "llmbench select-backend" in linux_setup
+    assert "llmbench select-models" in linux_setup
+    assert linux_setup.index("llmbench select-backend") < linux_setup.index("llmbench select-models")
+
+    assert "-m llmbench select-backend" in win_start
+    assert "-m llmbench select-models" in win_start
+    assert win_start.index("-m llmbench select-backend") < win_start.index("-m llmbench select-models")
+
+    assert "llmbench select-backend" in linux_start
+    assert "llmbench select-models" in linux_start
+    assert linux_start.index("llmbench select-backend") < linux_start.index("llmbench select-models")
 
 
 def test_benchmark_launchers_offer_installed_backend_selection():
     win = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
     linux = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
 
-    assert "llmbench select-backend" in win
+    assert ("-m llmbench select-backend" in win) or ("'llmbench', 'select-backend'" in win)
     assert "--choose-only" in win
     assert "llmbench select-backend" in linux
     assert "--choose-only" in linux

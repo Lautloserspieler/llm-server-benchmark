@@ -365,5 +365,9 @@
   "Backend-Auswahl fehlgeschlagen.": "Backend selection failed.",
   "llama.cpp fehlt und wird jetzt installiert.": "llama.cpp is missing and will be installed now.",
   "Einrichtung abgebrochen, weil llama.cpp nicht installiert werden konnte.": "Setup stopped because llama.cpp could not be installed.",
-  "Backend: {backend}": "Backend: {backend}"
+  "Backend: {backend}": "Backend: {backend}",
+  "Welches Backend moechtest du testen?": "Which backend do you want to benchmark?",
+  "{name} ist nicht verfuegbar - Standard-Backend wieder auf {default} gesetzt.": "{name} is not available - default backend reset to {default}.",
+  "{name} ist nicht installiert.": "{name} is not installed.",
+  "Installation von {name} wurde abgebrochen.": "Installation of {name} was cancelled."
 }

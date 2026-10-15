@@ -121,7 +121,7 @@ def _auto_install_llama_cpp_unix(root: Path) -> bool:
 
 def run_setup_wizard(allow_system_search: bool = False) -> int:
     from llmbench import backend_model_select, backend_select
-    from llmbench.utils import console, print_err, print_msg, print_panel
+    from llmbench.utils import print_err, print_msg, print_panel
     from rich.prompt import Prompt
 
     from llmbench.i18n import detect_language, language_preselected, save_language, set_language

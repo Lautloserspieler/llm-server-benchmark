@@ -76,6 +76,16 @@ def shard_info(path: str | Path) -> tuple[str, int, int] | None:
     return match.group("prefix"), int(match.group("index")), int(match.group("count"))
 
 
+def _is_runtime_reference(value: str, root: Path) -> bool:
+    """True fuer Modellnamen einer Runtime (z. B. 'gemma3:1b'), nicht fuer Dateipfade."""
+    if value.startswith((".", "~")) or "\\" in value or Path(value).is_absolute():
+        return False
+    if value.lower().endswith(".gguf") or (root / value).exists():
+        return False
+    # Windows-Laufwerksbuchstaben ('C:foo') sind kein Tag-Trenner.
+    return not re.match(r"^[A-Za-z]:", value)
+
+
 def logical_model_path(path: str | Path) -> Path:
     """Normalisiert jeden Shard auf den ersten Shard, den llama.cpp erwartet."""
     p = Path(path)
@@ -346,6 +356,14 @@ def bootstrap_config(
 
         value = model.get("path")
         if not value:
+            existing.append(model)
+            if model.get("name"):
+                known_names.add(str(model["name"]).lower())
+            continue
+
+        if _is_runtime_reference(str(value), root):
+            # Ollama-/vLLM-/TGI-Referenzen wie 'gemma3:1b' sind keine Dateien und
+            # duerfen nicht zu einem Pfad unter dem Projektordner umgeschrieben werden.
             existing.append(model)
             if model.get("name"):
                 known_names.add(str(model["name"]).lower())

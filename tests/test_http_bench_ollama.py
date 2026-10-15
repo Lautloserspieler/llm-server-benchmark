@@ -156,3 +156,98 @@ def test_ollama_run_http_bench_generation_kind(tmp_path: Path):
 
     raw = json.loads((tmp_path / "raw_generation.json").read_text(encoding="utf-8"))
     assert raw["api_style"] == API_STYLE_OLLAMA_NATIVE
+
+
+def _bench_cfg(**extra):
+    cfg = {
+        "repetitions": 1,
+        "prompt_tokens": [512],
+        "generation_tokens": [128],
+        "context_depths": [0],
+        "long_context_prompt_tokens": 512,
+        "long_context_generation_tokens": 128,
+        "resource_sample_interval": 0.5,
+        "timeout_seconds": 60,
+        "seed": 42,
+        "model": "gemma3:1b",
+        "ollama_num_ctx": 32768,
+        "ollama_num_gpu": 0,
+    }
+    cfg.update(extra)
+    return cfg
+
+
+def test_ollama_run_sends_model_and_options_in_every_request(mock_server, tmp_path: Path):
+    """Regression: _completion_cfg verwarf model/ollama_* -> Modell 'llmbench' -> 404."""
+    result = run_http_bench(
+        "http://testserver", {}, _bench_cfg(), {"name": "Ollama"}, "prompt", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    assert result["status"] == "ok"
+    assert mock_server
+    for sent in mock_server:
+        assert sent["payload"]["model"] == "gemma3:1b"
+        assert sent["payload"]["options"]["num_ctx"] == 32768
+        assert sent["payload"]["options"]["num_gpu"] == 0
+
+
+def test_ollama_warmup_runs_before_measurements(mock_server, tmp_path: Path):
+    run_http_bench(
+        "http://testserver", {}, _bench_cfg(), {"name": "Ollama"}, "generation", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    assert mock_server[0]["payload"]["options"]["num_predict"] == 1
+    assert len(mock_server) == 1 + 1  # Warmup + tg128 (1 Wiederholung)
+
+
+def test_ollama_http_error_includes_server_message(monkeypatch, tmp_path: Path):
+    def _handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "model 'gemma3:1b' not found"})
+
+    transport = httpx.MockTransport(_handler)
+
+    class _Patched(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr("llmbench.http_bench.httpx.AsyncClient", _Patched)
+    monkeypatch.setattr("llmbench.http_bench.ResourceMonitor.start", lambda _self: None)
+    monkeypatch.setattr("llmbench.http_bench.ResourceMonitor.stop", lambda _self: {"sample_count": 0})
+    monkeypatch.setattr("llmbench.http_bench.ResourceMonitor.latest", lambda _self: None)
+
+    result = run_http_bench(
+        "http://testserver", {}, _bench_cfg(), {"name": "Ollama"}, "prompt", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    assert result["status"] == "failed"
+    assert "model 'gemma3:1b' not found" in result["error"]
+
+
+@pytest.mark.usefixtures("mock_server")
+def test_ollama_long_context_skips_depths_beyond_num_ctx(tmp_path: Path):
+    cfg = _bench_cfg(context_depths=[0, 65536], ollama_num_ctx=8192)
+    result = run_http_bench(
+        "http://testserver", {}, cfg, {"name": "Ollama"}, "long_context", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    assert result["status"] == "ok"
+    deep = next(r for r in result["rows"] if r["n_depth"] == 65536)
+    assert deep["avg_ts"] is None
+    assert any("ollama_num_ctx" in e for e in result["partial_errors"])
+
+
+@pytest.mark.usefixtures("mock_server")
+def test_ollama_server_timings_are_exposed():
+    import asyncio
+
+    async def _go():
+        async with httpx.AsyncClient() as client:
+            return await one_completion_async(
+                client, "http://testserver", "hallo", {"max_tokens": 4, "model": "m"},
+                0, api_style=API_STYLE_OLLAMA_NATIVE,
+            )
+
+    res = asyncio.run(_go())
+    assert res["server_timings"]["predicted_n"] == 4
+    assert res["server_timings"]["load_ms"] == 100.0

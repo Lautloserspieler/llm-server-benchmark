@@ -267,7 +267,8 @@ def test_missing_registry_model_is_pulled_with_current_model_field(monkeypatch):
 
         def post(self, url, **kwargs):
             calls.append({"url": url, "json": kwargs.get("json")})
-            return _ApiResponse(404 if url.endswith("/api/show") else 200)
+            pulled = any(c["url"].endswith("/api/pull") for c in calls)
+            return _ApiResponse(404 if url.endswith("/api/show") and not pulled else 200)
 
     monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
     backend = _backend()
@@ -470,3 +471,48 @@ def test_get_backend_returns_ollama_for_configured_backend(tmp_path: Path):
     assert isinstance(backend, OllamaBackend)
     assert backend.image == IMAGE
     assert backend.root == tmp_path
+
+
+def test_failed_pull_reports_ollama_error_text(monkeypatch):
+    class _Failing:
+        status_code = 500
+        text = ""
+
+        def json(self):
+            return {"error": "pull model manifest: file does not exist"}
+
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ARG002
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, **kwargs):  # noqa: ARG002
+            return _Failing() if url.endswith("/api/pull") else _ApiResponse(404)
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
+    with pytest.raises(RuntimeError, match="file does not exist"):
+        _backend()._ensure_registry_model("nope:1b")
+
+
+def test_residency_warning_when_gpu_profile_spills_to_cpu(monkeypatch):
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"name": "big:70b", "size": 100, "size_vram": 60, "context_length": 4096}]}
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.get", lambda *_a, **_k: _Resp())
+    result: dict = {"status": "ok"}
+    _backend()._attach_residency(result, "big:70b", {"gpu_layers": -1})
+    assert result["ollama_residency"]["size_vram_bytes"] == 60
+    assert any("60 %" in w for w in result["partial_errors"])
+
+    cpu: dict = {"status": "ok"}
+    _backend()._attach_residency(cpu, "big:70b", {"gpu_layers": 0})
+    assert "partial_errors" not in cpu

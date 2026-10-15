@@ -27,7 +27,8 @@ from ..http_bench import API_STYLE_OLLAMA_NATIVE, run_http_bench
 from ..i18n import _
 from ..utils import auth_headers
 
-# Ollama lauscht im Container auf 11434.
+# Ollama lauscht im Container auf 11434. Der Host-Port kommt normalerweise aus
+# endpoint.base_url der Config (Standard dort: 8080); DEFAULT_* gilt nur ohne base_url.
 CONTAINER_PORT = 11434
 DEFAULT_HOST_PORT = 11434
 DEFAULT_BASE_URL = f"http://127.0.0.1:{DEFAULT_HOST_PORT}"
@@ -67,6 +68,19 @@ def _file_chunks(path: Path) -> Iterator[bytes]:
             if not chunk:
                 break
             yield chunk
+
+
+def _raise_with_body(response: httpx.Response, context: str) -> None:
+    """raise_for_status() mit Ollamas Fehlertext ({"error": ...}) in der Meldung."""
+    if response.status_code < 400:
+        return
+    detail = ""
+    try:
+        data = response.json()
+        detail = str(data.get("error") or data) if isinstance(data, dict) else str(data)
+    except Exception:
+        detail = response.text.strip()
+    raise RuntimeError(f"{context}: HTTP {response.status_code} {detail[:500]}".strip())
 
 
 def _use_gpu(profile: dict[str, Any]) -> bool:
@@ -228,7 +242,13 @@ class OllamaBackend(BenchmarkBackend):
                 json={"model": model, "stream": False},
                 timeout=timeout,
             )
-            pull.raise_for_status()
+            _raise_with_body(pull, f"Ollama-Pull von '{model}'")
+            check = client.post(
+                f"{self.base_url.rstrip('/')}/api/show",
+                json={"model": model},
+                timeout=60.0,
+            )
+            _raise_with_body(check, f"Ollama kennt '{model}' nach dem Pull nicht")
 
     def _stop(self) -> None:
         if self.container_id is None and not docker_backend.container_exists(self.container_name):
@@ -313,7 +333,7 @@ class OllamaBackend(BenchmarkBackend):
             cfg["ollama_num_ctx"] = int(profile["ollama_num_ctx"])
         if profile.get("ollama_num_gpu") is not None:
             cfg["ollama_num_gpu"] = int(profile["ollama_num_gpu"])
-        return run_http_bench(
+        result = run_http_bench(
             self.base_url,
             self._headers(),
             cfg,
@@ -325,6 +345,36 @@ class OllamaBackend(BenchmarkBackend):
             target_pid=self.target_pid,
             api_style=API_STYLE_OLLAMA_NATIVE,
         )
+        self._attach_residency(result, cfg["model"], profile)
+        return result
+
+    def _attach_residency(self, result: dict[str, Any], model: str, profile: dict[str, Any]) -> None:
+        """Belegt ueber /api/ps, wo das Modell lief (VRAM vs. RAM).
+
+        Ollama entscheidet die Aufteilung selbst; ein GPU-Profil kann bei grossen
+        Modellen still teilweise auf der CPU laufen und waere sonst nicht erkennbar.
+        """
+        try:
+            response = httpx.get(
+                f"{self.base_url.rstrip('/')}/api/ps", headers=self._headers(), timeout=10.0
+            )
+            response.raise_for_status()
+            loaded = [m for m in response.json().get("models", []) if model in (m.get("name"), m.get("model"))]
+        except Exception:
+            return
+        if not loaded:
+            return
+        size = int(loaded[0].get("size") or 0)
+        size_vram = int(loaded[0].get("size_vram") or 0)
+        context = loaded[0].get("context_length")
+        info = {"size_bytes": size, "size_vram_bytes": size_vram, "context_length": context}
+        result["ollama_residency"] = info
+        if _use_gpu(profile) and size and size_vram < size * 0.99:
+            share = 100.0 * size_vram / size
+            result.setdefault("partial_errors", []).append(
+                _("Ollama hat das Modell nur zu {share:.0f} % im VRAM gehalten; "
+                  "der Rest lief auf der CPU. GPU-Werte sind nicht vergleichbar.").format(share=share)
+            )
 
     # --------------------------------------------------------- Endpoint-Pfad
 

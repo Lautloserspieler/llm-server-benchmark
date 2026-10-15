@@ -380,5 +380,6 @@
   "Ausgewaehlte Runtime-Modelle direkt herunterladen/vorbereiten": "Download/prepare selected runtime models immediately",
   "Ollama-Download-Container wurde nicht rechtzeitig bereit.": "The Ollama download container did not become ready in time.",
   "Ollama-Modell {index}/{total} herunterladen: {model}": "Downloading Ollama model {index}/{total}: {model}",
-  "Ollama-Modell bereit: {model}": "Ollama model ready: {model}"
+  "Ollama-Modell bereit: {model}": "Ollama model ready: {model}",
+  "Ollama-Modell {index}/{total} bereits vorhanden: {model}": "Ollama model {index}/{total} already available: {model}"
 }

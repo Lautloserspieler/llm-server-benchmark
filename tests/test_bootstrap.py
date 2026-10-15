@@ -174,3 +174,19 @@ def test_bootstrap_warns_about_missing_configured_model(tmp_path: Path):
         root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models"
     )
     assert any("weg" in w for w in result["warnings"])
+
+
+def test_bootstrap_keeps_runtime_model_references(tmp_path: Path):
+    root = tmp_path
+    _make_project(root)
+    (root / "benchmark.yaml").write_text(
+        yaml.safe_dump({"models": [{"name": "gemma3:1b", "path": "gemma3:1b",
+                                    "profiles": [{"name": "GPU", "gpu_layers": -1}]}]}),
+        encoding="utf-8",
+    )
+    result = bootstrap_config(
+        root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models"
+    )
+    saved = yaml.safe_load((root / "benchmark.yaml").read_text(encoding="utf-8"))
+    assert saved["models"][0]["path"] == "gemma3:1b"
+    assert not any("gemma3" in w and "fehlt" in w for w in result["warnings"])

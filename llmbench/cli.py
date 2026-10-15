@@ -188,6 +188,7 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
             config_path,
             models_dir,
             force_select=True,
+            prepare_selected=True,
         )
     except Exception as exc:
         print_err(_("Modellauswahl fehlgeschlagen: {error}").format(error=exc))
@@ -323,6 +324,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--reuse",
         action="store_true",
         help="Gespeicherte llama.cpp-Auswahl wiederverwenden.",
+    )
+    select_models.add_argument(
+        "--prepare",
+        action="store_true",
+        help="Ausgewaehlte Runtime-Modelle direkt herunterladen/vorbereiten.",
     )
 
     init = sub.add_parser("init", help="Beispielkonfiguration erzeugen")
@@ -696,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.config,
                 args.models_dir,
                 force_select=not args.reuse,
+                prepare_selected=args.prepare,
             )
             return 0
         except Exception as exc:

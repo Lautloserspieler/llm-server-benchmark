@@ -31,6 +31,11 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments, [string]$ErrorKey) {
     if ($LASTEXITCODE -ne 0) { throw (T $ErrorKey $LASTEXITCODE) }
 }
 
+function Invoke-CheckedQuiet([string]$Exe, [string[]]$Arguments, [string]$ErrorKey) {
+    & $Exe @Arguments *> $null
+    if ($LASTEXITCODE -ne 0) { throw (T $ErrorKey $LASTEXITCODE) }
+}
+
 $mode = if ($env:LLMBENCH_EXECUTION_MODE) { $env:LLMBENCH_EXECUTION_MODE.ToLowerInvariant() } else { 'auto' }
 if (@('auto', 'docker', 'native') -notcontains $mode) {
     Write-UiFail (T 'setup.invalid_mode')
@@ -81,7 +86,7 @@ try {
 
     # Zuerst eine minimale Konfiguration erzeugen, damit die Backend-Auswahl
     # direkt in benchmark.yaml gespeichert werden kann.
-    Invoke-Checked $venvPython @('-m', 'llmbench', 'bootstrap', '--config', 'benchmark.yaml', '--root', $Root, '--llama-dir', 'tools/llama.cpp', '--models-dir', 'models') 'setup.step_failed'
+    Invoke-CheckedQuiet $venvPython @('-m', 'llmbench', 'bootstrap', '--config', 'benchmark.yaml', '--root', $Root, '--llama-dir', 'tools/llama.cpp', '--models-dir', 'models') 'setup.step_failed'
 
     Write-UiSection (T 'start.backend_title')
     Invoke-Checked $venvPython @('-m', 'llmbench', 'select-backend', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'

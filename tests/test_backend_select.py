@@ -128,3 +128,8 @@ def test_nvidia_runtime_detection(monkeypatch):
         result = types.SimpleNamespace(returncode=0, stdout=runtimes)
         monkeypatch.setattr(subprocess, "run", lambda *_a, _r=result, **_k: _r)
         assert docker_backend.nvidia_runtime_available() is expected
+
+
+
+def test_ollama_download_size_matches_current_docker_image():
+    assert backend_select.BACKEND_DOWNLOAD_GIB["ollama"] == 3.5

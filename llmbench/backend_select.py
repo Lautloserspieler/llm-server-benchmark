@@ -27,10 +27,11 @@ from .i18n import _
 from .utils import ask_yes_no, console, print_err, print_msg, print_section
 
 # Ungefaehre Download-Groesse der Standard-Images, nur fuer die Rueckfrage.
-BACKEND_DOWNLOAD_GIB: dict[str, int] = {
+BACKEND_DOWNLOAD_GIB: dict[str, float] = {
     "vllm": 10,
     "tgi": 10,
-    "ollama": 1,
+    # Docker Hub (linux/amd64, ollama/ollama:latest) liegt aktuell bei ~3.52 GB.
+    "ollama": 3.5,
 }
 
 # Backends, deren Container immer mit --gpus starten (NVIDIA-only).

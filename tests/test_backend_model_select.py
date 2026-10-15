@@ -22,7 +22,7 @@ def test_write_ollama_model_replaces_incompatible_model_list(tmp_path: Path):
     assert [model["path"] for model in data["models"]] == ["qwen3:8b"]
     profiles = data["models"][0]["profiles"]
     assert any(profile["gpu_layers"] == -1 for profile in profiles)
-    assert any(profile["ollama_num_gpu"] == 0 for profile in profiles)
+    assert any(profile.get("ollama_num_gpu") == 0 for profile in profiles)
 
 
 def test_write_vllm_model_uses_gpu_profile(tmp_path: Path):

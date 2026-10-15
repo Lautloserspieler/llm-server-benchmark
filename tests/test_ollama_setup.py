@@ -12,7 +12,7 @@ class _Proc:
         self.returncode = returncode
 
 
-def _fake_backend(monkeypatch, tmp_path: Path):
+def _fake_backend(monkeypatch):
     calls: list[tuple] = []
 
     monkeypatch.setattr(
@@ -55,7 +55,7 @@ def _fake_backend(monkeypatch, tmp_path: Path):
 
 
 def test_pull_selected_models_uses_persistent_volume_and_order(monkeypatch, tmp_path: Path):
-    calls = _fake_backend(monkeypatch, tmp_path)
+    calls = _fake_backend(monkeypatch)
 
     pulled = ollama_setup.pull_selected_models(
         tmp_path,
@@ -76,7 +76,7 @@ def test_pull_selected_models_uses_persistent_volume_and_order(monkeypatch, tmp_
 def test_pull_selected_models_skips_local_gguf(monkeypatch, tmp_path: Path):
     gguf = tmp_path / "local.gguf"
     gguf.write_bytes(b"GGUF")
-    calls = _fake_backend(monkeypatch, tmp_path)
+    calls = _fake_backend(monkeypatch)
 
     pulled = ollama_setup.pull_selected_models(
         tmp_path,
@@ -91,14 +91,14 @@ def test_pull_selected_models_skips_local_gguf(monkeypatch, tmp_path: Path):
 def test_pull_selected_models_does_nothing_for_only_local_gguf(monkeypatch, tmp_path: Path):
     gguf = tmp_path / "local.gguf"
     gguf.write_bytes(b"GGUF")
-    calls = _fake_backend(monkeypatch, tmp_path)
+    calls = _fake_backend(monkeypatch)
 
     assert ollama_setup.pull_selected_models(tmp_path, [str(gguf)]) == []
     assert calls == []
 
 
 def test_pull_selected_models_cleans_up_after_failed_pull(monkeypatch, tmp_path: Path):
-    calls = _fake_backend(monkeypatch, tmp_path)
+    calls = _fake_backend(monkeypatch)
 
     def fail_pull(name, args, **_kwargs):
         calls.append(("live", name, tuple(args)))
@@ -114,7 +114,7 @@ def test_pull_selected_models_cleans_up_after_failed_pull(monkeypatch, tmp_path:
 
 
 def test_pull_selected_models_skips_download_when_model_is_already_present(monkeypatch, tmp_path: Path):
-    calls = _fake_backend(monkeypatch, tmp_path)
+    calls = _fake_backend(monkeypatch)
 
     def fake_exec(name, args, **_kwargs):
         calls.append(("exec", name, tuple(args)))

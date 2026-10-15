@@ -110,11 +110,13 @@ def test_build_parser_select_models_options():
         "--config", "custom.yaml",
         "--models-dir", "weights",
         "--reuse",
+        "--prepare",
     ])
     assert args.cmd == "select-models"
     assert args.config == "custom.yaml"
     assert args.models_dir == "weights"
     assert args.reuse is True
+    assert args.prepare is True
 
 
 def test_main_select_backend_dispatches(monkeypatch, tmp_path: Path):
@@ -140,8 +142,13 @@ def test_main_select_backend_dispatches(monkeypatch, tmp_path: Path):
 def test_main_select_models_dispatches(monkeypatch, tmp_path: Path):
     captured = {}
 
-    def fake_select(config, models_dir, *, force_select=True):
-        captured.update(config=config, models_dir=models_dir, force_select=force_select)
+    def fake_select(config, models_dir, *, force_select=True, prepare_selected=False):
+        captured.update(
+            config=config,
+            models_dir=models_dir,
+            force_select=force_select,
+            prepare_selected=prepare_selected,
+        )
         return []
 
     monkeypatch.setattr(
@@ -153,9 +160,11 @@ def test_main_select_models_dispatches(monkeypatch, tmp_path: Path):
         "--config", str(tmp_path / "bench.yaml"),
         "--models-dir", str(tmp_path / "models"),
         "--reuse",
+        "--prepare",
     ])
     assert rc == 0
     assert captured["force_select"] is False
+    assert captured["prepare_selected"] is True
 
 
 def test_build_parser_compare_requires_at_least_one_input():

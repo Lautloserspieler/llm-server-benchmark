@@ -295,6 +295,7 @@ def select_models_for_backend(
     models_dir: str | Path = "models",
     *,
     force_select: bool = True,
+    prepare_selected: bool = False,
 ) -> list[str]:
     config = Path(config_path)
     root = config.resolve().parent
@@ -317,7 +318,19 @@ def select_models_for_backend(
         return references
     if backend not in {"ollama", "vllm", "tgi"}:
         raise ValueError(_("Unbekanntes Backend: {backend}").format(backend=backend))
-    return _prompt_runtime_models(backend, config, models)
+
+    selected = _prompt_runtime_models(backend, config, models)
+    if backend == "ollama" and prepare_selected and selected:
+        from .ollama_setup import pull_selected_models
+
+        console.print()
+        console.print(_("Ausgewaehlte Ollama-Modelle werden jetzt heruntergeladen."), style="bold cyan")
+        pull_selected_models(
+            root,
+            selected,
+            log=lambda message: console.print(message),
+        )
+    return selected
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -325,13 +338,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default="benchmark.yaml")
     parser.add_argument("--models-dir", default="models")
     parser.add_argument("--reuse", action="store_true", help=_("Gespeicherte llama.cpp-Auswahl wiederverwenden"))
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help=_("Ausgewaehlte Runtime-Modelle direkt herunterladen/vorbereiten"),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        select_models_for_backend(args.config, args.models_dir, force_select=not args.reuse)
+        select_models_for_backend(
+            args.config,
+            args.models_dir,
+            force_select=not args.reuse,
+            prepare_selected=args.prepare,
+        )
         return 0
     except (EOFError, KeyboardInterrupt):
         console.print("\n" + _("Modellauswahl abgebrochen."), style="yellow")

@@ -125,3 +125,31 @@ def test_ollama_custom_model_remains_supported(tmp_path: Path, monkeypatch):
     selected = backend_model_select.select_models_for_backend(cfg, models)
 
     assert selected == ["qwen2.5:0.5b"]
+
+
+
+def test_ollama_prepare_downloads_selected_registry_models(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "benchmark.yaml"
+    cfg.write_text("tools:\n  backend: ollama\n", encoding="utf-8")
+    models = tmp_path / "models"
+    models.mkdir()
+    pulled = {}
+
+    monkeypatch.setattr(backend_model_select.console, "input", lambda *_args: "1,3")
+
+    def fake_pull(root, references, **_kwargs):
+        pulled["root"] = Path(root)
+        pulled["references"] = list(references)
+        return list(references)
+
+    monkeypatch.setattr("llmbench.ollama_setup.pull_selected_models", fake_pull)
+
+    selected = backend_model_select.select_models_for_backend(
+        cfg,
+        models,
+        prepare_selected=True,
+    )
+
+    assert selected == ["gemma3:1b", "qwen3:8b"]
+    assert pulled["root"] == tmp_path.resolve()
+    assert pulled["references"] == selected

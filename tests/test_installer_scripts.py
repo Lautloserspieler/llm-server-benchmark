@@ -283,6 +283,18 @@ def test_backend_is_selected_before_backend_specific_models():
     assert linux_start.index("llmbench select-backend") < linux_start.index("llmbench select-models")
 
 
+def test_setup_and_start_prepare_selected_models_immediately():
+    windows_setup = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    linux_setup = (ROOT / "setup.sh").read_text(encoding="utf-8")
+    windows_start = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    windows_core = (ROOT / "scripts" / "START_BENCHMARK_CORE.ps1").read_text(encoding="utf-8-sig")
+    linux_start = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")
+
+    for content in (windows_setup, linux_setup, windows_start, windows_core, linux_start):
+        assert "select-models" in content
+        assert "--prepare" in content
+
+
 def test_benchmark_launchers_offer_installed_backend_selection():
     win = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
     linux = (ROOT / "START_BENCHMARK.sh").read_text(encoding="utf-8")

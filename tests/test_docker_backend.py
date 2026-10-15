@@ -196,6 +196,19 @@ def test_run_container_raises_on_failure(monkeypatch):
         docker_backend.run_container("c", "img", [])
 
 
+def test_exec_container_builds_expected_command(docker_calls):
+    proc = docker_backend.exec_container("ollama", ["ollama", "list"])
+    assert proc.returncode == 0
+    assert docker_calls[-1] == ["/usr/bin/docker", "exec", "ollama", "ollama", "list"]
+
+
+def test_exec_container_live_streams_command(docker_calls):
+    docker_backend.exec_container_live("ollama", ["ollama", "pull", "qwen3:8b"])
+    cmd = docker_calls[-1]
+    assert cmd[0:2] == ["/usr/bin/docker", "exec"]
+    assert cmd[-4:] == ["ollama", "ollama", "pull", "qwen3:8b"]
+
+
 def test_stop_container_stops_then_removes(docker_calls):
     docker_backend.stop_container("llmbench-vllm")
     assert docker_calls[-2] == ["/usr/bin/docker", "stop", "llmbench-vllm"]

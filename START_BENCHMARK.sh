@@ -76,7 +76,7 @@ ui_section start.backend_title
 python -m llmbench select-backend --root "$ROOT_DIR" --config "$CONFIG" --choose-only
 
 ui_section setup.section_models
-python -m llmbench select-models --config "$CONFIG" --models-dir models
+python -m llmbench select-models --config "$CONFIG" --models-dir models --prepare
 
 selected_backend="$(python -c 'import yaml; c=yaml.safe_load(open("benchmark.yaml",encoding="utf-8")) or {}; print((c.get("tools") or {}).get("backend","llama_cpp"))')"
 if [ "$selected_backend" = "llama_cpp" ]; then

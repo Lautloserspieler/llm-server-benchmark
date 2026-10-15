@@ -359,5 +359,11 @@
   "Bitte eine Modell-ID angeben.": "Please enter a model ID.",
   "Ungueltige Modellauswahl.": "Invalid model selection.",
   "Unbekanntes Backend: {backend}": "Unknown backend: {backend}",
-  "Modellauswahl fehlgeschlagen: {error}": "Model selection failed: {error}"
+  "Modellauswahl fehlgeschlagen: {error}": "Model selection failed: {error}",
+  "Zuerst wird das Backend gewaehlt, danach nur dazu passende Modelle.": "The backend is selected first, then only compatible models are offered.",
+  "Backend auswaehlen und bei Bedarf installieren...": "Choose a backend and install it if needed...",
+  "Backend-Auswahl fehlgeschlagen.": "Backend selection failed.",
+  "llama.cpp fehlt und wird jetzt installiert.": "llama.cpp is missing and will be installed now.",
+  "Einrichtung abgebrochen, weil llama.cpp nicht installiert werden konnte.": "Setup stopped because llama.cpp could not be installed.",
+  "Backend: {backend}": "Backend: {backend}"
 }

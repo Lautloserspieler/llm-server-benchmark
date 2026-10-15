@@ -204,6 +204,22 @@ def test_bootstrap_keeps_chosen_language(tmp_path, monkeypatch):
 
 
 
+def test_auto_setup_only_prepares_docker_host_before_backend_choice():
+    windows = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "setup.sh").read_text(encoding="utf-8")
+
+    assert "$dockerAction = if ($mode -eq 'docker') { 'Setup' } else { 'Host' }" in windows
+    assert "llmbench_prepare_docker_runtime" in linux
+
+    win_backend = windows.index("'llmbench', 'select-backend'")
+    win_models = windows.index("'llmbench', 'select-models'")
+    assert win_backend < win_models
+
+    linux_backend = linux.index("llmbench select-backend")
+    linux_models = linux.index("llmbench select-models")
+    assert linux_backend < linux_models
+
+
 def test_auto_setup_does_not_run_legacy_container_project_setup():
     windows_docker = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
     linux_docker = (ROOT / "scripts" / "docker_common.sh").read_text(encoding="utf-8")

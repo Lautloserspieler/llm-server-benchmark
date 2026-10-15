@@ -343,6 +343,7 @@
   "Es laeuft kein TGI-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No TGI container is running. run_benchmark expects begin_profile to have started the server.",
   "Es laeuft kein Ollama-Container. run_benchmark erwartet, dass begin_profile den Server bereits gestartet hat.": "No Ollama container is running. run_benchmark expects begin_profile to have already started the server.",
   "Ollama-Container wurde nicht bereit: {exc}": "Ollama container did not become ready: {exc}",
+  "Ollama hat das Modell nur zu {share:.0f} % im VRAM gehalten; der Rest lief auf der CPU. GPU-Werte sind nicht vergleichbar.": "Ollama kept only {share:.0f} % of the model in VRAM; the rest ran on the CPU. GPU values are not comparable.",
   "Ollama": "Ollama",
   "Nur bereits installierte Backends zur Auswahl anbieten; nichts herunterladen.": "Only offer already installed backends for selection; do not download anything.",
   "Backend-spezifische Modellauswahl": "Backend-specific model selection",

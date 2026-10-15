@@ -221,6 +221,48 @@ def _extract_delta(api_style: str, data: dict[str, Any]) -> tuple[int, str]:
     return (1 if content else 0), content
 
 
+def _ollama_timings(data: dict[str, Any]) -> dict[str, Any]:
+    """Serverseitige Zeiten (ns) des letzten Ollama-Chunks im Format der llama.cpp-timings."""
+    def _ms(key: str) -> float | None:
+        value = data.get(key)
+        return float(value) / 1e6 if isinstance(value, (int, float)) else None
+
+    timings: dict[str, Any] = {}
+    for src, dst in (("prompt_eval_count", "prompt_n"), ("eval_count", "predicted_n")):
+        if data.get(src) is not None:
+            timings[dst] = data[src]
+    for src, dst in (
+        ("prompt_eval_duration", "prompt_ms"),
+        ("eval_duration", "predicted_ms"),
+        ("load_duration", "load_ms"),
+    ):
+        value = _ms(src)
+        if value is not None:
+            timings[dst] = value
+    return timings
+
+
+async def _raise_for_status(resp: httpx.Response) -> None:
+    """Wie raise_for_status(), nimmt aber den Fehlertext des Servers mit auf.
+
+    Ollama antwortet z. B. mit 404 und {"error": "model 'x' not found"}; ohne den
+    Body ist die Ursache nicht von einem falschen Pfad zu unterscheiden.
+    """
+    if resp.status_code < 400:
+        return
+    detail = ""
+    with contextlib.suppress(Exception):
+        raw = (await resp.aread()).decode("utf-8", errors="replace").strip()
+        try:
+            parsed = json.loads(raw)
+            detail = str(parsed.get("error") or parsed.get("message") or raw) if isinstance(parsed, dict) else raw
+        except json.JSONDecodeError:
+            detail = raw
+    reason = resp.reason_phrase or ""
+    message = f"HTTP {resp.status_code} {reason} fuer {resp.request.url}".replace("  ", " ")
+    raise RuntimeError(f"{message}: {detail[:500]}" if detail else message)
+
+
 async def one_completion_async(
     client: httpx.AsyncClient,
     base_url: str,
@@ -252,7 +294,7 @@ async def one_completion_async(
         async with client.stream(
             "POST", base_url.rstrip("/") + path, json=payload, timeout=timeout
         ) as resp:
-            resp.raise_for_status()
+            await _raise_for_status(resp)
             async for line in resp.aiter_lines():
                 if not line:
                     continue
@@ -280,6 +322,8 @@ async def one_completion_async(
     finished = time.perf_counter()
 
     timings = final_data.get("timings") or {}
+    if not timings and api_style == API_STYLE_OLLAMA_NATIVE and final_data.get("done"):
+        timings = _ollama_timings(final_data)
     if not usage:
         usage = final_data.get("usage") or {}
 
@@ -346,7 +390,7 @@ async def sanity_completion_async(
     async with client.stream(
         "POST", base_url.rstrip("/") + path, json=payload, timeout=timeout
     ) as response:
-        response.raise_for_status()
+        await _raise_for_status(response)
         async for line in response.aiter_lines():
             if not line:
                 continue
@@ -413,6 +457,11 @@ def _completion_cfg(base: dict[str, Any], **overrides: Any) -> dict[str, Any]:
         "seed": base.get("seed", 42),
         "timeout_seconds": float(base.get("timeout_seconds", 3600)),
     }
+    # Backend-spezifische Felder muessen in jede Request-Payload gelangen: ohne
+    # "model" faellt _build_request auf "llmbench" zurueck (Ollama: 404).
+    for key in ("model", "ollama_num_ctx", "ollama_num_gpu"):
+        if base.get(key) is not None:
+            cfg[key] = base[key]
     cfg.update(overrides)
     return cfg
 
@@ -503,6 +552,13 @@ async def _run_generation_kind(
                 errors.append(f"tg{n}: {res['error']}")
                 continue
             produced = res["output_tokens"] or int(n)
+            if api_style == API_STYLE_OLLAMA_NATIVE and res["output_tokens"] and res["output_tokens"] < int(n):
+                # Ollama kennt weder ignore_eos noch min_tokens; endet das Modell frueh,
+                # basiert die Rate auf weniger Tokens als angefordert.
+                errors.append(
+                    f"tg{n}: Modell endete nach {res['output_tokens']} von {n} Tokens (EOS); "
+                    "Messwert beruht auf kuerzerer Ausgabe"
+                )
             ttft = res["ttft_seconds"] or 0.0
             gen_seconds = res["duration_seconds"] - ttft
             if gen_seconds > 0 and produced:
@@ -540,6 +596,17 @@ async def _run_long_context_kind(
         depth = int(depth)
         name = f"pg{prompt_tokens}+{gen_tokens}@d{depth}" if depth else f"pg{prompt_tokens}+{gen_tokens}"
         samples: list[float] = []
+        num_ctx = bench_cfg.get("ollama_num_ctx") if api_style == API_STYLE_OLLAMA_NATIVE else None
+        if num_ctx is not None and depth + prompt_tokens + gen_tokens > int(num_ctx):
+            # Ollama kuerzt zu lange Prompts still auf num_ctx; der Messwert truege
+            # dann das falsche Tiefenlabel.
+            errors.append(
+                f"{name}: uebersprungen - {depth + prompt_tokens + gen_tokens} Tokens "
+                f"ueberschreiten ollama_num_ctx={int(num_ctx)}"
+            )
+            rows.append(_row(name, samples, n_prompt=prompt_tokens, n_gen=gen_tokens,
+                             n_depth=depth, backend_name=backend_name))
+            continue
         for rep in range(reps):
             prompt = build_filler_prompt(depth + prompt_tokens, _nonce(name, rep))
             cfg = _completion_cfg(
@@ -619,6 +686,16 @@ async def _run_http_bench_async(
     fatal: str | None = None
     try:
         async with httpx.AsyncClient(headers=headers or {}) as client:
+            if api_style == API_STYLE_OLLAMA_NATIVE:
+                # Ollama laedt das Modell erst beim ersten Request. Ohne Vorlauf
+                # steckt die Ladezeit im ersten Messwert (und im Fehlerfall zeigt
+                # sich ein fehlendes Modell sofort mit klarer Meldung).
+                warm_cfg = _completion_cfg(bench_cfg, max_tokens=1)
+                warm = await _measure(
+                    client, base_url, _SHORT_PROMPT, warm_cfg, -1, api_style=api_style
+                )
+                if not warm["ok"]:
+                    raise RuntimeError(f"Ollama-Warmup fehlgeschlagen: {warm['error']}")
             rows = await runner(
                 client, base_url, bench_cfg, backend_name, reps, details, errors, report,
                 api_style=api_style,

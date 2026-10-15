@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Setup','Run','Check')]
+    [ValidateSet('Setup','Configure','Run','Check')]
     [string]$Action = 'Run',
     [string]$Config = 'benchmark.yaml'
 )
@@ -29,6 +29,19 @@ function Invoke-Compose {
     param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
     & docker compose -f $ComposeFile @Args
     if ($LASTEXITCODE -ne 0) { throw (T 'docker.command_failed' "docker compose $($Args -join ' ')" $LASTEXITCODE) }
+}
+
+function Invoke-ComposeQuiet {
+    param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker compose -f $ComposeFile @Args *> $null
+        $rc = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+    if ($rc -ne 0) { throw (T 'docker.command_failed' "docker compose $($Args -join ' ')" $rc) }
 }
 
 # Exitcode 3010 = "Neustart erforderlich" (Windows-Installer-Konvention).
@@ -343,7 +356,7 @@ function Ensure-BenchmarkImage {
         $oldEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
-            & docker pull $Image
+            & docker pull $Image *> $null
         } finally {
             $ErrorActionPreference = $oldEap
         }
@@ -390,8 +403,7 @@ function Setup-DockerBenchmark {
     Test-DockerGpu
 
     $id = Ensure-BenchmarkImage
-    Invoke-Compose run --rm llmbench container-check
-    Invoke-Compose run --rm llmbench container-setup
+    Invoke-ComposeQuiet run --rm llmbench container-check
     Set-Content -Path $ReadyFile -Value $id -Encoding ascii
     Set-Content -Path $ImageFile -Value $Image -Encoding ascii
     Write-UiOk (T 'docker.runtime_ready')
@@ -420,6 +432,15 @@ function Refresh-DockerConfig {
     Invoke-Compose run --rm llmbench python -m llmbench doctor --config /workspace/benchmark.yaml
 }
 
+function Configure-DockerBenchmark {
+    if (-not (Test-DockerBenchmarkReady)) {
+        throw (T 'docker.runtime_missing')
+    }
+    Initialize-DockerEnvironment
+    Set-ContainerImageId | Out-Null
+    Invoke-Compose run --rm llmbench container-setup
+}
+
 function Run-DockerBenchmark {
     if (-not (Test-DockerBenchmarkReady)) {
         throw (T 'docker.runtime_missing')
@@ -443,6 +464,7 @@ if ($Action -eq 'Check') {
 try {
     switch ($Action) {
         'Setup' { Setup-DockerBenchmark }
+        'Configure' { Add-DockerCliToPath; Configure-DockerBenchmark }
         'Run' { Add-DockerCliToPath; Run-DockerBenchmark }
     }
     exit 0

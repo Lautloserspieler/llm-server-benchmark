@@ -19,8 +19,13 @@ on:
       - ".github/workflows/docker-image.yml"
   pull_request:
     branches: ["main"]
+    # PRs mit reinen Python-/Feature-Aenderungen werden bereits durch die
+    # normale Testmatrix validiert. Den teuren CUDA-Image-Build starten wir
+    # nur, wenn sich Docker-/Packaging-relevante Dateien aendern.
+    #
+    # Nach dem Merge auf main bleibt llmbench/** weiterhin im push-Filter,
+    # damit GHCR/latest bei Python-Aenderungen aktualisiert wird.
     paths:
-      - "llmbench/**"
       - "Dockerfile"
       - ".dockerignore"
       - "compose.yaml"

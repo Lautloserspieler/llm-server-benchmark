@@ -1,12 +1,12 @@
 """Backend-Auswahl im Setup.
 
-llama.cpp ist immer dabei. Die Container-Backends (Ollama, TGI, vLLM)
-sind mehrere Gigabyte gross - deshalb wird fuer jedes einzeln gefragt, bevor
-ein Image geladen wird. Anschliessend kann das Backend gewaehlt werden, mit dem
-der Benchmark standardmaessig laeuft (``tools.backend`` in benchmark.yaml).
+Zuerst wird das gewuenschte Backend ausgewaehlt. Nur wenn das ausgewaehlte
+Container-Backend (Ollama, TGI oder vLLM) noch fehlt, wird danach genau fuer
+dieses Backend nach der Installation gefragt. So werden keine unnoetigen Images
+geladen.
 
-LLMBENCH_AUTO_INSTALL=1 beantwortet die Installationsfragen mit Ja, =0 mit Nein;
-ohne Terminal wird nichts installiert.
+LLMBENCH_AUTO_INSTALL=1 bestaetigt die Installation des ausgewaehlten Backends,
+=0 lehnt sie ab. Ohne Terminal bleibt das bereits konfigurierte Backend aktiv.
 """
 
 from __future__ import annotations
@@ -88,27 +88,29 @@ def _status_table(root: Path, docker_ok: bool, gpu_ok: bool) -> Table:
     return table
 
 
-def _choose_default(config_path: Path, available: list[str]) -> None:
+def _choose_backend(config_path: Path, choices: list[str]) -> str:
     cfg = read_config_file(config_path)
     current = (cfg.get("tools") or {}).get("backend") or DEFAULT_BACKEND
-    if current not in available:
-        current = DEFAULT_BACKEND
-    if not _interactive():
-        return
+    if current not in choices:
+        current = choices[0]
+
+    if not _interactive() or len(choices) == 1:
+        return current
+
     console.print()
-    console.print(_("Mit welchem Backend soll der Benchmark standardmaessig laufen?"))
-    for index, name in enumerate(available, start=1):
+    console.print(_("Welches Backend moechtest du testen?"))
+    for index, name in enumerate(choices, start=1):
         marker = "[cyan]>[/cyan]" if name == current else " "
         console.print(f"  {marker} {index}) {_label(name)}")
-    default_index = available.index(current) + 1
-    prompt = _("Auswahl [1-{count}, Enter = {default}]: ").format(count=len(available), default=default_index)
+    default_index = choices.index(current) + 1
+    prompt = _("Auswahl [1-{count}, Enter = {default}]: ").format(
+        count=len(choices),
+        default=default_index,
+    )
     answer = console.input("  " + escape(prompt)).strip()
-    choice = current
-    if answer.isdigit() and 1 <= int(answer) <= len(available):
-        choice = available[int(answer) - 1]
-    if choice != (cfg.get("tools") or {}).get("backend"):
-        set_default_backend(config_path, choice)
-    print_msg(_("Standard-Backend: {name}").format(name=_label(choice)), style="green")
+    if answer.isdigit() and 1 <= int(answer) <= len(choices):
+        return choices[int(answer) - 1]
+    return current
 
 
 def select_backends(root: Path | str, config_path: Path | str, *, install_missing: bool = True) -> int:
@@ -132,8 +134,6 @@ def select_backends(root: Path | str, config_path: Path | str, *, install_missin
             style="yellow",
         )
 
-    # Ein optionales Backend, das nicht installiert werden konnte, bricht das
-    # Setup nicht ab - llama.cpp funktioniert trotzdem.
     if docker_ok and not gpu_ok:
         for name in [n for n in missing if n in NVIDIA_ONLY_BACKENDS]:
             print_msg(
@@ -145,31 +145,49 @@ def select_backends(root: Path | str, config_path: Path | str, *, install_missin
             )
 
     if install_missing:
-        for name in [n for n in missing if _usable(n, docker_ok, gpu_ok)]:
-            if not _confirm_install(name):
-                continue
-            try:
-                backend_setup.ensure_backend(name, root, log=lambda msg: print_msg(msg, style="dim"))
-                print_msg(_("{name} ist installiert.").format(name=_label(name)), style="green")
-            except Exception as exc:
-                print_err(_("{name} konnte nicht installiert werden: {error}").format(name=_label(name), error=exc))
+        choices = [DEFAULT_BACKEND] + [
+            name for name in backend_setup.SUPPORTED_BACKENDS
+            if _usable(name, docker_ok, gpu_ok)
+        ]
+    else:
+        choices = [DEFAULT_BACKEND] + [
+            name for name in backend_setup.SUPPORTED_BACKENDS
+            if backend_setup.is_installed(name, root) and _usable(name, docker_ok, gpu_ok)
+        ]
 
-    available = [DEFAULT_BACKEND] + [
-        name for name in backend_setup.SUPPORTED_BACKENDS if backend_setup.is_installed(name, root)
-    ]
-    # Ein eingetragenes, aber nicht (mehr) installiertes Backend wuerde beim
-    # naechsten Lauf scheitern oder das abgelehnte Image doch noch laden.
     configured = (read_config_file(config_path).get("tools") or {}).get("backend")
-    if configured and configured not in available:
+    if configured and configured not in choices:
         set_default_backend(config_path, DEFAULT_BACKEND)
         print_msg(
-            _("{name} ist nicht installiert - Standard-Backend wieder auf {default} gesetzt.").format(
-                name=_label(configured), default=_label(DEFAULT_BACKEND)
+            _("{name} ist nicht verfuegbar - Standard-Backend wieder auf {default} gesetzt.").format(
+                name=_label(configured),
+                default=_label(DEFAULT_BACKEND),
             ),
             style="yellow",
         )
-    if len(available) > 1:
-        _choose_default(config_path, available)
+
+    choice = _choose_backend(config_path, choices)
+
+    if choice != DEFAULT_BACKEND and not backend_setup.is_installed(choice, root):
+        if not install_missing:
+            print_err(_("{name} ist nicht installiert.").format(name=_label(choice)))
+            return 1
+        if not _confirm_install(choice):
+            print_msg(
+                _("Installation von {name} wurde abgebrochen.").format(name=_label(choice)),
+                style="yellow",
+            )
+            return 1
+        try:
+            backend_setup.ensure_backend(choice, root, log=lambda msg: print_msg(msg, style="dim"))
+            print_msg(_("{name} ist installiert.").format(name=_label(choice)), style="green")
+        except Exception as exc:
+            print_err(_("{name} konnte nicht installiert werden: {error}").format(name=_label(choice), error=exc))
+            return 1
+
+    if choice != configured:
+        set_default_backend(config_path, choice)
+    print_msg(_("Standard-Backend: {name}").format(name=_label(choice)), style="green")
     return 0
 
 

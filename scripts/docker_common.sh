@@ -202,7 +202,7 @@ llmbench_docker_build() {
 
     if [ "$LLMBENCH_DOCKER_BUILD_LOCAL" != "1" ]; then
         ui_step docker.image_pull "$LLMBENCH_DOCKER_IMAGE"
-        if _llmbench_docker pull "$LLMBENCH_DOCKER_IMAGE"; then
+        if _llmbench_docker pull "$LLMBENCH_DOCKER_IMAGE" >/dev/null 2>&1; then
             llmbench_set_container_image_id || return 1
             ui_ok docker.image_ok
             return 0
@@ -225,24 +225,31 @@ llmbench_docker_build() {
 llmbench_docker_container_check() {
     llmbench_prepare_docker_paths
     llmbench_set_container_image_id || return 1
-    _llmbench_compose run --rm llmbench container-check
+    _llmbench_compose run --rm llmbench container-check >/dev/null 2>&1
+}
+
+llmbench_mark_docker_ready() {
+    printf '%s\n' "$LLMBENCH_CONTAINER_IMAGE_ID" > "$ROOT_DIR/.runtime/docker-ready"
+    printf '%s\n' "$LLMBENCH_DOCKER_IMAGE" > "$ROOT_DIR/.runtime/docker-image"
 }
 
 llmbench_docker_setup_project() {
     llmbench_prepare_docker_paths
     llmbench_set_container_image_id || return 1
     _llmbench_compose run --rm llmbench container-setup
-    printf '%s\n' "$LLMBENCH_CONTAINER_IMAGE_ID" > "$ROOT_DIR/.runtime/docker-ready"
-    printf '%s\n' "$LLMBENCH_DOCKER_IMAGE" > "$ROOT_DIR/.runtime/docker-image"
 }
 
-llmbench_setup_docker() {
+llmbench_prepare_docker_runtime() {
     llmbench_prepare_docker_host || return 1
     llmbench_prepare_docker_paths
     llmbench_docker_gpu_smoke || return 1
+}
+
+llmbench_setup_docker() {
+    llmbench_prepare_docker_runtime || return 1
     llmbench_docker_build || return 1
     llmbench_docker_container_check || return 1
-    llmbench_docker_setup_project || return 1
+    llmbench_mark_docker_ready
     ui_ok docker.runtime_ready
     ui_info_raw "Image: $LLMBENCH_DOCKER_IMAGE"
     ui_info_raw "Image-ID: $LLMBENCH_CONTAINER_IMAGE_ID"

@@ -93,6 +93,23 @@ def test_container_entrypoint_has_real_gpu_preflight():
     assert "container-setup" in entrypoint
 
 
+def test_auto_host_prep_does_not_pull_benchmark_image_or_run_project_setup():
+    windows = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    linux = (ROOT / "scripts" / "docker_common.sh").read_text(encoding="utf-8")
+
+    win_host = windows.split("function Setup-DockerHost", 1)[1].split(
+        "function Setup-DockerBenchmark", 1
+    )[0]
+    assert "Ensure-BenchmarkImage" not in win_host
+    assert "container-setup" not in win_host
+
+    linux_host = linux.split("llmbench_prepare_docker_runtime()", 1)[1].split(
+        "llmbench_setup_docker()", 1
+    )[0]
+    assert "llmbench_docker_build" not in linux_host
+    assert "container-setup" not in linux_host
+
+
 def test_linux_and_windows_runtime_pull_ghcr_before_local_build():
     linux = (ROOT / "scripts" / "docker_common.sh").read_text(encoding="utf-8")
     windows = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8")

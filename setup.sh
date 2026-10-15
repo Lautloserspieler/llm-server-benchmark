@@ -27,8 +27,16 @@ if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
     source "$ROOT_DIR/scripts/docker_common.sh"
     if [ "$EXECUTION_MODE" = "docker" ] || command -v nvidia-smi >/dev/null 2>&1; then
         ui_section_raw "Docker + NVIDIA CUDA"
-        if llmbench_setup_docker; then
+        if [ "$EXECUTION_MODE" = "docker" ]; then
+            docker_setup_ok=0
+            llmbench_setup_docker || docker_setup_ok=$?
+        else
+            docker_setup_ok=0
+            llmbench_prepare_docker_runtime || docker_setup_ok=$?
+        fi
+        if [ "$docker_setup_ok" -eq 0 ]; then
             if [ "$EXECUTION_MODE" = "docker" ]; then
+                llmbench_docker_setup_project
                 ui_done setup.done_docker setup.done_hint
                 exit 0
             fi
@@ -85,7 +93,7 @@ mkdir -p models
 
 # Minimalen Config-Rahmen anlegen, dann zuerst die Runtime waehlen.
 python -m llmbench bootstrap --config benchmark.yaml --root "$ROOT_DIR" \
-    --llama-dir tools/llama.cpp --models-dir models
+    --llama-dir tools/llama.cpp --models-dir models >/dev/null
 
 ui_section start.backend_title
 python -m llmbench select-backend --root "$ROOT_DIR" --config benchmark.yaml
@@ -99,10 +107,6 @@ if [ "$selected_backend" = "llama_cpp" ]; then
     ui_step setup.llama_check
     python -m llmbench install-llama-cpp --root "$ROOT_DIR"
     ui_info setup.llama_hint
-
-    export LLMBENCH_USE_SAVED_SELECTION=1
-    ui_section setup.section_config
-    python -m llmbench setup
 fi
 
 if [ "$EXECUTION_MODE" = "auto" ]; then

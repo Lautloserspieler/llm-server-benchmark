@@ -31,6 +31,11 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments, [string]$ErrorKey) {
     if ($LASTEXITCODE -ne 0) { throw (T $ErrorKey $LASTEXITCODE) }
 }
 
+function Invoke-CheckedQuiet([string]$Exe, [string[]]$Arguments, [string]$ErrorKey) {
+    & $Exe @Arguments *> $null
+    if ($LASTEXITCODE -ne 0) { throw (T $ErrorKey $LASTEXITCODE) }
+}
+
 $mode = if ($env:LLMBENCH_EXECUTION_MODE) { $env:LLMBENCH_EXECUTION_MODE.ToLowerInvariant() } else { 'auto' }
 if (@('auto', 'docker', 'native') -notcontains $mode) {
     Write-UiFail (T 'setup.invalid_mode')
@@ -42,21 +47,24 @@ Write-UiHeader (T 'setup.title') (T 'setup.mode' $mode)
 try {
     if ($mode -ne 'native') {
         Write-UiSection 'Docker Desktop + WSL2 + NVIDIA CUDA'
-        Invoke-ChildScript 'DOCKER_BENCHMARK.ps1' @('-Action', 'Setup')
+        $dockerAction = if ($mode -eq 'docker') { 'Setup' } else { 'Host' }
+        Invoke-ChildScript 'DOCKER_BENCHMARK.ps1' @('-Action', $dockerAction)
         $rc = $script:ChildExitCode
         if ($rc -eq 0) {
             if ($mode -eq 'docker') {
+                Invoke-ChildScript 'DOCKER_BENCHMARK.ps1' @('-Action', 'Configure')
+                if ($script:ChildExitCode -ne 0) { throw (T 'setup.step_failed' $script:ChildExitCode) }
                 Write-UiDone (T 'setup.done_docker') @((T 'setup.done_hint'))
                 exit 0
             }
             Write-UiOk (T 'setup.docker_host_ready')
-        }
-        if ($rc -eq $RebootExitCode) {
+        } elseif ($rc -eq $RebootExitCode) {
             Invoke-RebootFlow 'setup.bat'
             exit $RebootExitCode
+        } else {
+            if ($mode -eq 'docker') { throw (T 'setup.docker_forced_failed') }
+            Write-UiWarn (T 'setup.docker_fallback')
         }
-        if ($mode -eq 'docker') { throw (T 'setup.docker_forced_failed') }
-        Write-UiWarn (T 'setup.docker_fallback')
     }
 
     Write-UiSection 'Python'
@@ -79,7 +87,7 @@ try {
 
     # Zuerst eine minimale Konfiguration erzeugen, damit die Backend-Auswahl
     # direkt in benchmark.yaml gespeichert werden kann.
-    Invoke-Checked $venvPython @('-m', 'llmbench', 'bootstrap', '--config', 'benchmark.yaml', '--root', $Root, '--llama-dir', 'tools/llama.cpp', '--models-dir', 'models') 'setup.step_failed'
+    Invoke-CheckedQuiet $venvPython @('-m', 'llmbench', 'bootstrap', '--config', 'benchmark.yaml', '--root', $Root, '--llama-dir', 'tools/llama.cpp', '--models-dir', 'models') 'setup.step_failed'
 
     Write-UiSection (T 'start.backend_title')
     Invoke-Checked $venvPython @('-m', 'llmbench', 'select-backend', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
@@ -87,12 +95,12 @@ try {
     Write-UiSection (T 'setup.section_models')
     Invoke-Checked $venvPython @('-m', 'llmbench', 'select-models', '--config', 'benchmark.yaml', '--models-dir', 'models') 'setup.step_failed'
 
-    # Nur llama.cpp benoetigt den alten Setup-Wizard fuer Binary-/GGUF-Pruefung.
+    # Nur llama.cpp benoetigt lokale Windows-Binaries. Kein zweiter Setup-Wizard:
+    # Backend- und Modellauswahl wurden bereits oben abgeschlossen.
     $selectedBackend = (& $venvPython -c "import yaml; c=yaml.safe_load(open('benchmark.yaml',encoding='utf-8')) or {}; print((c.get('tools') or {}).get('backend','llama_cpp'))").Trim()
     if ($selectedBackend -eq 'llama_cpp') {
-        $env:LLMBENCH_USE_SAVED_SELECTION = '1'
-        Write-UiSection (T 'setup.section_config')
-        Invoke-Checked $venvPython @('-m', 'llmbench', 'setup') 'setup.step_failed'
+        Invoke-ChildScript 'START_BENCHMARK_CORE.ps1' @('-LlamaCppOnly')
+        if ($script:ChildExitCode -ne 0) { throw (T 'setup.step_failed' $script:ChildExitCode) }
     }
 
     $doneKey = if ($mode -eq 'auto') { 'setup.done_host' } else { 'setup.done_native' }

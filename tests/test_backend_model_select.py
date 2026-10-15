@@ -70,3 +70,58 @@ def test_llama_selection_persists_only_selected_gguf(tmp_path: Path, monkeypatch
     assert selected == [str(model_file)]
     data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
     assert [model["path"] for model in data["models"]] == [str(model_file)]
+
+
+
+def test_ollama_catalog_is_local_diverse_and_has_extreme():
+    catalog = backend_model_select.OLLAMA_MODEL_CATALOG
+    refs = [str(item["ref"]) for item in catalog]
+    assert len(refs) == len(set(refs))
+    assert all("-cloud" not in ref for ref in refs)
+    assert {"gemma3:1b", "granite4.2:3b", "qwen3:8b", "gpt-oss:20b", "mistral-small3.2:24b"} <= set(refs)
+    assert any(item["tier"] == "EXTREME" for item in catalog)
+
+
+def test_ollama_catalog_selection_writes_selected_models(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "benchmark.yaml"
+    cfg.write_text("tools:\n  backend: ollama\n", encoding="utf-8")
+    models = tmp_path / "models"
+    models.mkdir()
+
+    monkeypatch.setattr(backend_model_select.console, "input", lambda *_args: "1,5")
+    selected = backend_model_select.select_models_for_backend(cfg, models)
+
+    assert selected == ["gemma3:1b", "gpt-oss:20b"]
+    data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert [model["path"] for model in data["models"]] == selected
+
+
+def test_ollama_all_standard_excludes_extreme(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "benchmark.yaml"
+    cfg.write_text("tools:\n  backend: ollama\n", encoding="utf-8")
+    models = tmp_path / "models"
+    models.mkdir()
+
+    monkeypatch.setattr(backend_model_select.console, "input", lambda *_args: "A")
+    selected = backend_model_select.select_models_for_backend(cfg, models)
+
+    extreme = {
+        str(item["ref"])
+        for item in backend_model_select.OLLAMA_MODEL_CATALOG
+        if item["tier"] == "EXTREME"
+    }
+    assert selected
+    assert extreme.isdisjoint(selected)
+
+
+def test_ollama_custom_model_remains_supported(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "benchmark.yaml"
+    cfg.write_text("tools:\n  backend: ollama\n", encoding="utf-8")
+    models = tmp_path / "models"
+    models.mkdir()
+
+    answers = iter(["R", "qwen2.5:0.5b"])
+    monkeypatch.setattr(backend_model_select.console, "input", lambda *_args: next(answers))
+    selected = backend_model_select.select_models_for_backend(cfg, models)
+
+    assert selected == ["qwen2.5:0.5b"]

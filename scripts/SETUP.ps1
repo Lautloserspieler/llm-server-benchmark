@@ -93,7 +93,7 @@ try {
     Invoke-Checked $venvPython @('-m', 'llmbench', 'select-backend', '--root', $Root, '--config', 'benchmark.yaml') 'setup.step_failed'
 
     Write-UiSection (T 'setup.section_models')
-    Invoke-Checked $venvPython @('-m', 'llmbench', 'select-models', '--config', 'benchmark.yaml', '--models-dir', 'models') 'setup.step_failed'
+    Invoke-Checked $venvPython @('-m', 'llmbench', 'select-models', '--config', 'benchmark.yaml', '--models-dir', 'models', '--prepare') 'setup.step_failed'
 
     # Nur llama.cpp benoetigt lokale Windows-Binaries. Kein zweiter Setup-Wizard:
     # Backend- und Modellauswahl wurden bereits oben abgeschlossen.

@@ -36,13 +36,15 @@ def _fake_backend(monkeypatch, tmp_path: Path):
             "container-id",
         )[1],
     )
+    def fake_exec(name, args, **_kwargs):
+        calls.append(("exec", name, tuple(args)))
+        # readiness succeeds; model lookup reports "not installed"
+        return _Proc(0 if list(args) == ["ollama", "list"] else 1)
+
     monkeypatch.setattr(
         ollama_setup.docker_backend,
         "exec_container",
-        lambda name, args, **_k: (
-            calls.append(("exec", name, tuple(args))),
-            _Proc(0),
-        )[1],
+        fake_exec,
     )
     monkeypatch.setattr(
         ollama_setup.docker_backend,
@@ -108,3 +110,19 @@ def test_pull_selected_models_cleans_up_after_failed_pull(monkeypatch, tmp_path:
         ollama_setup.pull_selected_models(tmp_path, ["qwen3:8b"])
 
     assert calls[-1] == ("stop", ollama_setup.PULL_CONTAINER_NAME)
+
+
+
+def test_pull_selected_models_skips_download_when_model_is_already_present(monkeypatch, tmp_path: Path):
+    calls = _fake_backend(monkeypatch, tmp_path)
+
+    def fake_exec(name, args, **_kwargs):
+        calls.append(("exec", name, tuple(args)))
+        return _Proc(0)
+
+    monkeypatch.setattr(ollama_setup.docker_backend, "exec_container", fake_exec)
+
+    pulled = ollama_setup.pull_selected_models(tmp_path, ["qwen3:8b"])
+
+    assert pulled == ["qwen3:8b"]
+    assert not any(call[0] == "live" for call in calls)

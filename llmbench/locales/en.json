@@ -375,5 +375,10 @@
   "ca. {gib:g} GB Download": "approx. {gib:g} GB download",
   "ca. {gib:g} GB gesamt": "approx. {gib:g} GB total",
   "Eigenes Ollama-Modell": "Custom Ollama model",
-  "Modellname eingeben, z. B. qwen2.5:0.5b": "Enter a model name, e.g. qwen2.5:0.5b"
+  "Modellname eingeben, z. B. qwen2.5:0.5b": "Enter a model name, e.g. qwen2.5:0.5b",
+  "Ausgewaehlte Ollama-Modelle werden jetzt heruntergeladen.": "Selected Ollama models will now be downloaded.",
+  "Ausgewaehlte Runtime-Modelle direkt herunterladen/vorbereiten": "Download/prepare selected runtime models immediately",
+  "Ollama-Download-Container wurde nicht rechtzeitig bereit.": "The Ollama download container did not become ready in time.",
+  "Ollama-Modell {index}/{total} herunterladen: {model}": "Downloading Ollama model {index}/{total}: {model}",
+  "Ollama-Modell bereit: {model}": "Ollama model ready: {model}"
 }

@@ -86,7 +86,7 @@ mkdir -p models
 
 # Minimalen Config-Rahmen anlegen, dann zuerst die Runtime waehlen.
 python -m llmbench bootstrap --config benchmark.yaml --root "$ROOT_DIR" \
-    --llama-dir tools/llama.cpp --models-dir models
+    --llama-dir tools/llama.cpp --models-dir models >/dev/null
 
 ui_section start.backend_title
 python -m llmbench select-backend --root "$ROOT_DIR" --config benchmark.yaml

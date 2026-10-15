@@ -158,7 +158,8 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
             configured_path = resolve_path(raw_path, cfg)
             fingerprint = file_fingerprint(configured_path, with_hash=False)
         exists = bool(fingerprint.get("exists"))
-        size = fingerprint.get("size_bytes")
+        raw_size = fingerprint.get("size_bytes")
+        size = int(raw_size) if isinstance(raw_size, (int, float)) else None
         entry: dict[str, Any] = {
             "name": model.get("name"),
             "path": str(fingerprint.get("path") or configured_path),

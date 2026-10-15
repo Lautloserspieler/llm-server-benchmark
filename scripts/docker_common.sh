@@ -239,10 +239,14 @@ llmbench_docker_setup_project() {
     _llmbench_compose run --rm llmbench container-setup
 }
 
-llmbench_setup_docker() {
+llmbench_prepare_docker_runtime() {
     llmbench_prepare_docker_host || return 1
     llmbench_prepare_docker_paths
     llmbench_docker_gpu_smoke || return 1
+}
+
+llmbench_setup_docker() {
+    llmbench_prepare_docker_runtime || return 1
     llmbench_docker_build || return 1
     llmbench_docker_container_check || return 1
     llmbench_mark_docker_ready

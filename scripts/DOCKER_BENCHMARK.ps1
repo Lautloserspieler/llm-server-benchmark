@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Setup','Configure','Run','Check')]
+    [ValidateSet('Host','Setup','Configure','Run','Check')]
     [string]$Action = 'Run',
     [string]$Config = 'benchmark.yaml'
 )
@@ -393,14 +393,18 @@ function Ensure-BenchmarkImage {
     return $id
 }
 
-function Setup-DockerBenchmark {
-    # Zuerst: ohne passenden NVIDIA-Treiber ist der Docker-GPU-Modus sinnlos -
-    # dann gar nicht erst WSL/Docker installieren, sondern nativ weitermachen.
+function Setup-DockerHost {
+    # Im normalen auto-Modus wird nur der Docker/GPU-Host vorbereitet.
+    # Das grosse llmbench-CUDA-Image ist erst fuer den expliziten Voll-Docker-Modus noetig.
     Assert-NvidiaDriver
     Ensure-WslUbuntu
     Ensure-DockerDesktop
     Initialize-DockerEnvironment
     Test-DockerGpu
+}
+
+function Setup-DockerBenchmark {
+    Setup-DockerHost
 
     $id = Ensure-BenchmarkImage
     Invoke-ComposeQuiet run --rm llmbench container-check
@@ -463,6 +467,7 @@ if ($Action -eq 'Check') {
 
 try {
     switch ($Action) {
+        'Host' { Setup-DockerHost }
         'Setup' { Setup-DockerBenchmark }
         'Configure' { Add-DockerCliToPath; Configure-DockerBenchmark }
         'Run' { Add-DockerCliToPath; Run-DockerBenchmark }

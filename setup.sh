@@ -29,6 +29,7 @@ if [ "$(uname -s)" = "Linux" ] && [ "$EXECUTION_MODE" != "native" ]; then
         ui_section_raw "Docker + NVIDIA CUDA"
         if llmbench_setup_docker; then
             if [ "$EXECUTION_MODE" = "docker" ]; then
+                llmbench_docker_setup_project
                 ui_done setup.done_docker setup.done_hint
                 exit 0
             fi
@@ -99,10 +100,6 @@ if [ "$selected_backend" = "llama_cpp" ]; then
     ui_step setup.llama_check
     python -m llmbench install-llama-cpp --root "$ROOT_DIR"
     ui_info setup.llama_hint
-
-    export LLMBENCH_USE_SAVED_SELECTION=1
-    ui_section setup.section_config
-    python -m llmbench setup
 fi
 
 if [ "$EXECUTION_MODE" = "auto" ]; then

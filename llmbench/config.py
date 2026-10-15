@@ -73,6 +73,8 @@ class BenchmarkConfig(BaseModel):
     cache_type_k: str = "f16"
     cache_type_v: str = "f16"
     resource_sample_interval: float = 0.5
+    # Prozessnamen, die nicht als GPU-Fremdlast gemeldet werden ("*" = nie melden).
+    ignore_gpu_processes: list[str] = Field(default_factory=list)
     timeout_seconds: float = Field(3600.0, gt=0)
     cpu_timeout_seconds: float = Field(7200.0, gt=0)
     gpu_timeout_seconds: float = Field(3600.0, gt=0)
@@ -270,6 +272,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cache_type_k": "f16",
         "cache_type_v": "f16",
         "resource_sample_interval": 0.5,
+        "ignore_gpu_processes": [],
         "timeout_seconds": 3600,
         "cpu_timeout_seconds": 7200,
         "gpu_timeout_seconds": 3600,

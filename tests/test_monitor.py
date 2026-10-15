@@ -391,3 +391,36 @@ def test_missing_power_is_not_treated_as_zero_or_bridged_across_gap():
 
     assert summary["gpus"][0]["energy_j"] is None
     assert summary["power"]["component_energy_j"] is None
+
+
+def test_configured_process_names_are_not_reported_as_foreign(monkeypatch):
+    monkeypatch.setattr("llmbench.monitor.psutil.Process", lambda pid: type("P", (), {"name": lambda _s: {222: "Antigravity IDE.exe", 333: "other.exe"}[pid]})())
+    monitor = ResourceMonitor(ignored_process_names=("antigravity ide.exe",))
+    monitor._own_pids = {111}
+    monitor._seen_gpu_pids = {111, 222, 333}
+    monitor._samples = [{"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": []}]
+    assert [p["pid"] for p in monitor.summary()["foreign_gpu_processes"]] == [333]
+
+
+def test_wildcard_and_env_silence_foreign_process_warning(monkeypatch):
+    monitor = ResourceMonitor(ignored_process_names=("*",))
+    monitor._own_pids = {111}
+    monitor._seen_gpu_pids = {111, 222}
+    monitor._samples = [{"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": []}]
+    assert monitor.summary()["foreign_gpu_processes"] == []
+
+    monkeypatch.setenv("LLMBENCH_IGNORE_GPU_PROCESSES", "*")
+    env_monitor = ResourceMonitor()
+    env_monitor._own_pids = {111}
+    env_monitor._seen_gpu_pids = {111, 222}
+    env_monitor._samples = monitor._samples
+    assert env_monitor.summary()["foreign_gpu_processes"] == []
+
+
+def test_foreign_process_warning_lists_only_a_few_names():
+    monitor = ResourceMonitor()
+    monitor._own_pids = {1}
+    monitor._seen_gpu_pids = {1, *range(100, 120)}
+    monitor._samples = [{"cpu_percent": 1.0, "ram_used_bytes": 1, "gpus": []}]
+    warning = next(w for w in monitor.summary()["warnings"] if "Fremde Prozesse" in w)
+    assert "14 weitere" in warning

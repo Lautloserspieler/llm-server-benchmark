@@ -20,6 +20,7 @@ from .telemetry import get_telemetry_provider
 IDLE_GPU_UTIL_PERCENT = 10.0
 IDLE_WAIT_SECONDS = 15.0
 BUSY_BASELINE_UTIL_PERCENT = 15.0
+MAX_LISTED_FOREIGN_PROCESSES = 6
 
 
 def _max_gpu_util(sample: dict[str, Any] | None) -> float:
@@ -103,6 +104,9 @@ class ResourceMonitor:
     _baseline: dict[str, Any] | None = None
     _max_samples: int = 100000  # Hard limit to prevent unbounded memory growth
     idle_wait_seconds: float = IDLE_WAIT_SECONDS
+    # Zusaetzliche Prozessnamen (klein geschrieben), die nie als Fremdlast gelten;
+    # "*" schaltet die Meldung ganz ab (z. B. auf einem Entwicklungs-PC).
+    ignored_process_names: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------ start
 
@@ -266,7 +270,15 @@ class ResourceMonitor:
     def _foreign_processes(self) -> list[dict[str, Any]]:
         foreign = sorted(self._seen_gpu_pids - self._own_pids)
         out = []
-        ignored_names = {
+        extra = {n.strip().lower() for n in self.ignored_process_names if str(n).strip()}
+        extra |= {
+            n.strip().lower()
+            for n in os.environ.get("LLMBENCH_IGNORE_GPU_PROCESSES", "").split(",")
+            if n.strip()
+        }
+        if "*" in extra:
+            return []
+        ignored_names = extra | {
             "dwm.exe", "explorer.exe", "searchhost.exe", "startmenuexperiencehost.exe",
             "shellexperiencehost.exe", "shellhost.exe", "applicationframehost.exe",
             "systemsettings.exe", "msedge.exe", "msedgewebview2.exe", "taskmgr.exe",
@@ -454,7 +466,10 @@ class ResourceMonitor:
         foreign = self._foreign_processes()
         warnings: list[str] = []
         if foreign:
-            names = ", ".join(f"{p['name'] or '?'} (PID {p['pid']})" for p in foreign)
+            shown = foreign[:MAX_LISTED_FOREIGN_PROCESSES]
+            names = ", ".join(f"{p['name'] or '?'} (PID {p['pid']})" for p in shown)
+            if len(foreign) > len(shown):
+                names += _(" und {count} weitere").format(count=len(foreign) - len(shown))
             warnings.append(
                 _(
                     "Fremde Prozesse haben waehrend der Messung die GPU benutzt: "

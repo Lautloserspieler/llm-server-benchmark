@@ -7,6 +7,7 @@ from typing import Any
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
+from .provenance import condition_rows
 from .result_schema import provenance_rows, scalar_summary
 from .telemetry_reporting import system_power_rows
 
@@ -386,20 +387,7 @@ def _soak_table(soak_runs: list[dict[str, Any]]) -> str:
 
 
 def _provenance_block(summary: dict[str, Any]) -> str:
-    tools = summary.get("tools") or {}
-    bench = (tools.get("llama_bench") or {}).get("binary") or {}
-    build_ids = tools.get("llama_cpp_build_ids") or []
-    cfg = (summary.get("config") or {}).get("benchmark") or {}
-    rows = [
-        (_("Konfigurations-Fingerabdruck"), summary.get("config_fingerprint")),
-        (_("llmbench-Version"), summary.get("llmbench_version")),
-        (_("llama.cpp-Build"), ", ".join(build_ids) or _("unbekannt")),
-        (_("llama-bench SHA256"), (bench.get("sha256") or _("nicht berechnet"))),
-        (_("Wiederholungen"), cfg.get("repetitions")),
-        (_("Batch / UBatch"), f"{cfg.get('batch_size')} / {cfg.get('ubatch_size')}"),
-        (_("Flash Attention"), cfg.get("flash_attention")),
-        (_("KV-Cache K/V"), f"{cfg.get('cache_type_k')} / {cfg.get('cache_type_v')}"),
-    ]
+    rows = condition_rows(summary)
     cells = "".join(
         f"<tr><th>{esc(k)}</th><td><code>{esc(v)}</code></td></tr>" for k, v in rows
     )

@@ -251,3 +251,42 @@ def test_ollama_server_timings_are_exposed():
     res = asyncio.run(_go())
     assert res["server_timings"]["predicted_n"] == 4
     assert res["server_timings"]["load_ms"] == 100.0
+
+
+@pytest.mark.usefixtures("mock_server")
+def test_ollama_prompt_and_generation_use_server_timings(tmp_path: Path):
+    cfg = _bench_cfg(prompt_tokens=[512], generation_tokens=[128])
+    prompt = run_http_bench(
+        "http://testserver", {}, cfg, {"name": "Ollama"}, "prompt", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    pp = prompt["rows"][0]
+    # Mock: prompt_eval_count=8 in 50 ms -> 160 t/s, unabhaengig von der Wanduhr.
+    assert pp["avg_ts"] == pytest.approx(160.0)
+    assert pp["timing_source"] == "server"
+
+    generation = run_http_bench(
+        "http://testserver", {}, cfg, {"name": "Ollama"}, "generation", tmp_path,
+        backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    tg = generation["rows"][0]
+    assert tg["avg_ts"] == pytest.approx(128 / 0.9)
+    assert tg["timing_source"] == "server"
+
+
+@pytest.mark.usefixtures("mock_server")
+def test_ollama_long_context_reports_prefill_and_decode_separately(tmp_path: Path):
+    from llmbench.context_capability import build_context_capability
+
+    result = run_http_bench(
+        "http://testserver", {}, _bench_cfg(context_depths=[0]), {"name": "Ollama"}, "long_context",
+        tmp_path, backend_name="ollama", api_style=API_STYLE_OLLAMA_NATIVE,
+    )
+    row = result["rows"][0]
+    assert row["prefill_ts"] == pytest.approx(160.0)
+    assert row["decode_ts"] == pytest.approx(128 / 0.9)
+
+    curve = build_context_capability(result)["curve"][0]
+    assert curve["prefill_tps"] == pytest.approx(160.0)
+    assert curve["decode_tps"] == pytest.approx(128 / 0.9)
+    assert curve["combined_tps"] == pytest.approx(row["avg_ts"])

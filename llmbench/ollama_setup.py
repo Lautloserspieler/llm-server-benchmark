@@ -69,20 +69,35 @@ def pull_selected_models(
     image = str(state.get("image") or backend_setup.default_image("ollama"))
     volume = str(state.get("volume") or backend_setup.volume_name("ollama"))
 
-    docker_backend.stop_container(PULL_CONTAINER_NAME, log=log)
+    docker_backend.stop_container(PULL_CONTAINER_NAME)
     docker_backend.run_container(
         PULL_CONTAINER_NAME,
         image,
         [],
         gpu=False,
         volumes={volume: OLLAMA_DATA_MOUNT},
-        log=log,
     )
 
     try:
         _wait_until_ready(PULL_CONTAINER_NAME)
         total = len(models)
         for index, model in enumerate(models, start=1):
+            present = docker_backend.exec_container(
+                PULL_CONTAINER_NAME,
+                ["ollama", "show", model],
+                timeout=30.0,
+                check=False,
+            )
+            if present.returncode == 0:
+                log(
+                    _("Ollama-Modell {index}/{total} bereits vorhanden: {model}").format(
+                        index=index,
+                        total=total,
+                        model=model,
+                    )
+                )
+                continue
+
             log(
                 _("Ollama-Modell {index}/{total} herunterladen: {model}").format(
                     index=index,
@@ -97,6 +112,6 @@ def pull_selected_models(
             )
             log(_("Ollama-Modell bereit: {model}").format(model=model))
     finally:
-        docker_backend.stop_container(PULL_CONTAINER_NAME, log=log)
+        docker_backend.stop_container(PULL_CONTAINER_NAME)
 
     return models

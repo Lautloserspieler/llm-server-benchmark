@@ -74,6 +74,12 @@ def build_context_capability(result: dict[str, Any]) -> dict[str, Any]:
             entry["decode_tps"] = avg_ts
         elif n_prompt > 0 and n_gen > 0:
             entry["combined_tps"] = avg_ts
+            # HTTP-Backends liefern Prefill/Decode aus den Serverzeiten des
+            # kombinierten Laufs mit.
+            if entry["prefill_tps"] is None:
+                entry["prefill_tps"] = _as_number(row.get("prefill_ts"))
+            if entry["decode_tps"] is None:
+                entry["decode_tps"] = _as_number(row.get("decode_ts"))
 
     completed = sorted(
         depth

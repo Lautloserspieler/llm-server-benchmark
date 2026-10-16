@@ -16,6 +16,7 @@ from typing import Any
 from .llama_bench import flatten_bench_rows
 from .utils import human_bytes
 from .i18n import _
+from .provenance import condition_rows
 from .result_schema import provenance_rows, scalar_summary
 from .telemetry_reporting import system_power_rows
 
@@ -37,7 +38,7 @@ MAX_BARS = 14
 KIND_TITLES = {
     "prompt": "Prompt Processing – Input-Tokens/s",
     "generation": "Text Generation – Output-Tokens/s",
-    "long_context": "Long Context – Output-Tokens/s bei belegtem Kontext",
+    "long_context": "Long Context – Tokens/s gesamt (Prompt + Ausgabe) bei belegtem Kontext",
 }
 
 
@@ -102,6 +103,20 @@ def _bar_chart(entries: list[tuple[str, float]], width: float):
         drawing.add(String(label_width + bar_width + 5, y + 2, _fmt(value),
                            fontName="Helvetica-Bold", fontSize=7.5, fillColor=HexColor(INK)))
     return drawing
+
+
+def _wrap_cells(rows: list[list[str]]) -> list[list[Any]]:
+    """Zellen als Paragraph setzen, damit lange Feldnamen/Werte umbrechen statt zu ueberlappen.
+
+    Die erste Zeile (Kopf) bleibt Text; Zellinhalte sind bereits escaped.
+    """
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+
+    style = ParagraphStyle("cell", fontName="Helvetica", fontSize=7.5, leading=9, textColor=HexColor(INK),
+                           wordWrap="CJK")
+    return [rows[0]] + [[Paragraph(str(cell), style) for cell in row] for row in rows[1:]]
 
 
 def _table(data: list[list[str]], col_widths: list[float], numeric_from: int = 2):
@@ -224,20 +239,7 @@ def _memory_bandwidth_rows(telemetry: dict[str, Any]) -> list[list[str]]:
 
 
 def _provenance_rows(summary: dict[str, Any]) -> list[list[str]]:
-    tools = summary.get("tools") or {}
-    binary = (tools.get("llama_bench") or {}).get("binary") or {}
-    bench_cfg = (summary.get("config") or {}).get("benchmark") or {}
-    sha = binary.get("sha256") or "nicht berechnet"
-    return [
-        [_("Konfigurations-Fingerabdruck"), str(summary.get("config_fingerprint") or "—")],
-        [_("llmbench-Version"), str(summary.get("llmbench_version") or "—")],
-        [_("llama.cpp-Build"), ", ".join(tools.get("llama_cpp_build_ids") or []) or _("unbekannt")],
-        [_("llama-bench SHA256"), sha[:48]],
-        [_("Wiederholungen"), str(bench_cfg.get("repetitions") or "—")],
-        [_("Batch / UBatch"), f"{bench_cfg.get('batch_size')} / {bench_cfg.get('ubatch_size')}"],
-        [_("Flash Attention"), str(bench_cfg.get("flash_attention") or "—")],
-        [_("KV-Cache K/V"), f"{bench_cfg.get('cache_type_k')} / {bench_cfg.get('cache_type_v')}"],
-    ]
+    return [[label, value] for label, value in condition_rows(summary)]
 
 
 def _soak_block(soak_runs: list[dict[str, Any]], styles: dict[str, Any], width: float) -> list[Any]:
@@ -411,7 +413,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
         "<font face='Helvetica-Bold'>llmbench compare</font> prüft das und meldet Abweichungen.",
         styles["muted"]))
     story.append(Spacer(1, 4))
-    story.append(_table([["Merkmal", "Wert"]] + _provenance_rows(summary),
+    story.append(_table(_wrap_cells([["Merkmal", "Wert"]] + [[escape(c) for c in r] for r in _provenance_rows(summary)]),
                         [width * 0.28, width * 0.72], numeric_from=99))
 
     if value_provenance:
@@ -433,7 +435,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
                 escape(origin_label),
                 escape(detail or str(item.get("reason") or "")),
             ])
-        story.append(_table(rows, [width * 0.38, width * 0.20, width * 0.16, width * 0.26], numeric_from=99))
+        story.append(_table(_wrap_cells(rows), [width * 0.38, width * 0.20, width * 0.16, width * 0.26], numeric_from=99))
 
     warnings = summary.get("warnings") or []
     if warnings:

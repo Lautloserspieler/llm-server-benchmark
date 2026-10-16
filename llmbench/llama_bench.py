@@ -399,7 +399,10 @@ def run_llama_bench(
     args = _test_args(_base_args(exe, model_path, bench_cfg, profile), bench_cfg, test_kind)
 
     timeout_s = _benchmark_timeout_seconds(bench_cfg, profile)
-    monitor = ResourceMonitor(float(bench_cfg.get("resource_sample_interval", 0.5)))
+    monitor = ResourceMonitor(
+        float(bench_cfg.get("resource_sample_interval", 0.5)),
+        ignored_process_names=tuple(bench_cfg.get("ignore_gpu_processes") or ()),
+    )
     # Erst der Monitor (wartet ggf. bis zu 15 s auf eine ruhige GPU), dann die
     # Zeitmessung - sonst zaehlt die Wartezeit zur Benchmark-Dauer.
     monitor.start()

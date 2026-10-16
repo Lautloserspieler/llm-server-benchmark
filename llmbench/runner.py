@@ -245,6 +245,7 @@ def _run_suite(
 
     backend = get_backend(cfg)
 
+    seen_run_warnings: set[str] = set()
     summary: dict[str, Any] = {
         "schema_version": 2,
         "llmbench_version": __version__,
@@ -464,6 +465,11 @@ def _run_suite(
                     build_ids.update(build_ids_from_rows(result))
                     for warn in [*(result.get("warnings") or []),
                                  *(result.get("telemetry") or {}).get("warnings", [])]:
+                        # Dieselbe Telemetrie-Warnung (z. B. dauerhaft laufende Hintergrundprozesse)
+                        # nicht fuer jeden Teiltest wiederholen.
+                        if warn in seen_run_warnings:
+                            continue
+                        seen_run_warnings.add(warn)
                         summary["warnings"].append(f"{model['name']}/{profile['name']}/{kind}: {warn}")
                         reporter.note(warn)
                     profile_result["benchmarks"][kind] = result

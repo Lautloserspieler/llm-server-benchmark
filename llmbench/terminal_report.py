@@ -20,6 +20,7 @@ from .llama_bench import flatten_bench_rows
 from .report import fms, fnum
 from .utils import human_bytes
 from .i18n import _
+from .provenance import condition_rows
 from .result_schema import scalar_summary
 from .telemetry_reporting import system_power_rows
 
@@ -124,20 +125,7 @@ def _warnings_panel(summary: dict[str, Any]) -> Panel | None:
 
 
 def _provenance_table(summary: dict[str, Any]) -> Table:
-    tools = summary.get("tools") or {}
-    bench = (tools.get("llama_bench") or {}).get("binary") or {}
-    build_ids = tools.get("llama_cpp_build_ids") or []
-    cfg = (summary.get("config") or {}).get("benchmark") or {}
-    rows = [
-        (_("Konfigurations-Fingerabdruck"), summary.get("config_fingerprint")),
-        (_("llmbench-Version"), summary.get("llmbench_version")),
-        (_("llama.cpp-Build"), ", ".join(build_ids) or _("unbekannt")),
-        (_("llama-bench SHA256"), bench.get("sha256") or _("nicht berechnet")),
-        (_("Wiederholungen"), cfg.get("repetitions")),
-        (_("Batch / UBatch"), f"{cfg.get('batch_size')} / {cfg.get('ubatch_size')}"),
-        (_("Flash Attention"), cfg.get("flash_attention")),
-        (_("KV-Cache K/V"), f"{cfg.get('cache_type_k')} / {cfg.get('cache_type_v')}"),
-    ]
+    rows = condition_rows(summary)
     table = Table(
         title=_("Nachweis der Testbedingungen"), title_style="bold", title_justify="left",
         box=box.SIMPLE, show_header=False, pad_edge=False,

@@ -242,6 +242,16 @@ def _ollama_timings(data: dict[str, Any]) -> dict[str, Any]:
     return timings
 
 
+def _server_rate(timings: dict[str, Any], n_key: str, ms_key: str) -> float | None:
+    """Tokens/s aus serverseitig gemessenen Zaehlern und Zeiten (None, wenn unvollstaendig)."""
+    try:
+        n = float(timings[n_key])
+        ms = float(timings[ms_key])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return n / (ms / 1000.0) if n > 0 and ms > 0 else None
+
+
 async def _raise_for_status(resp: httpx.Response) -> None:
     """Wie raise_for_status(), nimmt aber den Fehlertext des Servers mit auf.
 
@@ -422,6 +432,7 @@ def _row(
     n_depth: int,
     backend_name: str,
     workload_tokens: int | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Ergebniszeile im Format, das flatten_bench_rows() liest.
 
@@ -448,6 +459,7 @@ def _row(
         "samples_ts": samples,
         "repetitions": len(samples),
         "workload_tokens": workload_tokens,
+        **(extra or {}),
     }
 
 
@@ -496,6 +508,7 @@ async def _run_prompt_kind(
     for n in bench_cfg["prompt_tokens"]:
         samples: list[float] = []
         workload_tokens = 0
+        used_server = 0
         for rep in range(reps):
             prompt = build_filler_prompt(int(n), _nonce(f"pp{n}", rep))
             cfg = _completion_cfg(bench_cfg, max_tokens=1)
@@ -508,12 +521,24 @@ async def _run_prompt_kind(
                 continue
             ttft = res["ttft_seconds"] or res["duration_seconds"]
             tokens = res["prompt_tokens"] or int(n)
-            if ttft and ttft > 0:
+            # Ollama meldet die Prefill-Zeit selbst (ohne HTTP-/Tokenisierungs-Overhead
+            # und ohne Modellladezeit); bei kurzen Prompts ist das deutlich stabiler als
+            # die Wanduhr-TTFT.
+            server_rate = (
+                _server_rate(res["server_timings"], "prompt_n", "prompt_ms")
+                if api_style == API_STYLE_OLLAMA_NATIVE else None
+            )
+            if server_rate is not None:
+                samples.append(server_rate)
+                workload_tokens += int(tokens)
+                used_server += 1
+            elif ttft and ttft > 0:
                 samples.append(tokens / ttft)
                 workload_tokens += int(tokens)
         rows.append(_row(
             f"pp{n}", samples, n_prompt=int(n), n_gen=0, n_depth=0,
             backend_name=backend_name, workload_tokens=workload_tokens,
+            extra={"timing_source": "server" if used_server == len(samples) and samples else "wallclock"},
         ))
     return rows
 
@@ -535,6 +560,7 @@ async def _run_generation_kind(
     for n in bench_cfg["generation_tokens"]:
         samples: list[float] = []
         workload_tokens = 0
+        used_server = 0
         for rep in range(reps):
             prompt = f"{_nonce(f'tg{n}', rep)} {_SHORT_PROMPT}"
             # ignore_eos und min_tokens zusammen: das erste erlaubt dem Modell
@@ -561,12 +587,21 @@ async def _run_generation_kind(
                 )
             ttft = res["ttft_seconds"] or 0.0
             gen_seconds = res["duration_seconds"] - ttft
-            if gen_seconds > 0 and produced:
+            server_rate = (
+                _server_rate(res["server_timings"], "predicted_n", "predicted_ms")
+                if api_style == API_STYLE_OLLAMA_NATIVE else None
+            )
+            if server_rate is not None:
+                samples.append(server_rate)
+                workload_tokens += int(produced)
+                used_server += 1
+            elif gen_seconds > 0 and produced:
                 samples.append(produced / gen_seconds)
                 workload_tokens += int(produced)
         rows.append(_row(
             f"tg{n}", samples, n_prompt=0, n_gen=int(n), n_depth=0,
             backend_name=backend_name, workload_tokens=workload_tokens,
+            extra={"timing_source": "server" if used_server == len(samples) and samples else "wallclock"},
         ))
     return rows
 
@@ -596,6 +631,8 @@ async def _run_long_context_kind(
         depth = int(depth)
         name = f"pg{prompt_tokens}+{gen_tokens}@d{depth}" if depth else f"pg{prompt_tokens}+{gen_tokens}"
         samples: list[float] = []
+        prefill_samples: list[float] = []
+        decode_samples: list[float] = []
         num_ctx = bench_cfg.get("ollama_num_ctx") if api_style == API_STYLE_OLLAMA_NATIVE else None
         if num_ctx is not None and depth + prompt_tokens + gen_tokens > int(num_ctx):
             # Ollama kuerzt zu lange Prompts still auf num_ctx; der Messwert truege
@@ -624,8 +661,24 @@ async def _run_long_context_kind(
             duration = res["duration_seconds"]
             if duration > 0:
                 samples.append((consumed + produced) / duration)
-        rows.append(_row(name, samples, n_prompt=prompt_tokens, n_gen=gen_tokens,
-                         n_depth=depth, backend_name=backend_name))
+            # Prefill und Decode getrennt ausweisen, soweit der Server Zeiten meldet;
+            # der kombinierte Wert allein steigt mit der Tiefe, ohne dass etwas schneller wird.
+            timings = res["server_timings"] or {}
+            for n_key, ms_key, bucket in (
+                ("prompt_n", "prompt_ms", prefill_samples),
+                ("predicted_n", "predicted_ms", decode_samples),
+            ):
+                rate = _server_rate(timings, n_key, ms_key)
+                if rate is not None:
+                    bucket.append(rate)
+        rows.append(_row(
+            name, samples, n_prompt=prompt_tokens, n_gen=gen_tokens,
+            n_depth=depth, backend_name=backend_name,
+            extra={
+                "prefill_ts": statistics.fmean(prefill_samples) if prefill_samples else None,
+                "decode_ts": statistics.fmean(decode_samples) if decode_samples else None,
+            },
+        ))
     return rows
 
 
@@ -668,7 +721,10 @@ async def _run_http_bench_async(
     details: list[dict[str, Any]] = []
     errors: list[str] = []
 
-    monitor = ResourceMonitor(float(bench_cfg.get("resource_sample_interval", 0.5)))
+    monitor = ResourceMonitor(
+        float(bench_cfg.get("resource_sample_interval", 0.5)),
+        ignored_process_names=tuple(bench_cfg.get("ignore_gpu_processes") or ()),
+    )
     # Erst der Monitor (wartet ggf. auf eine ruhige GPU), dann die Zeitmessung.
     monitor.start()
     started = time.perf_counter()

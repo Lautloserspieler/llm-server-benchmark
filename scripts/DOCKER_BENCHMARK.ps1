@@ -397,7 +397,7 @@ function Setup-DockerHost {
     # Im Host-Modus ist Docker fuer Ollama auch ohne NVIDIA ausreichend.
     # Die CUDA-Anforderungen gelten nur fuer den expliziten Voll-Docker-Modus.
     if ($Action -eq 'Host' -and (Test-DockerDesktopReady)) {
-        Write-UiOk (T 'docker.desktop_ready')
+        Write-UiOk (T 'docker.ready')
         return
     }
     Assert-NvidiaDriver

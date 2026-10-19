@@ -46,7 +46,7 @@ Write-UiHeader (T 'setup.title') (T 'setup.mode' $mode)
 
 try {
     if ($mode -ne 'native') {
-        Write-UiSection 'Docker Desktop + WSL2 + NVIDIA CUDA'
+        Write-UiSection 'Docker Desktop / WSL2 (NVIDIA optional for Ollama)'
         $dockerAction = if ($mode -eq 'docker') { 'Setup' } else { 'Host' }
         Invoke-ChildScript 'DOCKER_BENCHMARK.ps1' @('-Action', $dockerAction)
         $rc = $script:ChildExitCode

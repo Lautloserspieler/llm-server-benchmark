@@ -394,11 +394,16 @@ function Ensure-BenchmarkImage {
 }
 
 function Setup-DockerHost {
-    # Im normalen auto-Modus wird nur der Docker/GPU-Host vorbereitet.
-    # Das grosse llmbench-CUDA-Image ist erst fuer den expliziten Voll-Docker-Modus noetig.
+    # Im Host-Modus ist Docker fuer Ollama auch ohne NVIDIA ausreichend.
+    # Die CUDA-Anforderungen gelten nur fuer den expliziten Voll-Docker-Modus.
+    if ($Action -eq 'Host' -and (Test-DockerDesktopReady)) {
+        Write-UiOk (T 'docker.ready')
+        return
+    }
     Assert-NvidiaDriver
     Ensure-WslUbuntu
     Ensure-DockerDesktop
+    if ($Action -eq 'Host') { return }
     Initialize-DockerEnvironment
     Test-DockerGpu
 }

@@ -162,13 +162,18 @@ function Invoke-BenchmarkRun {
     & $VenvPython -m llmbench bootstrap --config $Config --root $Root --llama-dir $LlamaDir --models-dir $ModelsDir
     if ($LASTEXITCODE -ne 0) { throw (T 'start.bootstrap_failed') }
 
-    Write-UiSection (T 'start.backend_title')
-    & $VenvPython -m llmbench select-backend --root $Root --config $Config --choose-only
-    if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
+    # Setup hat Backend und Modelle bereits gespeichert. Nur bei ausdruecklichem
+    # Wunsch erneut fragen; sonst keine Downloads bzw. Modellwechsel beim Start.
+    $selectionState = (& $VenvPython -c "import yaml; c=yaml.safe_load(open(r'$ConfigPath',encoding='utf-8')) or {}; print('ready' if (c.get('tools') or {}).get('backend') and c.get('models') else 'missing')").Trim()
+    if ($env:LLMBENCH_RECONFIGURE -eq '1' -or $selectionState -ne 'ready') {
+        Write-UiSection (T 'start.backend_title')
+        & $VenvPython -m llmbench select-backend --root $Root --config $Config --choose-only
+        if ($LASTEXITCODE -ne 0) { throw (T 'start.backend_select_failed' $LASTEXITCODE) }
 
-    Write-UiSection (T 'setup.section_models')
-    & $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir --prepare
-    if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
+        Write-UiSection (T 'setup.section_models')
+        & $VenvPython -m llmbench select-models --config $Config --models-dir $ModelsDir --prepare
+        if ($LASTEXITCODE -ne 0) { throw (T 'start.model_select_failed' $LASTEXITCODE) }
+    }
 
     $doctorData = Get-DoctorData
     $configuredModels = @($doctorData.models)

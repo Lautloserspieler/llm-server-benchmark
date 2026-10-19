@@ -457,3 +457,23 @@ def test_llama_probe_also_starts_llama_server(tmp_path, server_exit, expected_su
     if server_exit:
         assert f"EXIT={server_exit}" in proc.stdout
         assert "llama-server:" in proc.stdout
+
+
+def test_windows_host_setup_accepts_cpu_only_docker():
+    """Host orchestration must check working Docker before requiring NVIDIA."""
+    source = (ROOT / "scripts" / "DOCKER_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    body = source.split("function Setup-DockerHost {", 1)[1].split("function Setup-DockerBenchmark", 1)[0]
+    assert body.index("Test-DockerDesktopReady") < body.index("Assert-NvidiaDriver")
+    assert "if ($Action -eq 'Host'" in body
+    assert "(T 'docker.ready')" in body
+
+
+def test_saved_selection_is_not_reasked_by_default():
+    source = (ROOT / "scripts" / "START_BENCHMARK.ps1").read_text(encoding="utf-8-sig")
+    assert "LLMBENCH_RECONFIGURE" in source
+    assert "selectionState -ne 'ready'" in source
+
+
+def test_setup_selects_backend_before_models():
+    source = (ROOT / "scripts" / "SETUP.ps1").read_text(encoding="utf-8-sig")
+    assert source.index("'select-backend'") < source.index("'select-models'")

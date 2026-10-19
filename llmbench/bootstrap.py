@@ -296,10 +296,13 @@ def bootstrap_config(
         llama_dir_path = Path(llama_dir) if llama_dir else root / "tools" / "llama.cpp"
         if not llama_dir_path.is_absolute():
             llama_dir_path = root / llama_dir_path
-        warnings.append(
-            f"llama-bench und llama-server wurden unter {llama_dir_path} nicht gefunden. "
-            "Die Pfade werden trotzdem eingetragen; 'llmbench doctor' pruefen."
-        )
+        # Container-Backends benoetigen keine nativen llama.cpp-Executables.
+        existing_backend = (read_config_file(config_path).get('tools') or {}).get('backend', 'llama_cpp')
+        if existing_backend == 'llama_cpp':
+            warnings.append(
+                f"llama-bench und llama-server wurden unter {llama_dir_path} nicht gefunden. "
+                "Die Pfade werden trotzdem eingetragen; 'llmbench doctor' pruefen."
+            )
     llama_dir_path = llama_dir_path.resolve()
 
     models_dir_path = Path(models_dir) if models_dir else root / "models"

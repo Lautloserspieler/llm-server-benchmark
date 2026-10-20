@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-from unittest.mock import Mock
+import yaml
 
 from llmbench import docker_backend, llama_cpp_setup
 
@@ -30,7 +29,7 @@ def test_docker_pull_failure_is_reported(monkeypatch):
     monkeypatch.setattr(docker_backend, "_require_docker", lambda: "docker")
     monkeypatch.setattr(
         docker_backend.subprocess, "run",
-        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 1),
+        lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1),
     )
     with pytest.raises(RuntimeError, match="fehlgeschlagen"):
         docker_backend.pull_image("ollama/ollama:test")
@@ -45,15 +44,26 @@ def test_llama_existing_install_must_match_pinned_version(tmp_path, monkeypatch)
     state.write_text(json.dumps({"tag": "b10000", "backend": "cpu"}), encoding="utf-8")
     monkeypatch.setattr(llama_cpp_setup, "probe", lambda _: (True, "OK"))
     assert not llama_cpp_setup._existing_install_ok(
-        llama_dir, state, lambda msg: None, desired_tag="b11748"
+        llama_dir, state, lambda _msg: None, desired_tag="b11748"
     )
     assert llama_cpp_setup._existing_install_ok(
-        llama_dir, state, lambda msg: None, desired_tag="b10000"
+        llama_dir, state, lambda _msg: None, desired_tag="b10000"
     )
 
 
-def test_bootstrap_has_no_legacy_company_name():
-    from llmbench import bootstrap
+def test_bootstrap_migrates_legacy_company_name(tmp_path):
+    from llmbench.bootstrap import bootstrap_config
 
-    source = Path(bootstrap.__file__).read_text(encoding="utf-8")
-    assert "Firmenweiter LLM Server Benchmark" not in source
+    root = tmp_path
+    (root / "models").mkdir()
+    (root / "benchmark.yaml").write_text(
+        yaml.safe_dump({
+            "project": {"name": "Firmenweiter LLM Server Benchmark"},
+            "tools": {"backend": "ollama"},
+            "models": [],
+        }),
+        encoding="utf-8",
+    )
+    bootstrap_config(root / "benchmark.yaml", root, root / "tools" / "llama.cpp", root / "models")
+    cfg = yaml.safe_load((root / "benchmark.yaml").read_text(encoding="utf-8"))
+    assert cfg["project"]["name"] == "LLM Server Benchmark"

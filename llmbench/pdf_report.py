@@ -389,7 +389,7 @@ def generate_run_pdf(summary: dict[str, Any], path: str | Path) -> Path:
 
     story.append(Paragraph(f"Benchmark-Bericht {server_name}", styles["title"]))
     project = str(summary.get("project") or "").strip()
-    prefix = f"{project} &middot; " if project and project != "LLM Server Benchmark" else ""
+    prefix = f"{project} &middot; " if project and project not in ("LLM Server Benchmark", "Firmenweiter LLM Server Benchmark") else ""
     story.append(Paragraph(
         f"{prefix}Start 
         f"{summary.get('started_at') or '—'} &middot; Ende {summary.get('finished_at') or '—'}",

@@ -436,7 +436,7 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
         (_("GPU"), _gpu_text(hw)),
     ]
     project = str(summary.get("project") or "").strip()
-    prefix = f"{_('Projekt')}: {esc(project)} · " if project and project != "LLM Server Benchmark" else ""
+    prefix = f"{_('Projekt')}: {esc(project)} · " if project and project not in ("LLM Server Benchmark", "Firmenweiter LLM Server Benchmark") else ""
     body = [
         "<!doctype html><html lang='de'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width,initial-scale=1'>",

@@ -323,7 +323,7 @@ def bootstrap_config(
     markers = [dict(marker) for marker in existing_markers if isinstance(marker, dict)] if isinstance(existing_markers, list) else []
 
     cfg.setdefault("project", {})
-    cfg["project"].setdefault("name", "Firmenweiter LLM Server Benchmark")
+    cfg["project"].setdefault("name", "LLM Server Benchmark")
     cfg["project"].setdefault("server_name", None)
     cfg["project"].setdefault("output_dir", "results")
     # Ohne ausdrueckliche Sprache gilt die beim Start gewaehlte (LLMBENCH_LANG bzw.

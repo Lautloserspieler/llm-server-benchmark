@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Setup- und Reporting-Fixes (AMD-/Windows-Praxistest)
+
+- Docker-Image-Downloads und das Entpacken der Layer für Ollama, TGI und vLLM werden jetzt live im Terminal angezeigt.
+- llama.cpp auf `b11748` fixiert; bereits installierte Builds mit einer abweichenden hinterlegten Version werden unter Windows und Linux nicht mehr stillschweigend wiederverwendet.
+- Firmeninterne Projektbezeichnung aus Beispielkonfiguration und Bootstrap-Standard entfernt. Der überflüssige Standard-Projektname entfällt in Terminal-, HTML- und PDF-Berichten; benutzerdefinierte Projektnamen bleiben sichtbar.
+
+
 ### Backend-Auswahl in Setup und Benchmarkstart
 
 - `setup.bat` / `setup.sh` führen im Standardmodus die Host-Orchestrierung weiter und bieten

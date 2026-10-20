@@ -435,13 +435,15 @@ def generate_run_html(summary: dict[str, Any], path: str | Path) -> None:
         (_("RAM"), human_bytes(hw.get("memory", {}).get("total_bytes"))),
         (_("GPU"), _gpu_text(hw)),
     ]
+    project = str(summary.get("project") or "").strip()
+    prefix = f"{_('Projekt')}: {esc(project)} · " if project and project != "LLM Server Benchmark" else ""
     body = [
         "<!doctype html><html lang='de'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width,initial-scale=1'>",
         f"<title>{esc(summary.get('server_name'))} – LLM Benchmark</title><style>{CSS}</style>",
         "</head><body><main>",
         f"<h1>{_('LLM Server Benchmark')} – {esc(summary.get('server_name'))}</h1>",
-        f"<p class='muted'>{_('Projekt')}: {esc(summary.get('project'))} · {_('Start')}: {esc(summary.get('started_at'))} "
+        f"<p class='muted'>{prefix}{_('Start')}: {esc(summary.get('started_at'))} "
         f"· {_('Energieplan')}: {esc(hw.get('power_scheme') or _('unbekannt'))}</p>",
         "<div class='cards'>",
     ]

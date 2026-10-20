@@ -317,6 +317,7 @@ def _existing_install_ok(
     state_file: Path,
     log: LogFn,
     desired_backend: str | None = None,
+    desired_tag: str | None = None,
 ) -> bool:
     bench = llama_dir / "llama-bench"
     server = llama_dir / "llama-server"
@@ -329,6 +330,10 @@ def _existing_install_ok(
     try:
         state = json.loads(state_file.read_text(encoding="utf-8"))
     except Exception:
+        return False
+
+    if desired_tag and state.get("tag") != desired_tag and state.get("source_ref") != desired_tag:
+        log(f"llama.cpp-Version abweichend: installiert={state.get('tag') or state.get('source_ref')}, erwartet={desired_tag}. Aktualisiere.")
         return False
 
     installed_backend = str(state.get("backend") or "").lower()
@@ -611,7 +616,8 @@ def ensure_llama_cpp(
     os_key, arch = target_platform()
     desired_backend = _desired_existing_backend(os_key, arch)
 
-    if not force and _existing_install_ok(llama_dir, state_file, log, desired_backend):
+    desired_tag = pinned_tag(root, tag)
+    if not force and _existing_install_ok(llama_dir, state_file, log, desired_backend, desired_tag):
         return json.loads(state_file.read_text(encoding="utf-8"))
 
     releases: list[dict[str, Any]] = []

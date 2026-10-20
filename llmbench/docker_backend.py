@@ -174,7 +174,22 @@ def pull_image(image: str, log: LogFn | None = None) -> None:
     """Laedt ein Image herunter. Ein bereits vorhandenes Image wird aktualisiert."""
     log = log or _noop
     log(_("Lade Docker-Image {image} ...").format(image=image))
-    _run(["pull", image], log=log, timeout=PULL_TIMEOUT_SECONDS)
+    # Stream output: Docker may spend time extracting layers after network traffic stops.
+    exe = _require_docker()
+    cmd = [exe, "pull", image]
+    log("$ " + " ".join(cmd))
+    try:
+        proc = subprocess.run(cmd, timeout=PULL_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            _("docker-Befehl hat das Zeitlimit ueberschritten: {cmd}").format(cmd=" ".join(cmd))
+        ) from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            _("docker-Befehl fehlgeschlagen ({code}): {cmd}").format(
+                code=proc.returncode, cmd=" ".join(cmd)
+            )
+        )
     log(_("Docker-Image {image} ist vorhanden.").format(image=image))
 
 

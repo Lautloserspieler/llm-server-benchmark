@@ -64,8 +64,10 @@ def _gpu_text(hw: dict[str, Any]) -> str:
 
 def _header(summary: dict[str, Any]) -> Panel:
     hw = summary.get("hardware", {})
+    project = str(summary.get("project") or "").strip()
+    prefix = f"{_('Projekt')}: {project} · " if project and project not in ("LLM Server Benchmark", "Firmenweiter LLM Server Benchmark") else ""
     subtitle = (
-        f"{_('Projekt')}: {summary.get('project')} · {_('Start')}: {summary.get('started_at')} · "
+        f"{prefix}{_('Start')}: {summary.get('started_at')} · "
         f"{_('Energieplan')}: {hw.get('power_scheme') or _('unbekannt')}"
     )
     return Panel(

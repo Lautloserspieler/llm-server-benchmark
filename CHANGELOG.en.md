@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Setup and reporting fixes (AMD/Windows field test)
+
+- Stream Docker image pull and extraction output for Ollama, TGI and vLLM so setup never appears idle while Docker is working.
+- Pin llama.cpp to `b11748` and reject a cached executable when its recorded version differs from the requested release on both Windows and Linux.
+- Replace the legacy company-specific project name in the example configuration and bootstrap defaults. Omit the redundant default project label from terminal, HTML and PDF reports, while retaining user-defined project names.
+
+
 ### Backend selection in setup and benchmark launch
 
 - `setup.bat` / `setup.sh` continue into host orchestration in the default mode and offer

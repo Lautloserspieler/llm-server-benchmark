@@ -107,6 +107,12 @@ function Test-ExistingLlamaInstall($Nvidia) {
 
     try { $state = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { return $false }
 
+    $pinned = Get-PinnedLlamaTag
+    if ($pinned -and $state.tag -ne $pinned -and $state.source_ref -ne $pinned) {
+        Write-UiStep "llama.cpp Build-Version weicht vom festgelegten Release $pinned ab; Installation wird aktualisiert."
+        return $false
+    }
+
     # Wenn ein moderner CUDA-13-faehiger Treiber vorhanden ist, einen alten
     # cuda-12-Build nicht dauerhaft festhalten. Neu installieren und CUDA 13 nutzen.
     # Nicht, wenn cuda-12 bewusst als Ausweichloesung installiert wurde (fallback_from),

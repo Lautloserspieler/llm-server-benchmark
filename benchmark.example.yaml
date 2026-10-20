@@ -1,5 +1,5 @@
 project:
-  name: "Firmenweiter LLM Server Benchmark"
+  name: "LLM Server Benchmark"
   # Ueberschrift dieses Servers im Vergleich. null = Hostname verwenden.
   server_name: null
   output_dir: "results"

@@ -22,8 +22,8 @@ Beweismaterial belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 | --- | --- | --- | --- |
 | llama.cpp | ✅ fertig | lokales Binary (`llama-bench`/`llama-server`) | Referenz-Backend |
 | vLLM | ✅ fertig (1.6.0) | Docker-Container (`vllm/vllm-openai`) | Phase A |
-| TGI | 🧪 Beta (unveröffentlicht; ausführliche Tests ausstehend) | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-kompatibles `/v1/completions`-Backend |
-| Ollama | 🧪 Beta (unveröffentlicht; ausführliche Tests ausstehend) | Docker-Container (`ollama/ollama`) | Phase 3, native `/api/generate`-API; lokaler GGUF-Import über Blob/Create-APIs |
+| TGI | 🧪 Beta (seit 1.6.5; stabil geplant für 1.7.0) | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-kompatibles `/v1/completions`-Backend |
+| Ollama | ✅ fertig (1.6.5) | Docker-Container (`ollama/ollama`) | Phase 3, native `/api/generate`-API; lokaler GGUF-Import über Blob/Create-APIs |
 
 Neue Backends (vLLM/Ollama/TGI) laufen bewusst **ausschließlich als Docker-Container** —
 kein natives/bare-metal-Setup wie bei llama.cpp. Docker (inklusive
@@ -83,7 +83,7 @@ eine einheitliche, schöne Terminal-Oberfläche.
    unter Windows, nach Neustart automatisch weitermachen, Backend-Auswahl im Setup, Tests der
    Installer in CI.
 3. **Stresstests über Backend-Capabilities** ✅ *umgesetzt/merged* — die Stress-Pfade laufen über `get_backend()`; nicht unterstützte Workloads werden strukturiert mit Begründung übersprungen.
-4. **TGI-Backend** (Phase C) — Beta, ausführliche Praxistests ausstehend; `TgiBackend` ist in der Backend-Factory, der Konfiguration, dem Setup und dem Runner neben `VllmBackend` als containerisiertes, OpenAI-kompatibles HTTP-Backend registriert. **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs) ist ebenfalls als Beta implementiert und muss noch ausführlich getestet werden.
+4. **TGI-Backend** (Phase C) — Beta, ausführliche Praxistests ausstehend; `TgiBackend` ist in der Backend-Factory, der Konfiguration, dem Setup und dem Runner neben `VllmBackend` als containerisiertes, OpenAI-kompatibles HTTP-Backend registriert. **Ollama-Backend** (Phase B, nutzt vorhandene GGUFs) ist in 1.6.5 als stabil ausgeliefert (CPU und GPU).
 
 ## Phasenplan (ursprünglich)
 

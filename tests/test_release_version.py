@@ -22,5 +22,5 @@ def test_release_version_consistency():
 def test_release_changelogs_have_single_version_header():
     for filename in ("CHANGELOG.md", "CHANGELOG.en.md"):
         content = (ROOT / filename).read_text(encoding="utf-8")
-        assert content.count("## 1.6.0\n") == 1
+        assert content.count("## 1.6.5\n") == 1
         assert "community-export" in content

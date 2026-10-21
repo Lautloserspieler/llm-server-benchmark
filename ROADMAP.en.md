@@ -20,8 +20,8 @@ traceable benchmark results backed by evidence instead of isolated tokens/s numb
 | --- | --- | --- | --- |
 | llama.cpp | ✅ complete | local binary (`llama-bench`/`llama-server`) | Reference backend |
 | vLLM | ✅ complete (1.6.0) | Docker container (`vllm/vllm-openai`) | Phase A |
-| TGI | 🧪 Beta (unreleased; extensive testing pending) | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-compatible `/v1/completions` backend |
-| Ollama | 🧪 Beta (unreleased; extensive testing pending) | Docker container (`ollama/ollama`) | Phase 3, native `/api/generate`; local GGUF import through blob/create APIs |
+| TGI | 🧪 Beta (since 1.6.5; stable planned for 1.7.0) | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-compatible `/v1/completions` backend |
+| Ollama | ✅ complete (1.6.5) | Docker container (`ollama/ollama`) | Phase 3, native `/api/generate`; local GGUF import through blob/create APIs |
 
 New server backends such as vLLM/Ollama/TGI are intentionally containerized instead of
 using another native/bare-metal installation path like llama.cpp. Docker, including the
@@ -81,7 +81,7 @@ terminal UI.
 3. **Stress tests through backend capabilities** ✅ *implemented/merged* — stress paths run through `get_backend()` and unsupported workloads are skipped with a structured reason.
 4. **TGI backend** (Phase C) — beta; extensive real-world testing pending; `TgiBackend` is registered in the backend factory,
    config, setup, and runner alongside `VllmBackend` as a containerized, OpenAI-compatible HTTP
-   backend. **Ollama backend** (Phase B, using existing GGUFs where applicable) is also implemented as beta and still needs extensive testing.
+   backend. **Ollama backend** (Phase B, using existing GGUFs where applicable) is released as stable in 1.6.5 (CPU and GPU).
 
 ## Original phase plan
 

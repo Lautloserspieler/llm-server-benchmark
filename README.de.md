@@ -83,8 +83,8 @@ Es sollte außerdem beantworten:
 | --- | --- | --- | --- |
 | **llama.cpp** | ✅ Unterstützt | Nativ | Referenz-Backend mit `llama-bench` und `llama-server` |
 | **vLLM** | ✅ Unterstützt | Docker | OpenAI-kompatibles Serving-Backend |
-| **TGI** | 🧪 Beta (unveröffentlicht) | Docker | Implementiert; ausführliche Praxistests stehen noch aus |
-| **Ollama** | 🧪 Beta (unveröffentlicht) | Docker | Native API implementiert; ausführliche Praxistests stehen noch aus |
+| **TGI** | 🧪 Beta | Docker | Implementiert; ausführliche Praxistests stehen noch aus |
+| **Ollama** | ✅ Unterstützt | Docker | Native API; CPU und GPU |
 
 ### GPU-Telemetrie
 

@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+## 1.6.5
+
+Ollama is now a stable backend (CPU and GPU). TGI ships as beta and is planned to become stable in 1.7.0.
+
 ### Setup and reporting fixes (AMD/Windows field test)
 
 - Stream Docker image pull and extraction output for Ollama, TGI and vLLM so setup never appears idle while Docker is working.

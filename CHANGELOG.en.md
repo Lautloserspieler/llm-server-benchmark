@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Multimodal groundwork (additive, text path unchanged)
+
+- New package `llmbench/tasks/`: `TaskAdapter`/`RuntimeAdapter`, `TaskId` enum, workload registry, and `TextGenerationTask` as a thin description of the existing text path (`runner.py` unchanged).
+- Dataset manifest (`DatasetManifest`, `load_dataset_manifest`) with source, version, license, SHA-256, and sample selection, plus error classes and hash verification.
+- Schema v3 accepts optional `task`, `workload`, and `dataset` fields; older v3 results without them remain readable unchanged. No universal score; missing values are never stored as 0.
+- Architecture documents (`docs/architecture/`) and roadmap updated.
+
 ## 1.6.5
 
 Ollama is now a stable backend (CPU and GPU). TGI ships as beta and is planned to become stable in 1.7.0.

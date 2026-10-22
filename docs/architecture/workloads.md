@@ -81,3 +81,19 @@ Ein Workload muss seine Eingabedaten reproduzierbar identifizieren können. Zuk�
 Dataset-Manifeste sollen mindestens Quelle, Version, Lizenz, Hash und Sample-Auswahl
 festhalten. Öffentlich geteilte Benchmarkprofile dürfen keine vertraulichen
 Unternehmensdaten voraussetzen.
+
+Umgesetzt (Groundwork) in `llmbench/tasks/dataset.py`: `DatasetManifest` ist eine
+validierte, unveränderliche Dataclass mit `id`, `version`, `task`, `source`, `license`,
+`sha256` und `selection` (`all`, `first_n`, `ids`, `random_seeded`; Zufall nur mit
+explizitem Seed). Optional sind `workloads`, `files` (relative Pfade mit eigenem SHA-256)
+und `confidential`. `load_dataset_manifest(path, verify_dir=...)` liefert die Fehlerklassen
+`DatasetManifestFormatError` (Format/JSON/Feld) und `DatasetHashMismatchError`
+(Hash-Abweichung); beide erben von `DatasetManifestError`.
+
+## Registry
+
+`llmbench/tasks/ids.py` enthält `TaskId` (die zehn oben genannten IDs) und eine
+Workload-Registry (`WORKLOADS`) mit den sieben Text-Workloads (implementiert) sowie
+reservierten, noch nicht implementierten IDs (`stt.*`, `tts.*`, `ocr.*`, `image.*`,
+`embedding.*`). Metriken sind pro Workload aufgeführt; es gibt bewusst keinen universellen
+Score.

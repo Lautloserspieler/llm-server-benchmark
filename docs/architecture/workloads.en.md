@@ -79,3 +79,18 @@ Faster output alone must not automatically be treated as better.
 A workload must be able to identify its input data reproducibly. Future dataset manifests
 should record at least source, version, license, hash, and sample selection. Publicly shared
 benchmark profiles must not require confidential business data.
+
+Implemented (groundwork) in `llmbench/tasks/dataset.py`: `DatasetManifest` is a validated,
+immutable dataclass with `id`, `version`, `task`, `source`, `license`, `sha256`, and
+`selection` (`all`, `first_n`, `ids`, `random_seeded`; randomness only with an explicit
+seed). `workloads`, `files` (relative paths with their own SHA-256), and `confidential` are
+optional. `load_dataset_manifest(path, verify_dir=...)` raises `DatasetManifestFormatError`
+(format/JSON/field problems) and `DatasetHashMismatchError` (hash mismatch); both inherit
+from `DatasetManifestError`.
+
+## Registry
+
+`llmbench/tasks/ids.py` contains `TaskId` (the ten IDs above) and a workload registry
+(`WORKLOADS`) with the seven text workloads (implemented) plus reserved, not yet implemented
+IDs (`stt.*`, `tts.*`, `ocr.*`, `image.*`, `embedding.*`). Metrics are listed per workload;
+there is deliberately no universal score.

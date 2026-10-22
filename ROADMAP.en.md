@@ -68,6 +68,16 @@ methods reliably.
 The llama.cpp-specific HTTP operations required by the context/OOM probe now live inside
 the llama.cpp backend instead of the generic stress runner.
 
+## Multimodal Groundwork 🚧 *in progress (unreleased)*
+
+Additive groundwork for future multimodal tasks that leaves the text path untouched:
+package `llmbench/tasks/` with `TaskAdapter`/`RuntimeAdapter`, a task ID enum, a workload
+registry, and `TextGenerationTask`; a validated dataset manifest (source, version, license,
+SHA-256, sample selection); optional `task`/`workload`/`dataset` fields in schema v3
+(deliberately no v4, old results stay readable unchanged). There is no universal score, and
+missing values are never stored as 0. **Not** included yet: multimodal backends, workloads,
+or runner integration. See [docs/architecture/](docs/architecture/README.en.md).
+
 ## Next steps (after 1.6.0)
 
 Everything below must continue to support **both German and English** and use the common

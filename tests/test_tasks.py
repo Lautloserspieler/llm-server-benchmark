@@ -116,3 +116,15 @@ def test_infer_task_view_prefers_recorded_values():
     view = infer_task_view(s)
     assert view["task"] == "ocr" and view["task_inferred"] is False
     assert view["workloads"]["generation"] == "ocr.scanned_pages"
+
+
+def test_infer_task_view_ignores_non_dict_entries():
+    summary = {
+        "models": [
+            "junk", None, 3,
+            {"profiles": ["x", None, {"benchmarks": {"generation": {}, "bad": "str", "n": None}}]},
+        ]
+    }
+    view = infer_task_view(summary)
+    assert view["workloads"]["generation"] == "text.generation"
+    assert view["workloads"]["bad"] is None

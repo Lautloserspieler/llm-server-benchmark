@@ -19,6 +19,12 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SELECTION_METHODS = ("all", "first_n", "ids", "random_seeded")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CHUNK = 1024 * 1024
+# Reserved DOS device names (also with an extension, e.g. "nul.txt").
+_WIN_RESERVED = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 class DatasetManifestError(ValueError):
@@ -38,6 +44,23 @@ def _str(data: dict[str, Any], key: str, where: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise DatasetManifestFormatError(f"{where}: '{key}' must be a non-empty string")
     return value
+
+
+def _check_relative_path(rel: str, where: str) -> None:
+    """Reject paths that are unsafe on any supported OS (incl. Windows/NTFS)."""
+    if "\x00" in rel:
+        raise DatasetManifestFormatError(f"{where}.path must not contain NUL bytes")
+    if ":" in rel:
+        raise DatasetManifestFormatError(f"{where}.path must not contain ':' (drive letters, NTFS streams)")
+    if Path(rel).is_absolute() or rel.startswith(("/", "\\")):
+        raise DatasetManifestFormatError(f"{where}.path must be relative without '..'")
+    for part in rel.replace("\\", "/").split("/"):
+        if part == "..":
+            raise DatasetManifestFormatError(f"{where}.path must be relative without '..'")
+        if part and (part.endswith((".", " ")) and part != "."):
+            raise DatasetManifestFormatError(f"{where}.path segment {part!r} ends with '.' or space")
+        if part.split(".", 1)[0].rstrip(" ").upper() in _WIN_RESERVED:
+            raise DatasetManifestFormatError(f"{where}.path segment {part!r} is a reserved Windows name")
 
 
 def _sha(value: Any, where: str) -> str:
@@ -105,6 +128,19 @@ class DatasetManifest:
     workloads: tuple[str, ...] = ()
     files: tuple[DatasetFile, ...] = ()
     confidential: bool = False
+    # True only after every listed file was hashed on disk and matched
+    # (load_dataset_manifest(verify_dir=...)); never serialized, not compared.
+    verified: bool = field(default=False, compare=False)
+
+    @staticmethod
+    def compute_files_sha256(files: "tuple[DatasetFile, ...] | list[DatasetFile]") -> str:
+        """Aggregate hash: SHA-256 over the sorted lines ``<path>:<sha256>\n``.
+
+        ``path`` uses ``/`` separators, ``sha256`` is lower-case hex; lines are
+        sorted as strings and joined without separator, encoded as UTF-8.
+        """
+        lines = sorted(f"{f.path.replace(chr(92), '/')}:{f.sha256}\n" for f in files)
+        return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
 
     @classmethod
     def from_dict(cls, data: Any) -> "DatasetManifest":
@@ -129,11 +165,7 @@ class DatasetManifest:
             if not isinstance(item, dict):
                 raise DatasetManifestFormatError(f"files[{i}] must be an object")
             rel = _str(item, "path", f"files[{i}]")
-            if (
-                Path(rel).is_absolute() or rel.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", rel)
-                or ".." in rel.replace("\\", "/").split("/")
-            ):
-                raise DatasetManifestFormatError(f"files[{i}].path must be relative without '..'")
+            _check_relative_path(rel, f"files[{i}]")
             size = item.get("size_bytes")
             if size is not None and (isinstance(size, bool) or not isinstance(size, int) or size < 0):
                 raise DatasetManifestFormatError(f"files[{i}].size_bytes must be a non-negative integer")
@@ -141,13 +173,20 @@ class DatasetManifest:
         confidential = data.get("confidential", False)
         if not isinstance(confidential, bool):
             raise DatasetManifestFormatError("manifest: 'confidential' must be a boolean")
+        manifest_sha = _sha(data.get("sha256"), "manifest")
+        if files:
+            expected = cls.compute_files_sha256(files)
+            if expected != manifest_sha:
+                raise DatasetHashMismatchError(
+                    f"manifest sha256 {manifest_sha} does not match the aggregate hash of files[] ({expected})"
+                )
         return cls(
             id=ident,
             version=_str(data, "version", "manifest"),
             task=task,
             source=_str(data, "source", "manifest"),
             license=_str(data, "license", "manifest"),
-            sha256=_sha(data.get("sha256"), "manifest"),
+            sha256=manifest_sha,
             selection=SampleSelection.from_dict(data.get("selection")),
             workloads=tuple(workloads),
             files=tuple(files),
@@ -172,7 +211,8 @@ class DatasetManifest:
 
     def reference(self) -> dict[str, Any]:
         """Compact form recorded in results (``dataset`` field)."""
-        return {"id": self.id, "version": self.version, "sha256": self.sha256, "selection": self.selection.to_dict()}
+        return {"id": self.id, "version": self.version, "sha256": self.sha256,
+                "selection": self.selection.to_dict(), "verified": self.verified}
 
     def verify_files(self, base_dir: Path) -> None:
         """Hash every listed file below ``base_dir``; raise on missing/mismatch."""
@@ -212,4 +252,6 @@ def load_dataset_manifest(path: Path, *, verify_dir: Path | None = None) -> Data
     manifest = DatasetManifest.from_dict(data)
     if verify_dir is not None:
         manifest.verify_files(verify_dir)
+        if manifest.files:  # nothing to verify without files[] -> stays unverified
+            object.__setattr__(manifest, "verified", True)
     return manifest

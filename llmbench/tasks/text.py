@@ -42,8 +42,13 @@ def infer_task_view(summary: dict[str, Any]) -> dict[str, Any]:
     task = explicit if explicit is not None else TaskId.TEXT_GENERATION.value
     workloads: dict[str, str | None] = {}
     for model in summary.get("models") or []:
+        if not isinstance(model, dict):
+            continue
         for profile in model.get("profiles") or []:
-            for kind, bench in (profile.get("benchmarks") or {}).items():
+            if not isinstance(profile, dict):
+                continue
+            benchmarks = profile.get("benchmarks")
+            for kind, bench in (benchmarks.items() if isinstance(benchmarks, dict) else ()):
                 recorded = bench.get("workload") if isinstance(bench, dict) else None
                 workloads.setdefault(kind, recorded or adapter.workload_for_kind(kind))
     return {"task": task, "task_inferred": explicit is None, "workloads": workloads}

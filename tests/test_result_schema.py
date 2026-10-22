@@ -358,3 +358,57 @@ def test_v3_efficiency_rejects_wall_power_claim_disguised_as_component_scope():
 
     with pytest.raises(ResultSchemaError, match="power_scope"):
         encode_v3(raw)
+
+
+# --- additive task / workload / dataset fields (multimodal groundwork) ------
+
+def test_legacy_v3_result_without_task_fields_stays_valid_and_unchanged():
+    encoded = encode_v3(_summary())
+    assert "task" not in encoded and "dataset" not in encoded
+    assert "workload" not in encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]
+    before = copy.deepcopy(encoded)
+    assert validate_summary(encoded) == 3
+    assert encode_v3(encoded) == before
+    assert scalar_summary(encoded)["schema_version"] == 2
+
+
+def test_v3_accepts_task_workload_and_dataset_fields():
+    encoded = encode_v3(_summary())
+    encoded["task"] = "text_generation"
+    encoded["dataset"] = {"id": "d", "version": "1", "sha256": "b" * 64, "selection": {"method": "all"}}
+    encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]["workload"] = "text.generation"
+    assert validate_summary(encoded) == 3
+    projected = scalar_summary(encoded)
+    assert projected["task"] == "text_generation"
+    assert projected["dataset"]["id"] == "d"
+    assert projected["models"][0]["profiles"][0]["benchmarks"]["generation"]["workload"] == "text.generation"
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (lambda s: s.update(task="whisper"), "task"),
+    (lambda s: s.update(task=3), "task"),
+    (lambda s: s.update(dataset="x"), "dataset"),
+    (lambda s: s.update(dataset={"id": "d", "version": "1", "sha256": "nothex"}), "sha256"),
+    (lambda s: s.update(dataset={"id": "", "version": "1", "sha256": "b" * 64}), "dataset.id"),
+    (lambda s: s["models"][0]["profiles"][0]["benchmarks"]["generation"].update(workload="nodot"), "workload"),
+])
+def test_v3_rejects_malformed_task_fields(mutate, match):
+    encoded = encode_v3(_summary())
+    mutate(encoded)
+    with pytest.raises(ResultSchemaError, match=match):
+        validate_summary(encoded)
+
+
+def test_unknown_but_well_formed_workload_id_is_accepted_for_forward_compat():
+    encoded = encode_v3(_summary())
+    encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]["workload"] = "future.thing"
+    assert validate_summary(encoded) == 3
+
+
+def test_missing_values_are_not_coerced_to_zero_with_task_fields():
+    encoded = encode_v3(_summary())
+    encoded["task"] = "text_generation"
+    rows = encoded["models"][0]["profiles"][0]["benchmarks"]["generation"]["rows"]
+    assert rows[1]["avg_ts"]["value"] is None and rows[1]["avg_ts"]["status"] == "unavailable"
+    projected = scalar_summary(encoded)
+    assert projected["models"][0]["profiles"][0]["benchmarks"]["generation"]["rows"][1]["avg_ts"] is None

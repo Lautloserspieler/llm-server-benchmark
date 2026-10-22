@@ -71,6 +71,16 @@ unsupported.
 Die llama.cpp-spezifischen HTTP-Endpunkte für den Kontext-/OOM-Probe liegen nun im
 llama.cpp-Backend statt im generischen Stress-Runner.
 
+## Multimodal Groundwork 🚧 *in Arbeit (unveröffentlicht)*
+
+Additive Vorarbeit für spätere multimodale Tasks, ohne den Textpfad zu verändern:
+Paket `llmbench/tasks/` mit `TaskAdapter`/`RuntimeAdapter`, Task-ID-Enum, Workload-Registry und
+`TextGenerationTask`; validiertes Dataset-Manifest (Quelle, Version, Lizenz, SHA-256,
+Sample-Auswahl); optionale Felder `task`/`workload`/`dataset` in Schema v3 (bewusst kein v4,
+alte Resultate bleiben unverändert lesbar). Es gibt keinen universellen Score, und fehlende
+Werte werden nie als 0 gespeichert. Noch **nicht** enthalten: multimodale Backends, Workloads
+oder Runner-Integration. Siehe [docs/architecture/](docs/architecture/README.md).
+
 ## Nächste Schritte (Stand: nach 1.6.0)
 
 Für alles gilt: **Das Sprachsystem (de/en) muss überall funktionieren**, und alles läuft über

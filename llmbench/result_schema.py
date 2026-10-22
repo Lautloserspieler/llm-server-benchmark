@@ -479,7 +479,46 @@ def _encode_efficiency_v3(efficiency: dict[str, Any]) -> None:
             )
 
 
+def _validate_task_fields(summary: dict[str, Any]) -> None:
+    """Validate the optional, additive task/workload/dataset fields of v3.
+
+    All of them may be absent (every result written before the multimodal
+    groundwork); absence is never an error and never defaulted on disk.
+    """
+    from .tasks.ids import TaskId, is_valid_workload_id_shape
+    from .tasks.dataset import SHA256_RE
+
+    if "task" in summary:
+        task = summary["task"]
+        if not isinstance(task, str) or task not in {t.value for t in TaskId}:
+            _fail("task", f"unknown task id {task!r}")
+    if "dataset" in summary:
+        dataset = summary["dataset"]
+        if not isinstance(dataset, dict):
+            _fail("dataset", "must be an object")
+        for key in ("id", "version"):
+            if not isinstance(dataset.get(key), str) or not dataset[key]:
+                _fail(f"dataset.{key}", "must be a non-empty string")
+        digest = dataset.get("sha256")
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            _fail("dataset.sha256", "must be 64 lowercase hex characters")
+        if "selection" in dataset and not isinstance(dataset["selection"], dict):
+            _fail("dataset.selection", "must be an object")
+    for mi, model in enumerate(summary.get("models") or []):
+        if not isinstance(model, dict):
+            continue  # reported by the main walk
+        for pi, profile in enumerate(model.get("profiles") or []):
+            benchmarks = profile.get("benchmarks") if isinstance(profile, dict) else None
+            if not isinstance(benchmarks, dict):
+                continue
+            for kind, benchmark in benchmarks.items():
+                if isinstance(benchmark, dict) and "workload" in benchmark:
+                    if not is_valid_workload_id_shape(benchmark["workload"]):
+                        _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}.workload", "must be a '<group>.<name>' id")
+
+
 def _walk_v3(summary: dict[str, Any]) -> None:
+    _validate_task_fields(summary)
     backend = summary.get("backend")
     if not isinstance(backend, dict) or not isinstance(backend.get("id"), str) or not backend["id"]:
         _fail("backend", "requires a non-empty id")

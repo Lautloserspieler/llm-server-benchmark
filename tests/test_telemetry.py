@@ -417,15 +417,61 @@ def test_intel_provider_discovery_failures_fail_to_initialize(monkeypatch):
     assert IntelProvider().initialize() is False
 
 
-def test_intel_provider_skips_failing_device_and_shutdown_clears_state(monkeypatch):
+def test_intel_provider_failing_device_keeps_position_with_none_metrics(monkeypatch):
     _fake_xpu_smi(monkeypatch, {0: None, 1: _xpu_stats(XPUM_STATS_GPU_UTILIZATION=9)})
     provider = IntelProvider()
     assert provider.initialize()
     samples = provider.sample_gpus()
-    assert [s.index for s in samples] == [1]
+    # Device 0 fell out: it keeps its slot (monitor.py indexes positionally).
+    assert [s.index for s in samples] == [0, 1]
+    dead, alive = samples
+    assert dead.util_gpu_percent is None and dead.util_memory_percent is None
+    assert dead.memory_used_bytes is None and dead.temperature_c is None and dead.power_w is None
+    assert dead.compute_pids == []
+    assert alive.util_gpu_percent == 9.0
     provider.shutdown()
     assert provider.initialized is False
     assert provider.sample_gpus() == []
+
+
+def test_intel_provider_ignores_memory_temperature(monkeypatch):
+    _fake_xpu_smi(monkeypatch, {0: _xpu_stats(XPUM_STATS_MEMORY_TEMPERATURE=70), 1: "{}"})
+    provider = IntelProvider()
+    assert provider.initialize()
+    assert provider.sample_gpus()[0].temperature_c is None
+
+
+def test_intel_provider_uses_short_subprocess_timeout(monkeypatch):
+    seen = []
+
+    def _run(cmd, **kwargs):
+        seen.append((cmd[1], kwargs.get("timeout")))
+        return _cp(stdout=_XPU_DISCOVERY if cmd[1] == "discovery" else _xpu_stats())
+
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda name: name == "xpu-smi")
+    monkeypatch.setattr("llmbench.telemetry.run_capture", _run)
+    provider = IntelProvider()
+    provider.initialize()
+    provider.sample_gpus()
+    assert [t for c, t in seen if c == "stats"] == [3, 3]
+
+
+def test_nvidia_provider_failing_device_keeps_position(monkeypatch):
+    fake = _install_fake_pynvml(monkeypatch, handle_count=2)
+
+    def _mem(h):
+        if h == 0:
+            raise RuntimeError("GPU fell off the bus")
+        return _FakeMemInfo(used=1000, total=8000)
+
+    fake.nvmlDeviceGetMemoryInfo = _mem
+    provider = NvidiaProvider()
+    provider.initialize()
+    samples = provider.sample_gpus()
+    assert [s.index for s in samples] == [0, 1]
+    assert samples[0].util_gpu_percent is None and samples[0].memory_used_bytes is None
+    assert samples[0].compute_pids == []
+    assert samples[1].util_gpu_percent == 42.0
 
 
 def test_get_telemetry_provider_returns_bare_intel_provider_when_only_intel_succeeds(monkeypatch):

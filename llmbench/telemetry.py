@@ -22,6 +22,20 @@ class GpuSample:
     compute_pids: list[int]
 
 
+def _empty_sample(index: int) -> GpuSample:
+    """Placeholder for a device that could not be read this round (all None)."""
+    return GpuSample(
+        index=index,
+        util_gpu_percent=None,
+        util_memory_percent=None,
+        memory_used_bytes=None,
+        memory_total_bytes=None,
+        temperature_c=None,
+        power_w=None,
+        compute_pids=[],
+    )
+
+
 class TelemetryProvider(abc.ABC):
     """Base class for hardware telemetry providers."""
 
@@ -117,7 +131,9 @@ class NvidiaProvider(TelemetryProvider):
                     )
                 )
             except Exception:
-                continue
+                # Keep the slot: monitor.py and CompositeProvider index
+                # positionally, so skipping a device would shift the others.
+                out.append(_empty_sample(idx))
         return out
 
     def shutdown(self) -> None:
@@ -293,11 +309,14 @@ class IntelProvider(TelemetryProvider):
     """
 
     TELEMETRY_SOURCE: str = "xpu_smi"
+    # Per-device subprocess timeout; kept short so a hung xpu-smi cannot stall
+    # the monitor loop for long (a dead device costs one timeout per sample).
+    _STATS_TIMEOUT_S = 3
 
     _UTIL_TYPES = ("XPUM_STATS_GPU_UTILIZATION",)
     _MEM_UTIL_TYPES = ("XPUM_STATS_MEMORY_UTILIZATION",)
     _MEM_USED_TYPES = ("XPUM_STATS_MEMORY_USED",)  # MiB
-    _TEMP_TYPES = ("XPUM_STATS_GPU_CORE_TEMPERATURE", "XPUM_STATS_MEMORY_TEMPERATURE")
+    _TEMP_TYPES = ("XPUM_STATS_GPU_CORE_TEMPERATURE",)  # no memory-temp fallback: different sensor
     _POWER_TYPES = ("XPUM_STATS_POWER",)
     _MEM_TOTAL_KEYS = ("memory_physical_size_byte", "memory_physical_size_bytes")
 
@@ -358,16 +377,18 @@ class IntelProvider(TelemetryProvider):
                 return value
         return None
 
-    def _sample_device(self, dev_id: int) -> GpuSample | None:
+    def _sample_device(self, dev_id: int) -> GpuSample:
+        """Sample one device; on any failure return an all-None sample so the
+        device keeps its position in the list."""
         try:
-            cp = run_capture(["xpu-smi", "stats", "-d", str(dev_id), "-j"], timeout=10)
+            cp = run_capture(["xpu-smi", "stats", "-d", str(dev_id), "-j"], timeout=self._STATS_TIMEOUT_S)
             if cp.returncode != 0:
-                return None
+                return _empty_sample(dev_id)
             data = json.loads(cp.stdout)
         except Exception:
-            return None
+            return _empty_sample(dev_id)
         if not isinstance(data, dict):
-            return None
+            return _empty_sample(dev_id)
         metrics: dict[str, Any] = {}
         for entry in data.get("device_level") or []:
             if isinstance(entry, dict) and "metrics_type" in entry:
@@ -389,12 +410,7 @@ class IntelProvider(TelemetryProvider):
     def sample_gpus(self) -> list[GpuSample]:
         if not self.initialized:
             return []
-        out: list[GpuSample] = []
-        for dev_id in self._devices:
-            sample = self._sample_device(dev_id)
-            if sample is not None:
-                out.append(sample)
-        return out
+        return [self._sample_device(dev_id) for dev_id in self._devices]
 
     def shutdown(self) -> None:
         self.initialized = False

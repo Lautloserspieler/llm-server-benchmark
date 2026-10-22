@@ -5,9 +5,9 @@ import time
 from pathlib import Path
 
 from llmbench.backends import backend_name, get_backend
-from llmbench.config import load_config, resolve_path
+from llmbench.config import load_config
 from llmbench.i18n import _
-from llmbench.stress.base import require_capabilities
+from llmbench.stress.base import require_capabilities, resolve_model_ref
 from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -71,7 +71,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
     if skipped is not None:
         return skipped
 
-    model_path = resolve_path(model["path"], cfg)
+    model_path = resolve_model_ref(model["path"], cfg, name)
     print_section(_("KV-Cache / Kontext-OOM-Stresstest"))
     print_msg(_("Modell: {name}").format(name=model["name"]))
 
@@ -101,7 +101,11 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
         )
         stage_started = time.perf_counter()
         try:
-            proc, command = backend.start_server(
+            # In einem Worker-Thread: Container-Backends (Ollama) warten in
+            # start_server synchron auf ihre API und duerfen dabei nicht in
+            # der laufenden Event-Loop haengen.
+            proc, command = await asyncio.to_thread(
+                backend.start_server,
                 model_path,
                 profile,
                 endpoint_cfg,
@@ -120,6 +124,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
                 "context_target": level,
                 "context_size": endpoint_cfg["context_size"],
                 "status": "startup_failed",
+                "failure_category": "startup_failed",
                 "error": str(exc),
                 "duration_seconds": time.perf_counter() - stage_started,
             }
@@ -134,11 +139,20 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
             break
 
         try:
-            probe = await backend.probe_context(base_url, level, endpoint_cfg)
+            try:
+                probe = await backend.probe_context(base_url, level, endpoint_cfg)
+            except Exception as exc:  # noqa: BLE001 - ein defekter Probe darf den Ergebnisbericht nicht verhindern
+                probe = {
+                    "ok": False,
+                    "target_prompt_tokens": level,
+                    "failure_category": "probe_error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
             result = {
                 "context_target": level,
                 "context_size": endpoint_cfg["context_size"],
                 "status": "ok" if probe["ok"] else "request_failed",
+                "failure_category": probe.get("failure_category"),
                 "cold_start_seconds": cold_start,
                 "server_command": command,
                 "probe": probe,

@@ -60,10 +60,13 @@ they use `get_backend()` and check the capabilities they require.
 
 An unsupported workload is not a benchmark failure: it writes structured
 `status: skipped` data with `reason: backend_capability_missing` and returns exit code 2.
-llama.cpp supports the four existing stress paths. vLLM can run the generic
-TTFT/concurrency stress workload; OOM probing, local quantization comparison, and
-multi-model stress remain explicitly unsupported until their adapters can implement those
-methods reliably.
+llama.cpp supports the four existing stress paths. vLLM, TGI, and Ollama run the generic
+TTFT/concurrency stress workload and the HTTP context/OOM probe
+(`llmbench/backends/http_probe.py`, including failure classification `out_of_memory`,
+`context_exceeded`, `context_truncated`, `timeout`, `connection_error`; tested against a
+fake HTTP server, not yet validated against real GPU containers). Local quantization
+comparison and multi-model stress remain explicitly unsupported there because no
+reproducible adapter contract exists (see docs/architecture/backends.md).
 
 The llama.cpp-specific HTTP operations required by the context/OOM probe now live inside
 the llama.cpp backend instead of the generic stress runner.

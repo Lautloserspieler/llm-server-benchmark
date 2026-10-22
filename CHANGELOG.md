@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### Stresstests für vLLM, TGI und Ollama
+
+- Neuer generischer HTTP-Kontext-/OOM-Probe (`llmbench/backends/http_probe.py`): vLLM, TGI und
+  Ollama deklarieren `oom_probe` jetzt wahrheitsgemäß als unterstützt. Fehlschläge erhalten eine
+  `failure_category` (`out_of_memory`, `context_exceeded`, `context_truncated`, `timeout`,
+  `connection_error`, ...). Ollama-Prompts, die still auf `num_ctx` gekürzt wurden, zählen nicht als bestanden.
+- OOM-Stresstest: Server-Start läuft in einem Worker-Thread (behebt den Fehler "event loop is already
+  running" bei Ollama), ein fehlschlagender Probe erzeugt weiterhin ein `oom.json`, und Runtime-Modellreferenzen
+  (`llama3.2:3b`, `org/model`) werden nicht mehr zu Dateipfaden aufgelöst (auch im TTFT-Stresstest).
+- `quantization` und `multi_model` bleiben für diese Backends unsupported (`backend_capability_missing`, Exitcode 2);
+  Begründung in `docs/architecture/backends.md`.
+- Tests gegen einen lokalen Fake-HTTP-Server (`tests/test_http_probe.py`): TGI-/vLLM-/Ollama-Antworten, OOM-,
+  Validierungs-, Timeout-, Verbindungsabbruch-, Abbruch- und Cleanup-Fälle sowie TGI-Health und Start/Stopp.
+  Noch nicht gegen echte GPU-/Docker-Läufe validiert.
+
 ## 1.6.5
 
 Ollama ist jetzt ein stabiles Backend (CPU und GPU). TGI wird als Beta ausgeliefert und soll in 1.7.0 stabil werden.

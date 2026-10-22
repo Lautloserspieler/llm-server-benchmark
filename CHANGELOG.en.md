@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+### Review fixes (stress, probe, telemetry, datasets)
+
+- OOM stress test: if `start_server` fails after `docker run`, the container is now cleaned up; `failure_category` is omitted on success; `startup_failed`/`probe_error` are constants.
+- HTTP probe: `oom` only matches as a word or `oom-kill`/`OOMKilled` (not in `bloom`/`room`), generic `CUDA error` no longer counts as OOM, HTTP 404 with a model marker is classified before the OOM check. Missing token counts are flagged `actual_unverified` and never counted towards `max_stable_prompt_tokens` (llama.cpp legacy behaviour unchanged); the Ollama truncation check no longer fails on tokenizer deviations above 512 tokens.
+- Intel/NVIDIA telemetry: a failed device keeps its position (all values `null`) instead of being skipped; Intel uses only the core temperature and a 3 s `xpu-smi` timeout.
+- Dataset manifest: the aggregate hash over `files[]` is verified, `reference()` carries `verified`; stricter path checks (NUL, `:`, reserved Windows names); `infer_task_view` ignores non-dict items.
+- Model references: shared rule for `runner._model_meta` and stress tests; relative local paths are checked against the config directory instead of the CWD.
+
 ### Intel GPU telemetry (Phase E)
 
 - New `IntelProvider` reads utilization, VRAM, temperature and power draw via `xpu-smi` (detection through `xpu-smi discovery -j`, one `xpu-smi stats -d <id> -j` call per GPU). Metrics that are not reported stay empty (`null`) instead of `0`; `compute_pids` stays empty. `CompositeProvider` combines Intel with NVIDIA/AMD where present; telemetry source `xpu_smi`.

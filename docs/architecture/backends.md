@@ -145,6 +145,15 @@ Relevante Profileinstellungen:
 - `ollama_num_gpu` -> Ollama `num_gpu`
 - `gpu_layers: 0` oder `ollama_num_gpu: 0` hält den Container im CPU-Modus
 
+**Hinweis zum OOM-/Kontext-Probe:** Der Ollama-Probe setzt pro Stufe `num_ctx = level + 512`
+und zwingt Ollama damit gegebenenfalls, das Modell mit neuer KontextgrÃ¶ÃŸe neu zu laden.
+`cold_start_seconds` im OOM-Ergebnis beschreibt dann nicht das reale Ladeverhalten
+(Containerstart plus erzwungenes Neuladen). Meldet Ollama kein `prompt_eval_count`, gilt die
+Stufe als bestanden, aber mit `actual_unverified: true`; sie zÃ¤hlt nicht in
+`max_stable_prompt_tokens`. Eine gemeldete LÃ¤nge nahe `num_ctx` ist nur dann
+`context_truncated`, wenn die Zielstufe nicht erreicht wurde; eine Tokenizer-Abweichung Ã¼ber
+512 Tokens fÃ¼hrt nicht zum Fehlschlag (Flag `truncated_at_num_ctx`).
+
 Benchmark-Anfragen verwenden `raw: true`, damit ein Ollama-Modelltemplate den synthetischen
 Benchmark-Prompt nicht verändert. Der aktuelle Adapter stellt `endpoint`, `streaming`,
 `concurrency`, `long_context` und den HTTP-Kontext-/OOM-Probe bereit;

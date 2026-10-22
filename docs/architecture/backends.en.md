@@ -141,6 +141,15 @@ Relevant profile settings:
 - `ollama_num_gpu` -> Ollama `num_gpu`
 - `gpu_layers: 0` or `ollama_num_gpu: 0` keeps the container in CPU mode
 
+**Note on the OOM/context probe:** per level the Ollama probe sets `num_ctx = level + 512`,
+which may force Ollama to reload the model with the new context size. `cold_start_seconds`
+in the OOM result therefore does not describe real load behaviour (container start plus a
+forced reload). If Ollama reports no `prompt_eval_count`, the level counts as passed but
+carries `actual_unverified: true` and does not contribute to `max_stable_prompt_tokens`. A
+reported length close to `num_ctx` is only `context_truncated` when the target level was not
+reached; a tokenizer deviation above 512 tokens does not fail the level (flag
+`truncated_at_num_ctx`).
+
 Benchmark requests use `raw: true` so an Ollama model template does not rewrite the
 synthetic benchmark prompt. The current adapter exposes `endpoint`, `streaming`,
 `concurrency`, `long_context`, and the HTTP context/OOM probe; KV-cache observation,

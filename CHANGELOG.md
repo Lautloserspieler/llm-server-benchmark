@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+### Review-Korrekturen (Stress, Probe, Telemetrie, Datasets)
+
+- OOM-Stresstest: schlÃ¤gt `start_server` nach `docker run` fehl, wird der Container jetzt aufgerÃ¤umt; `failure_category` entfÃ¤llt bei Erfolg; `startup_failed`/`probe_error` sind Konstanten.
+- HTTP-Probe: `oom` nur noch als Wort bzw. `oom-kill`/`OOMKilled` (nicht in `bloom`/`room`), generische `CUDA error` zÃ¤hlen nicht mehr als OOM, HTTP 404 mit Modell-Marker wird vor der OOM-PrÃ¼fung klassifiziert. Fehlende Token-Zahlen werden als `actual_unverified` markiert und nie als `max_stable_prompt_tokens` gewertet (llama.cpp-Altverhalten unverÃ¤ndert); die Ollama-Truncation-PrÃ¼fung scheitert nicht mehr an Tokenizer-Abweichungen Ã¼ber 512 Tokens.
+- Intel/NVIDIA-Telemetrie: ein ausgefallenes Device behÃ¤lt seine Position (alle Werte `null`) statt Ã¼bersprungen zu werden; Intel nutzt nur die Core-Temperatur und ein 3-s-Timeout fÃ¼r `xpu-smi`.
+- Dataset-Manifest: Gesamt-Hash Ã¼ber `files[]` wird geprÃ¼ft, `reference()` trÃ¤gt `verified`; strengere PfadprÃ¼fung (NUL, `:`, reservierte Windows-Namen); `infer_task_view` ignoriert Nicht-Dict-Elemente.
+- Modellreferenzen: gemeinsame Regel fÃ¼r `runner._model_meta` und Stresstests; relative lokale Pfade werden gegen das Konfigurationsverzeichnis statt gegen das CWD geprÃ¼ft.
+
 ### Intel-GPU-Telemetrie (Phase E)
 
 - Neuer `IntelProvider` liest Auslastung, VRAM, Temperatur und Leistungsaufnahme über `xpu-smi` (Erkennung per `xpu-smi discovery -j`, ein `xpu-smi stats -d <id> -j`-Aufruf pro GPU). Nicht gelieferte Werte bleiben leer (`null`) statt `0`; `compute_pids` bleibt leer. Der `CompositeProvider` kombiniert Intel bei Bedarf mit NVIDIA/AMD; Telemetriequelle `xpu_smi`.

@@ -88,6 +88,17 @@ optional. `load_dataset_manifest(path, verify_dir=...)` raises `DatasetManifestF
 (format/JSON/field problems) and `DatasetHashMismatchError` (hash mismatch); both inherit
 from `DatasetManifestError`.
 
+**Aggregate hash:** for manifests with `files`, the manifest `sha256` is the SHA-256 over the
+sorted lines `<path>:<sha256>` + newline (`
+`) of all `files[]` (paths with `/`, lower-case
+hashes, lines sorted as strings and concatenated without separator, UTF-8). A mismatch raises
+`DatasetHashMismatchError`. With `load_dataset_manifest(..., verify_dir=...)` all files are
+additionally hashed on disk; only then does `reference()` report `"verified": true`.
+Manifests without `files` stay allowed but are never verified (`"verified": false`). File
+paths must not contain NUL or `:` (NTFS streams, drive letters), reserved Windows names
+(`CON`, `NUL`, `PRN`, `AUX`, `COM1-9`, `LPT1-9`, also with an extension), or segments ending
+in `.` or a space (`DatasetManifestFormatError`).
+
 ## Registry
 
 `llmbench/tasks/ids.py` contains `TaskId` (the ten IDs above) and a workload registry

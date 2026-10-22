@@ -25,6 +25,7 @@ from llmbench.backends.http_probe import (
     CATEGORY_MODEL,
     CATEGORY_OOM,
     CATEGORY_SERVER,
+    CATEGORY_STARTUP_FAILED,
     CATEGORY_TIMEOUT,
     CATEGORY_TRUNCATED,
     classify_failure,
@@ -768,3 +769,77 @@ def test_quantization_and_multi_model_stay_structured_skips(monkeypatch, backend
     assert q["status"] == "skipped"
     assert q["reason"] == "backend_capability_missing"
     assert q["missing_capabilities"] == ["quantization"]
+
+
+def test_oom_stress_start_server_failure_after_run_container_stops_container(
+    monkeypatch, server, docker, tmp_path: Path
+):
+    cfg = _oom_config(server.url, "org/Model", [2048])
+    backend = TgiBackend(TGI_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+    real_start = backend.start_server
+    stops_before_raise: list[int] = []
+
+    def start_then_raise(*args, **kwargs):
+        real_start(*args, **kwargs)  # run_container succeeded, container is up
+        stops_before_raise.append(len(docker.stopped))
+        raise RuntimeError("late failure after docker run")
+
+    monkeypatch.setattr(backend, "start_server", start_then_raise)
+
+    rc = _run_oom(monkeypatch, cfg, backend, "tgi", tmp_path)
+
+    assert rc == 1
+    assert len(docker.runs) == 1
+    assert len(docker.stopped) > stops_before_raise[0]  # container was stopped in the error path
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["levels"][0]["status"] == "startup_failed"
+    assert "late failure" in doc["levels"][0]["error"]
+
+
+def test_oom_stress_llama_cpp_start_failure_without_proc_does_not_crash(monkeypatch, server, tmp_path: Path):
+    from llmbench.backends.llama_cpp import LlamaCppBackend
+
+    cfg = _oom_config(server.url, "model.gguf", [2048])
+    backend = LlamaCppBackend("llama-bench", "llama-server")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("spawn failed")
+
+    monkeypatch.setattr(backend, "start_server", boom)
+    stopped: list = []
+    monkeypatch.setattr(backend, "stop_server", lambda proc: stopped.append(proc))
+
+    rc = _run_oom(monkeypatch, cfg, backend, "llama_cpp", tmp_path)
+
+    assert rc == 1
+    assert stopped == []  # nothing was started, nothing to stop
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["levels"][0]["failure_category"] == CATEGORY_STARTUP_FAILED
+
+
+def test_oom_stress_success_level_omits_failure_category(monkeypatch, server, docker, tmp_path: Path):
+    server.routes[("GET", "/health")] = (200, {})
+    server.routes[("POST", "/v1/completions")] = _openai_ok()
+    cfg = _oom_config(server.url, "org/Model", [2048])
+    backend = TgiBackend(TGI_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    assert _run_oom(monkeypatch, cfg, backend, "tgi", tmp_path) == 0
+    level = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))["levels"][0]
+    assert level["status"] == "ok"
+    assert "failure_category" not in level
+
+
+def test_oom_stress_unverified_token_count_never_becomes_max_stable(monkeypatch, server, docker, tmp_path: Path):
+    server.routes[("GET", "/api/tags")] = (200, {"models": []})
+    server.routes[("POST", "/api/generate")] = (200, {"response": "ok", "done": True})
+    cfg = _oom_config(server.url, "llama3.2:3b", [2048])
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    rc = _run_oom(monkeypatch, cfg, backend, "ollama", tmp_path)
+
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["levels"][0]["status"] == "ok"
+    assert doc["levels"][0]["probe"]["actual_unverified"] is True
+    assert doc["max_stable_prompt_tokens"] == 0
+    assert doc["status"] == "unverified"
+    assert rc == 1

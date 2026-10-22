@@ -68,7 +68,6 @@ def test_ttft_stress_uses_configured_backend_factory(monkeypatch, tmp_path: Path
     monkeypatch.setattr(ttft, "load_config", lambda _path: _config())
     monkeypatch.setattr(ttft, "get_backend", lambda _cfg: backend)
     monkeypatch.setattr(ttft, "backend_name", lambda _cfg: "fake")
-    monkeypatch.setattr(ttft, "resolve_path", lambda path, _cfg: path)
     monkeypatch.setattr(
         ttft,
         "run_endpoint_load",

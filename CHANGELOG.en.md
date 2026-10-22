@@ -15,6 +15,21 @@
 - Schema v3 accepts optional `task`, `workload`, and `dataset` fields; older v3 results without them remain readable unchanged. No universal score; missing values are never stored as 0.
 - Architecture documents (`docs/architecture/`) and roadmap updated.
 
+### Stress tests for vLLM, TGI, and Ollama
+
+- New generic HTTP context/OOM probe (`llmbench/backends/http_probe.py`): vLLM, TGI, and Ollama now
+  truthfully declare `oom_probe` as supported. Failures get a `failure_category` (`out_of_memory`,
+  `context_exceeded`, `context_truncated`, `timeout`, `connection_error`, ...). Ollama prompts silently
+  truncated to `num_ctx` do not count as passed.
+- OOM stress: server start runs in a worker thread (fixes "event loop is already running" with Ollama), a
+  failing probe still produces an `oom.json`, and runtime model references (`llama3.2:3b`, `org/model`) are
+  no longer resolved to file paths (also in the TTFT stress test).
+- `quantization` and `multi_model` stay unsupported for these backends (`backend_capability_missing`, exit
+  code 2); rationale in `docs/architecture/backends.md`.
+- Tests against a local fake HTTP server (`tests/test_http_probe.py`): TGI/vLLM/Ollama responses, OOM,
+  validation, timeout, dropped-connection, cancellation, and cleanup cases plus TGI health and start/stop.
+  Not yet validated against real GPU/Docker runs.
+
 ## 1.6.5
 
 Ollama is now a stable backend (CPU and GPU). TGI ships as beta and is planned to become stable in 1.7.0.

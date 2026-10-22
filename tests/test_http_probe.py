@@ -159,6 +159,19 @@ def _openai_ok(limit: int | None = None, calls: list | None = None):
         (500, "internal error", CATEGORY_SERVER),
         (401, "unauthorized", CATEGORY_CLIENT),
         (200, "", CATEGORY_INVALID),
+        # "oom" only counts as a word / kill marker, never as a substring
+        (404, "model 'bigscience/bloom' does not exist", CATEGORY_MODEL),
+        (400, "bigscience/bloom does not exist", CATEGORY_MODEL),
+        (500, "no room left in the queue", CATEGORY_SERVER),
+        (500, "container was OOM-killed", CATEGORY_OOM),
+        (500, "process exited: OOMKilled", CATEGORY_OOM),
+        (500, "kernel: oom-kill event", CATEGORY_OOM),
+        (500, "worker died: OOM", CATEGORY_OOM),
+        # a generic CUDA error is not an OOM
+        (500, "CUDA error: an illegal memory access was encountered", CATEGORY_SERVER),
+        (500, "CUDA error: out of memory", CATEGORY_OOM),
+        # 404 + model marker wins over OOM-looking text
+        (404, "model 'x' not found, try pulling it first (oom)", CATEGORY_MODEL),
     ],
 )
 def test_classify_failure_by_status_and_text(status, text, expected):
@@ -406,7 +419,9 @@ def test_ollama_probe_memory_error_is_out_of_memory(server):
 
 
 def test_ollama_probe_error_in_200_body_is_reported(server):
-    server.routes[("POST", "/api/generate")] = (200, {"error": "llama runner process has terminated: CUDA error"})
+    server.routes[("POST", "/api/generate")] = (
+        200, {"error": "llama runner process has terminated: CUDA error: out of memory"}
+    )
 
     result = asyncio.run(
         probe_context_http(server.url, 2048, {"model": "m"}, api_style=API_STYLE_OLLAMA_NATIVE)
@@ -414,6 +429,50 @@ def test_ollama_probe_error_in_200_body_is_reported(server):
 
     assert result["ok"] is False
     assert result["failure_category"] == CATEGORY_OOM
+
+
+def test_ollama_probe_missing_prompt_eval_count_is_unverified(server):
+    server.routes[("POST", "/api/generate")] = (200, {"response": "ok", "done": True})
+
+    result = asyncio.run(
+        probe_context_http(server.url, 2048, {"model": "m", "context_size": 2560}, api_style=API_STYLE_OLLAMA_NATIVE)
+    )
+
+    assert result["ok"] is True
+    assert result["actual_prompt_tokens"] is None
+    assert result["actual_unverified"] is True
+
+
+def test_ollama_probe_measured_count_is_not_flagged_unverified(server):
+    server.routes[("POST", "/api/generate")] = _ollama_handler()
+    result = asyncio.run(
+        probe_context_http(server.url, 2048, {"model": "m", "context_size": 2560}, api_style=API_STYLE_OLLAMA_NATIVE)
+    )
+    assert result["ok"] is True
+    assert "actual_unverified" not in result
+
+
+def test_ollama_probe_tokenizer_overshoot_beyond_margin_is_not_a_false_failure(server):
+    """Tokenizer deviates >512 tokens: Ollama clips to num_ctx, but the level was reached."""
+    server.routes[("POST", "/api/generate")] = lambda body: (
+        200, {"response": "ok", "done": True, "prompt_eval_count": int(body["options"]["num_ctx"])}
+    )
+
+    result = asyncio.run(
+        probe_context_http(server.url, 2048, {"model": "m", "context_size": 2560}, api_style=API_STYLE_OLLAMA_NATIVE)
+    )
+
+    assert result["ok"] is True
+    assert result["actual_prompt_tokens"] == 2560
+    assert result["truncated_at_num_ctx"] is True
+
+
+def test_openai_probe_missing_usage_is_unverified(server):
+    server.routes[("POST", "/v1/completions")] = (200, {"choices": [{"text": "ok"}]})
+    result = asyncio.run(
+        probe_context_http(server.url, 2048, {"model": "m"}, api_style=API_STYLE_OPENAI_COMPLETIONS)
+    )
+    assert result["ok"] is True and result["actual_unverified"] is True
 
 
 def test_ollama_probe_unknown_model_is_model_not_found(server):

@@ -15,6 +15,7 @@ Antworten landen in ``server_error``/``client_error`` und nie als ``ok``.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -32,11 +33,13 @@ CATEGORY_MODEL = "model_not_found"
 CATEGORY_SERVER = "server_error"
 CATEGORY_CLIENT = "client_error"
 CATEGORY_INVALID = "invalid_response"
+# Set by the stress driver (llmbench.stress.oom), not by the HTTP probe itself.
+CATEGORY_STARTUP_FAILED = "startup_failed"
+CATEGORY_PROBE_ERROR = "probe_error"
 
 _OOM_MARKERS = (
     "out of memory",
     "outofmemory",
-    "cuda error",
     "cudamalloc",
     "cuda_error_out_of_memory",
     "cublas_status_alloc_failed",
@@ -46,8 +49,10 @@ _OOM_MARKERS = (
     "insufficient memory",
     "requires more system memory",
     "memory layout cannot be allocated",
-    "oom",
 )
+# "oom" as a bare substring would hit "bloom"/"room"; match it as a word or as
+# the kernel/runtime kill markers instead.
+_OOM_RE = re.compile(r"\boom\b|oom[-_ ]?kill(?:ed|er)?", re.IGNORECASE)
 _CONTEXT_MARKERS = (
     "maximum context length",
     "max_model_len",
@@ -64,8 +69,12 @@ _CONTEXT_MARKERS = (
 )
 _MODEL_MARKERS = ("model not found", "not found, try pulling", "does not exist", "no such model")
 
-# Ollama kuerzt zu lange Prompts still auf num_ctx. Ein Prompt, der den
-# Kontext praktisch ausfuellt, gilt daher nicht als bestandener Kontextprobe.
+# Ollama kuerzt zu lange Prompts still auf num_ctx. Meldet Ollama eine
+# Prompt-Laenge nahe num_ctx, ist unklar, ob gekuerzt wurde. Es gilt als
+# Fehlschlag (``context_truncated``) nur, wenn dabei die Zielstufe nicht
+# erreicht wurde (actual < target). Liegt actual >= target (der Tokenizer
+# zaehlt mehr Tokens als die Fuelltext-Schaetzung, ggf. > 512 Abweichung), wurde
+# die Stufe nachweislich verarbeitet: ok, aber mit ``truncated_at_num_ctx``.
 _TRUNCATION_MARGIN_TOKENS = 4
 
 
@@ -79,9 +88,12 @@ def classify_failure(status: int | None, text: str = "", exc: BaseException | No
             # das typische Bild eines OOM-Kills, ohne dass ein Fehlertext existiert.
             return CATEGORY_CONNECTION
     lowered = (text or "").lower()
-    if any(marker in lowered for marker in _OOM_MARKERS):
+    model_hit = any(marker in lowered for marker in _MODEL_MARKERS)
+    if status == 404 and model_hit:
+        return CATEGORY_MODEL
+    if any(marker in lowered for marker in _OOM_MARKERS) or _OOM_RE.search(lowered):
         return CATEGORY_OOM
-    if any(marker in lowered for marker in _MODEL_MARKERS):
+    if model_hit:
         return CATEGORY_MODEL
     if any(marker in lowered for marker in _CONTEXT_MARKERS):
         return CATEGORY_CONTEXT
@@ -117,6 +129,7 @@ def _result(
     status: int | None = None,
     category: str | None = None,
     error: str | None = None,
+    **extra: Any,
 ) -> dict[str, Any]:
     doc: dict[str, Any] = {
         "ok": ok,
@@ -126,6 +139,7 @@ def _result(
     }
     if status is not None:
         doc["http_status"] = status
+    doc.update(extra)
     if not ok:
         doc["failure_category"] = category or CATEGORY_INVALID
         doc["error"] = error or doc["failure_category"]
@@ -230,16 +244,22 @@ async def probe_context_http(
         actual = data.get("prompt_eval_count")
     actual = int(actual) if isinstance(actual, (int, float)) else None
 
+    extra: dict[str, Any] = {}
+    if actual is None:
+        # Der Server meldet keine Token-Zahl: bestanden, aber nicht gemessen.
+        extra["actual_unverified"] = True
     if (
         api_style == API_STYLE_OLLAMA_NATIVE
         and actual is not None
         and num_ctx is not None
         and actual >= num_ctx - _TRUNCATION_MARGIN_TOKENS
     ):
-        return _result(
-            prompt_target, started, ok=False, actual=actual, status=response.status_code,
-            category=CATEGORY_TRUNCATED,
-            error=f"Prompt fuellt num_ctx={num_ctx} vollstaendig aus ({actual} Tokens); "
-                  "Ollama kuerzt vermutlich still.",
-        )
-    return _result(prompt_target, started, ok=True, actual=actual, status=response.status_code)
+        if actual < prompt_target:
+            return _result(
+                prompt_target, started, ok=False, actual=actual, status=response.status_code,
+                category=CATEGORY_TRUNCATED,
+                error=f"Prompt fuellt num_ctx={num_ctx} vollstaendig aus ({actual} Tokens); "
+                      "Ollama kuerzt vermutlich still.",
+            )
+        extra["truncated_at_num_ctx"] = True
+    return _result(prompt_target, started, ok=True, actual=actual, status=response.status_code, **extra)

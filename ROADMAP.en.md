@@ -37,7 +37,7 @@ runtime install/uninstall expectations.
 | --- | --- | --- | --- |
 | NVIDIA | ✅ complete | NVML (`nvidia-ml-py`) | Utilization, VRAM, temperature, power, compute PIDs |
 | AMD | ✅ complete (1.6.0) | `rocm-smi --json` | Phase D, `compute_pids` currently limited |
-| Intel | 📋 planned | `xpu-smi stats -d <id> -j` | Phase E, one subprocess call per GPU |
+| Intel | ✅ complete | `xpu-smi stats -d <id> -j` | Phase E, one subprocess call per GPU; `compute_pids` stays empty |
 
 When multiple GPU vendors are present, `CompositeProvider` (since 1.6.0) can combine
 available providers instead of selecting only the first source.
@@ -102,7 +102,7 @@ sequence is:
 5. **Phase D — AMD GPU telemetry** ✅ *released in 1.6.0*  
    Adds `AmdProvider` using `rocm-smi` and fixes telemetry-source reporting for
    non-NVIDIA providers.
-6. **Phase E — Intel GPU telemetry**  
+6. **Phase E — Intel GPU telemetry** ✅ *implemented (unreleased)*  
    Builds on the same `TelemetryProvider`/`CompositeProvider` infrastructure.
 7. **Phase F, remainder — i18n sweep + templates**  
    Final language and contribution-flow audit after feature phases introduce additional

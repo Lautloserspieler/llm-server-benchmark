@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### Intel GPU telemetry (Phase E)
+
+- New `IntelProvider` reads utilization, VRAM, temperature and power draw via `xpu-smi` (detection through `xpu-smi discovery -j`, one `xpu-smi stats -d <id> -j` call per GPU). Metrics that are not reported stay empty (`null`) instead of `0`; `compute_pids` stays empty. `CompositeProvider` combines Intel with NVIDIA/AMD where present; telemetry source `xpu_smi`.
+
 ## 1.6.5
 
 Ollama is now a stable backend (CPU and GPU). TGI ships as beta and is planned to become stable in 1.7.0.

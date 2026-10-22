@@ -33,6 +33,10 @@ Typical measurements include:
 
 AMD telemetry is collected through `rocm-smi` where available.
 
+## Intel
+
+Intel GPU telemetry is collected through `xpu-smi` (`xpu-smi discovery -j` for detection, `xpu-smi stats -d <id> -j` once per GPU) where available: utilization, VRAM, temperature and power. Values xpu-smi does not report stay empty rather than `0`; compute processes are not listed.
+
 ## Baseline and foreign load
 
 Before load tests, llmbench attempts to capture an idle baseline. Foreign GPU processes are marked as potential interference.

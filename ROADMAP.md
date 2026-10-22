@@ -39,7 +39,7 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 | --- | --- | --- | --- |
 | NVIDIA | ✅ fertig | NVML (`nvidia-ml-py`) | Auslastung, VRAM, Temperatur, Power, Compute-PIDs |
 | AMD | ✅ fertig (1.6.0) | `rocm-smi --json` | Phase D, `compute_pids` bleibt vorerst leer |
-| Intel | 📋 geplant | `xpu-smi stats -d <id> -j` | Phase E, ein Subprozessaufruf pro GPU |
+| Intel | ✅ fertig | `xpu-smi stats -d <id> -j` | Phase E, ein Subprozessaufruf pro GPU; `compute_pids` bleibt leer |
 
 Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
 (seit 1.6.0) alle verfügbaren Provider parallel.
@@ -108,7 +108,7 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
    Unabhängiger Strang, kann parallel zu den Backend-Phasen laufen. Neuer
    `AmdProvider` gegen `rocm-smi`, plus Fix für die aktuell fehlerhafte
    Telemetriequellen-Erkennung bei Nicht-NVIDIA-Providern.
-6. **Phase E — Intel-GPU-Telemetrie**
+6. **Phase E — Intel-GPU-Telemetrie** ✅ *umgesetzt (unveröffentlicht)*
    Direkt im Anschluss an Phase D wegen gemeinsamer Infrastruktur
    (`TelemetryProvider`-ABC, `CompositeProvider`).
 7. **Phase F, Rest — i18n-Sweep + Issue-/PR-Templates**

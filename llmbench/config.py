@@ -502,6 +502,24 @@ def resolve_path(value: str, cfg: dict[str, Any]) -> str:
     base = cfg.get("_config_dir") or os.getcwd()
     return str((Path(base) / p).resolve())
 
+def is_runtime_model_ref(raw: str, cfg: dict[str, Any], backend: str) -> bool:
+    """True if ``raw`` is a runtime/hub reference (``llama3.2:3b``, ``org/model``).
+
+    Only non-llama.cpp backends accept those. A relative value that exists as a
+    file below the config directory (not the CWD) is a local path instead.
+    Shared by ``runner._model_meta`` and ``stress.base.resolve_model_ref``.
+    """
+    raw = str(raw)
+    if (
+        backend == "llama_cpp"
+        or Path(raw).is_absolute()
+        or raw.startswith((".", "~"))
+        or "\\" in raw
+    ):
+        return False
+    return not Path(resolve_path(raw, cfg)).exists()
+
+
 def validate_config(cfg: dict[str, Any]) -> list[str]:
     """Prueft die Konfiguration auf Fehler. Nutzt intern Pydantic fuer die Validierung."""
     try:

@@ -20,6 +20,10 @@ Previously produced result files should remain readable where the available data
 sufficient. A future loader should convert older schema versions into a common internal
 model rather than silently rewriting old files.
 
+Concretely (groundwork): `task`, `workload`, and `dataset` are optional fields in schema v3
+(see [Results](results.en.md)). Old v3 files without these fields remain readable and
+validatable unchanged; there is no silent rewrite. Tests: `tests/test_result_schema.py`.
+
 ## Comparison
 
 Old and new results may only be directly compared when workload-relevant conditions are

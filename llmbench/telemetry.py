@@ -12,13 +12,28 @@ from .utils import command_exists, run_capture
 @dataclass
 class GpuSample:
     index: int
-    util_gpu_percent: float
-    util_memory_percent: float
-    memory_used_bytes: int
-    memory_total_bytes: int
-    temperature_c: float
+    # None = Wert vom Provider nicht lieferbar (nie als 0 erfinden).
+    util_gpu_percent: float | None
+    util_memory_percent: float | None
+    memory_used_bytes: int | None
+    memory_total_bytes: int | None
+    temperature_c: float | None
     power_w: float | None
     compute_pids: list[int]
+
+
+def _empty_sample(index: int) -> GpuSample:
+    """Placeholder for a device that could not be read this round (all None)."""
+    return GpuSample(
+        index=index,
+        util_gpu_percent=None,
+        util_memory_percent=None,
+        memory_used_bytes=None,
+        memory_total_bytes=None,
+        temperature_c=None,
+        power_w=None,
+        compute_pids=[],
+    )
 
 
 class TelemetryProvider(abc.ABC):
@@ -116,7 +131,9 @@ class NvidiaProvider(TelemetryProvider):
                     )
                 )
             except Exception:
-                continue
+                # Keep the slot: monitor.py and CompositeProvider index
+                # positionally, so skipping a device would shift the others.
+                out.append(_empty_sample(idx))
         return out
 
     def shutdown(self) -> None:
@@ -279,6 +296,126 @@ class AmdProvider(TelemetryProvider):
         self.initialized = False
 
 
+class IntelProvider(TelemetryProvider):
+    """xpu-smi-based telemetry for Intel GPUs (Arc / Data Center GPU).
+
+    Discovery via `xpu-smi discovery -j`, then one `xpu-smi stats -d <id> -j`
+    subprocess call per GPU and sample. Like AmdProvider there is no
+    persistent handle, so shutdown() is a no-op. Metrics xpu-smi does not
+    report stay None (never invented as 0); compute_pids is left empty.
+    NOTE: JSON key names follow the documented xpu-smi output
+    (`device_list`, `device_level[].metrics_type/value`); not verified on a
+    real device in this sandbox.
+    """
+
+    TELEMETRY_SOURCE: str = "xpu_smi"
+    # Per-device subprocess timeout; kept short so a hung xpu-smi cannot stall
+    # the monitor loop for long (a dead device costs one timeout per sample).
+    _STATS_TIMEOUT_S = 3
+
+    _UTIL_TYPES = ("XPUM_STATS_GPU_UTILIZATION",)
+    _MEM_UTIL_TYPES = ("XPUM_STATS_MEMORY_UTILIZATION",)
+    _MEM_USED_TYPES = ("XPUM_STATS_MEMORY_USED",)  # MiB
+    _TEMP_TYPES = ("XPUM_STATS_GPU_CORE_TEMPERATURE",)  # no memory-temp fallback: different sensor
+    _POWER_TYPES = ("XPUM_STATS_POWER",)
+    _MEM_TOTAL_KEYS = ("memory_physical_size_byte", "memory_physical_size_bytes")
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._devices: list[int] = []
+        self._totals: dict[int, int | None] = {}
+
+    @staticmethod
+    def _to_float(raw: Any) -> float | None:
+        if raw is None or isinstance(raw, bool):
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def initialize(self) -> bool:
+        self._devices = []
+        self._totals = {}
+        if not command_exists("xpu-smi"):
+            self.initialized = False
+            return False
+        try:
+            cp = run_capture(["xpu-smi", "discovery", "-j"], timeout=10)
+            if cp.returncode != 0:
+                self.initialized = False
+                return False
+            data = json.loads(cp.stdout)
+            for dev in data.get("device_list") or []:
+                if not isinstance(dev, dict):
+                    continue
+                try:
+                    dev_id = int(dev["device_id"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                self._devices.append(dev_id)
+                total = None
+                for key in self._MEM_TOTAL_KEYS:
+                    raw = self._to_float(dev.get(key))
+                    if raw is not None and raw > 0:
+                        total = int(raw)
+                        break
+                self._totals[dev_id] = total
+        except Exception:
+            self._devices = []
+            self._totals = {}
+            self.initialized = False
+            return False
+        self.initialized = bool(self._devices)
+        return self.initialized
+
+    @classmethod
+    def _metric(cls, metrics: dict[str, Any], types: tuple[str, ...]) -> float | None:
+        for t in types:
+            value = cls._to_float(metrics.get(t))
+            if value is not None:
+                return value
+        return None
+
+    def _sample_device(self, dev_id: int) -> GpuSample:
+        """Sample one device; on any failure return an all-None sample so the
+        device keeps its position in the list."""
+        try:
+            cp = run_capture(["xpu-smi", "stats", "-d", str(dev_id), "-j"], timeout=self._STATS_TIMEOUT_S)
+            if cp.returncode != 0:
+                return _empty_sample(dev_id)
+            data = json.loads(cp.stdout)
+        except Exception:
+            return _empty_sample(dev_id)
+        if not isinstance(data, dict):
+            return _empty_sample(dev_id)
+        metrics: dict[str, Any] = {}
+        for entry in data.get("device_level") or []:
+            if isinstance(entry, dict) and "metrics_type" in entry:
+                metrics[str(entry["metrics_type"])] = entry.get("value")
+
+        used_mib = self._metric(metrics, self._MEM_USED_TYPES)
+        used = int(used_mib * 1024 * 1024) if used_mib is not None else None
+        return GpuSample(
+            index=dev_id,
+            util_gpu_percent=self._metric(metrics, self._UTIL_TYPES),
+            util_memory_percent=self._metric(metrics, self._MEM_UTIL_TYPES),
+            memory_used_bytes=used,
+            memory_total_bytes=self._totals.get(dev_id),
+            temperature_c=self._metric(metrics, self._TEMP_TYPES),
+            power_w=self._metric(metrics, self._POWER_TYPES),
+            compute_pids=[],
+        )
+
+    def sample_gpus(self) -> list[GpuSample]:
+        if not self.initialized:
+            return []
+        return [self._sample_device(dev_id) for dev_id in self._devices]
+
+    def shutdown(self) -> None:
+        self.initialized = False
+
+
 class DefaultProvider(TelemetryProvider):
     """Fallback provider that samples nothing for GPUs."""
 
@@ -299,7 +436,7 @@ class CompositeProvider(TelemetryProvider):
     """Combines several vendor providers into one, for multi-vendor systems.
 
     sample_gpus() concatenates each sub-provider's samples in a fixed,
-    deterministic order (NVIDIA first, then AMD - see get_telemetry_provider)
+    deterministic order (NVIDIA, AMD, then Intel - see get_telemetry_provider)
     and reassigns `index` sequentially across the combined list, since
     monitor.py aggregates per-GPU stats by indexing into `s["gpus"][idx]` and
     assumes a stable ordering across samples.
@@ -346,11 +483,8 @@ def get_telemetry_provider() -> TelemetryProvider:
     files (e.g. the common NVIDIA-only case keeps reporting "nvml" instead
     of "composite"). Only when 2+ providers succeed - a rare multi-vendor
     box - do we wrap them in CompositeProvider to combine their samples.
-
-    Extension point: add a future IntelProvider (Phase E) to this list once
-    it exists; no other changes needed here.
     """
-    candidates: list[TelemetryProvider] = [NvidiaProvider(), AmdProvider()]
+    candidates: list[TelemetryProvider] = [NvidiaProvider(), AmdProvider(), IntelProvider()]
     initialized = [p for p in candidates if p.initialize()]
 
     if len(initialized) == 1:

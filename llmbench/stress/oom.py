@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from pathlib import Path
+from typing import Any
 
 from llmbench.backends import backend_name, get_backend
-from llmbench.config import load_config, resolve_path
+from llmbench.backends.http_probe import CATEGORY_PROBE_ERROR, CATEGORY_STARTUP_FAILED
+from llmbench.config import load_config
 from llmbench.i18n import _
-from llmbench.stress.base import require_capabilities
+from llmbench.stress.base import require_capabilities, resolve_model_ref
 from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -43,6 +46,20 @@ def _context_levels(cfg: dict) -> list[int]:
     return sorted(set(levels))
 
 
+def _cleanup_failed_start(backend: Any, name: str, proc: Any) -> None:
+    """Stop whatever a failed start left behind.
+
+    ``start_server`` may raise after ``docker run`` succeeded, so ``proc`` is
+    still None while the container lives. Container backends (vLLM/TGI/Ollama)
+    fall back to their own container name when given None; llama.cpp has no
+    process without a handle, so there is nothing to stop.
+    """
+    if proc is None and name == "llama_cpp":
+        return
+    with contextlib.suppress(Exception):
+        backend.stop_server(proc)
+
+
 async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | Path | None = None) -> int:
     """Ermittelt die praktische KV-/Kontextgrenze durch schrittweise Serverstarts."""
     cfg = load_config(config_path)
@@ -71,7 +88,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
     if skipped is not None:
         return skipped
 
-    model_path = resolve_path(model["path"], cfg)
+    model_path = resolve_model_ref(model["path"], cfg, name)
     print_section(_("KV-Cache / Kontext-OOM-Stresstest"))
     print_msg(_("Modell: {name}").format(name=model["name"]))
 
@@ -87,6 +104,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
 
     results: list[dict] = []
     max_stable = 0
+    unverified_ok = False
     overall_started = time.perf_counter()
 
     for level in levels:
@@ -101,7 +119,11 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
         )
         stage_started = time.perf_counter()
         try:
-            proc, command = backend.start_server(
+            # In einem Worker-Thread: Container-Backends (Ollama) warten in
+            # start_server synchron auf ihre API und duerfen dabei nicht in
+            # der laufenden Event-Loop haengen.
+            proc, command = await asyncio.to_thread(
+                backend.start_server,
                 model_path,
                 profile,
                 endpoint_cfg,
@@ -119,7 +141,8 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
             result = {
                 "context_target": level,
                 "context_size": endpoint_cfg["context_size"],
-                "status": "startup_failed",
+                "status": CATEGORY_STARTUP_FAILED,
+                "failure_category": CATEGORY_STARTUP_FAILED,
                 "error": str(exc),
                 "duration_seconds": time.perf_counter() - stage_started,
             }
@@ -129,12 +152,19 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
                     level=level, error=exc
                 )
             )
-            if proc is not None:
-                backend.stop_server(proc)
+            _cleanup_failed_start(backend, name, proc)
             break
 
         try:
-            probe = await backend.probe_context(base_url, level, endpoint_cfg)
+            try:
+                probe = await backend.probe_context(base_url, level, endpoint_cfg)
+            except Exception as exc:  # noqa: BLE001 - ein defekter Probe darf den Ergebnisbericht nicht verhindern
+                probe = {
+                    "ok": False,
+                    "target_prompt_tokens": level,
+                    "failure_category": CATEGORY_PROBE_ERROR,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
             result = {
                 "context_target": level,
                 "context_size": endpoint_cfg["context_size"],
@@ -144,10 +174,21 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
                 "probe": probe,
                 "duration_seconds": time.perf_counter() - stage_started,
             }
+            if not probe["ok"]:
+                result["failure_category"] = probe.get("failure_category")
             results.append(result)
             if probe["ok"]:
-                max_stable = int(probe.get("actual_prompt_tokens") or level)
-                actual = probe.get("actual_prompt_tokens") or _("unbekannt")
+                measured = probe.get("actual_prompt_tokens")
+                if measured:
+                    max_stable = int(measured)
+                elif name == "llama_cpp":
+                    # Legacy text path: llama.cpp's /tokenize may fail; keep the
+                    # historical fallback to the target level there.
+                    max_stable = level
+                else:
+                    # HTTP backends: only a measured token count counts as verified.
+                    unverified_ok = True
+                actual = measured or _("unbekannt")
                 print_msg(
                     "[OK] "
                     + _("Ziel {level}, tatsaechlich tokenisiert: {actual}").format(
@@ -168,7 +209,7 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
             await asyncio.sleep(1)
 
     result_doc = {
-        "status": "ok" if max_stable else "failed",
+        "status": "ok" if max_stable else ("unverified" if unverified_ok else "failed"),
         "backend": name,
         "model": model["name"],
         "model_path": model_path,

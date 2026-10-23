@@ -68,7 +68,6 @@ def test_ttft_stress_uses_configured_backend_factory(monkeypatch, tmp_path: Path
     monkeypatch.setattr(ttft, "load_config", lambda _path: _config())
     monkeypatch.setattr(ttft, "get_backend", lambda _cfg: backend)
     monkeypatch.setattr(ttft, "backend_name", lambda _cfg: "fake")
-    monkeypatch.setattr(ttft, "resolve_path", lambda path, _cfg: path)
     monkeypatch.setattr(
         ttft,
         "run_endpoint_load",
@@ -105,3 +104,34 @@ def test_oom_stress_skips_unsupported_backend_before_backend_specific_work(monke
     result = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
     assert result["reason"] == "backend_capability_missing"
     assert result["missing_capabilities"] == ["oom_probe"]
+
+
+def test_resolve_model_ref_checks_relative_local_path_against_config_dir(tmp_path, monkeypatch):
+    from llmbench.stress.base import resolve_model_ref
+
+    cfg_dir = tmp_path / "cfg"
+    (cfg_dir / "models").mkdir(parents=True)
+    (cfg_dir / "models" / "m.gguf").write_bytes(b"x")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # CWD differs from the config directory
+    cfg = {"_config_dir": str(cfg_dir)}
+
+    assert resolve_model_ref("models/m.gguf", cfg, "vllm") == str((cfg_dir / "models" / "m.gguf").resolve())
+    # a hub reference that exists nowhere stays a reference
+    assert resolve_model_ref("org/Model", cfg, "vllm") == "org/Model"
+    assert resolve_model_ref("llama3.2:3b", cfg, "ollama") == "llama3.2:3b"
+    # llama.cpp always resolves to a file path
+    assert resolve_model_ref("org/Model", cfg, "llama_cpp") == str((cfg_dir / "org" / "Model").resolve())
+
+
+def test_runner_model_meta_uses_same_reference_rule(tmp_path, monkeypatch):
+    from llmbench.runner import _model_meta
+
+    cfg_dir = tmp_path / "cfg"
+    (cfg_dir / "models").mkdir(parents=True)
+    (cfg_dir / "models" / "m.gguf").write_bytes(b"x")
+    monkeypatch.chdir(tmp_path)
+    cfg = {"_config_dir": str(cfg_dir), "project": {"hash_models": False}, "endpoint": {}, "tools": {"backend": "vllm"}}
+    meta = _model_meta({"name": "M", "path": "models/m.gguf"}, cfg)
+    assert meta["path"] == str((cfg_dir / "models" / "m.gguf").resolve())

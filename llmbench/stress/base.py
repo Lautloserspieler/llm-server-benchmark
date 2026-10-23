@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from llmbench.backends.base import BenchmarkBackend
+from llmbench.config import is_runtime_model_ref, resolve_path
 from llmbench.i18n import _
 from llmbench.utils import print_msg, write_json
 
@@ -46,3 +48,14 @@ def require_capabilities(
         style="yellow",
     )
     return SKIPPED_EXIT_CODE
+
+
+def resolve_model_ref(model_path: str, cfg: dict[str, Any], backend_name: str) -> str:
+    """Modellpfad bzw. Runtime-Referenz fuer ``backend.start_server``.
+
+    Nicht-llama.cpp-Backends akzeptieren Referenzen wie ``llama3.2:3b`` oder
+    ``org/model``; diese duerfen nicht zu einem Dateipfad aufgeloest werden
+    (gleiche Regel wie ``runner._model_meta``).
+    """
+    raw = str(model_path)
+    return raw if is_runtime_model_ref(raw, cfg, backend_name) else resolve_path(raw, cfg)

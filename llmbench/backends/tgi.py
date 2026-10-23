@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from .base import BenchmarkBackend
 from .capabilities import BackendCapabilities
+from .http_probe import probe_context_http
 from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
 from ..http_bench import API_STYLE_OPENAI_COMPLETIONS, run_http_bench
@@ -63,7 +64,7 @@ class TgiBackend(BenchmarkBackend):
         concurrency=True,
         long_context=True,
         kv_cache_observation=False,
-        oom_probe=False,
+        oom_probe=True,
         quantization=False,
         multi_model=False,
     )
@@ -276,6 +277,15 @@ class TgiBackend(BenchmarkBackend):
         )
 
     # --------------------------------------------------------- Endpoint-Pfad
+
+    async def probe_context(
+        self,
+        base_url: str,
+        prompt_target: int,
+        endpoint_cfg: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Kontext-/OOM-Probe ueber den HTTP-Endpoint (siehe ``http_probe``)."""
+        return await probe_context_http(base_url, prompt_target, endpoint_cfg, api_style=API_STYLE_OPENAI_COMPLETIONS)
 
     def prepare_endpoint_config(self, endpoint_cfg: dict[str, Any]) -> dict[str, Any]:
         cfg = dict(endpoint_cfg)

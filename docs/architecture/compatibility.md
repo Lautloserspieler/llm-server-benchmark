@@ -20,6 +20,10 @@ Bestehende veröffentlichte Resultate sollen weiterhin lesbar bleiben, soweit di
 ausreichen. Ein zukünftiger Loader soll alte Schema-Versionen in ein gemeinsames internes
 Modell überführen, statt alte Dateien stillschweigend umzuschreiben.
 
+Konkret (Groundwork): `task`, `workload` und `dataset` sind optionale Felder in Schema v3
+(siehe [Ergebnisse](results.md)). Alte v3-Dateien ohne diese Felder bleiben unverändert
+les- und validierbar; es gibt keinen stillen Rewrite. Tests: `tests/test_result_schema.py`.
+
 ## Vergleich
 
 Alte und neue Resultate dürfen nur dann direkt verglichen werden, wenn die für den

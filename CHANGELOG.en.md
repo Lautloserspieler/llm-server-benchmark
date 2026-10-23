@@ -4,6 +4,43 @@
 
 ## Unreleased
 
+- Ollama context probe: `truncate: false` and `shift: false` prevent silent prompt truncation on current servers. A real GPU test with Ollama 0.40.9 otherwise reduced 4,173 input tokens to 514 at `num_ctx=1024`, incorrectly reporting success.
+
+### Review fixes (stress, probe, telemetry, datasets)
+
+- OOM stress test: if `start_server` fails after `docker run`, the container is now cleaned up; `failure_category` is omitted on success; `startup_failed`/`probe_error` are constants.
+- HTTP probe: `oom` only matches as a word or `oom-kill`/`OOMKilled` (not in `bloom`/`room`), generic `CUDA error` no longer counts as OOM, HTTP 404 with a model marker is classified before the OOM check. Missing token counts are flagged `actual_unverified` and never counted towards `max_stable_prompt_tokens` (llama.cpp legacy behaviour unchanged); the Ollama truncation check no longer fails on tokenizer deviations above 512 tokens.
+- Intel/NVIDIA telemetry: a failed device keeps its position (all values `null`) instead of being skipped; Intel uses only the core temperature and a 3 s `xpu-smi` timeout.
+- Dataset manifest: the aggregate hash over `files[]` is verified, `reference()` carries `verified`; stricter path checks (NUL, `:`, reserved Windows names); `infer_task_view` ignores non-dict items.
+- Model references: shared rule for `runner._model_meta` and stress tests; relative local paths are checked against the config directory instead of the CWD.
+- Local review: HTTP probes reject missing/incomplete generations and invalid token counts; dataset manifests with Windows path separators also verify on Linux. Corrected Ruff and mypy errors.
+
+### Intel GPU telemetry (Phase E)
+
+- New `IntelProvider` reads utilization, VRAM, temperature and power draw via `xpu-smi` (detection through `xpu-smi discovery -j`, one `xpu-smi stats -d <id> -j` call per GPU). Metrics that are not reported stay empty (`null`) instead of `0`; `compute_pids` stays empty. `CompositeProvider` combines Intel with NVIDIA/AMD where present; telemetry source `xpu_smi`.
+
+### Multimodal groundwork (additive, text path unchanged)
+
+- New package `llmbench/tasks/`: `TaskAdapter`/`RuntimeAdapter`, `TaskId` enum, workload registry, and `TextGenerationTask` as a thin description of the existing text path (`runner.py` unchanged).
+- Dataset manifest (`DatasetManifest`, `load_dataset_manifest`) with source, version, license, SHA-256, and sample selection, plus error classes and hash verification.
+- Schema v3 accepts optional `task`, `workload`, and `dataset` fields; older v3 results without them remain readable unchanged. No universal score; missing values are never stored as 0.
+- Architecture documents (`docs/architecture/`) and roadmap updated.
+
+### Stress tests for vLLM, TGI, and Ollama
+
+- New generic HTTP context/OOM probe (`llmbench/backends/http_probe.py`): vLLM, TGI, and Ollama now
+  truthfully declare `oom_probe` as supported. Failures get a `failure_category` (`out_of_memory`,
+  `context_exceeded`, `context_truncated`, `timeout`, `connection_error`, ...). Ollama prompts silently
+  truncated to `num_ctx` do not count as passed.
+- OOM stress: server start runs in a worker thread (fixes "event loop is already running" with Ollama), a
+  failing probe still produces an `oom.json`, and runtime model references (`llama3.2:3b`, `org/model`) are
+  no longer resolved to file paths (also in the TTFT stress test).
+- `quantization` and `multi_model` stay unsupported for these backends (`backend_capability_missing`, exit
+  code 2); rationale in `docs/architecture/backends.md`.
+- Tests against a local fake HTTP server (`tests/test_http_probe.py`): TGI/vLLM/Ollama responses, OOM,
+  validation, timeout, dropped-connection, cancellation, and cleanup cases plus TGI health and start/stop.
+  Not yet validated against real GPU/Docker runs.
+
 ## 1.6.5
 
 Ollama is now a stable backend (CPU and GPU). TGI ships as beta and is planned to become stable in 1.7.0.

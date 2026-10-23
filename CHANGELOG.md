@@ -4,6 +4,43 @@
 
 ## Unreleased
 
+- Ollama-Kontextprobe: `truncate: false` und `shift: false` verhindern stille Prompt-Kuerzung auf aktuellen Servern. Im GPU-Praxistest mit Ollama 0.40.9 wurden sonst 4.173 Eingabe-Tokens bei `num_ctx=1024` auf 514 gekuerzt und faelschlich als bestanden gemeldet.
+
+### Review-Korrekturen (Stress, Probe, Telemetrie, Datasets)
+
+- OOM-Stresstest: schlägt `start_server` nach `docker run` fehl, wird der Container jetzt aufgeräumt; `failure_category` entfällt bei Erfolg; `startup_failed`/`probe_error` sind Konstanten.
+- HTTP-Probe: `oom` nur noch als Wort bzw. `oom-kill`/`OOMKilled` (nicht in `bloom`/`room`), generische `CUDA error` zählen nicht mehr als OOM, HTTP 404 mit Modell-Marker wird vor der OOM-Prüfung klassifiziert. Fehlende Token-Zahlen werden als `actual_unverified` markiert und nie als `max_stable_prompt_tokens` gewertet (llama.cpp-Altverhalten unverändert); die Ollama-Truncation-Prüfung scheitert nicht mehr an Tokenizer-Abweichungen über 512 Tokens.
+- Intel/NVIDIA-Telemetrie: ein ausgefallenes Device behält seine Position (alle Werte `null`) statt übersprungen zu werden; Intel nutzt nur die Core-Temperatur und ein 3-s-Timeout für `xpu-smi`.
+- Dataset-Manifest: Gesamt-Hash über `files[]` wird geprüft, `reference()` trägt `verified`; strengere Pfadprüfung (NUL, `:`, reservierte Windows-Namen); `infer_task_view` ignoriert Nicht-Dict-Elemente.
+- Modellreferenzen: gemeinsame Regel für `runner._model_meta` und Stresstests; relative lokale Pfade werden gegen das Konfigurationsverzeichnis statt gegen das CWD geprüft.
+- Lokale Review-Pruefung: HTTP-Probes verwerfen fehlende/unvollstaendige Generierungen und ungueltige Tokenzahlen; Dataset-Manifeste mit Windows-Pfadtrennern werden auch unter Linux verifiziert. Ruff- und mypy-Fehler korrigiert.
+
+### Intel-GPU-Telemetrie (Phase E)
+
+- Neuer `IntelProvider` liest Auslastung, VRAM, Temperatur und Leistungsaufnahme über `xpu-smi` (Erkennung per `xpu-smi discovery -j`, ein `xpu-smi stats -d <id> -j`-Aufruf pro GPU). Nicht gelieferte Werte bleiben leer (`null`) statt `0`; `compute_pids` bleibt leer. Der `CompositeProvider` kombiniert Intel bei Bedarf mit NVIDIA/AMD; Telemetriequelle `xpu_smi`.
+
+### Multimodal Groundwork (additiv, Textpfad unverändert)
+
+- Neues Paket `llmbench/tasks/`: `TaskAdapter`/`RuntimeAdapter`, `TaskId`-Enum, Workload-Registry und `TextGenerationTask` als dünne Beschreibung des bestehenden Textpfads (`runner.py` unverändert).
+- Dataset-Manifest (`DatasetManifest`, `load_dataset_manifest`) mit Quelle, Version, Lizenz, SHA-256 und Sample-Auswahl sowie Fehlerklassen und Hash-Prüfung.
+- Schema v3 akzeptiert optionale Felder `task`, `workload` und `dataset`; ältere v3-Resultate ohne diese Felder bleiben unverändert lesbar. Kein universeller Score, fehlende Werte werden nie als 0 gespeichert.
+- Architekturdokumente (`docs/architecture/`) und Roadmap aktualisiert.
+
+### Stresstests für vLLM, TGI und Ollama
+
+- Neuer generischer HTTP-Kontext-/OOM-Probe (`llmbench/backends/http_probe.py`): vLLM, TGI und
+  Ollama deklarieren `oom_probe` jetzt wahrheitsgemäß als unterstützt. Fehlschläge erhalten eine
+  `failure_category` (`out_of_memory`, `context_exceeded`, `context_truncated`, `timeout`,
+  `connection_error`, ...). Ollama-Prompts, die still auf `num_ctx` gekürzt wurden, zählen nicht als bestanden.
+- OOM-Stresstest: Server-Start läuft in einem Worker-Thread (behebt den Fehler "event loop is already
+  running" bei Ollama), ein fehlschlagender Probe erzeugt weiterhin ein `oom.json`, und Runtime-Modellreferenzen
+  (`llama3.2:3b`, `org/model`) werden nicht mehr zu Dateipfaden aufgelöst (auch im TTFT-Stresstest).
+- `quantization` und `multi_model` bleiben für diese Backends unsupported (`backend_capability_missing`, Exitcode 2);
+  Begründung in `docs/architecture/backends.md`.
+- Tests gegen einen lokalen Fake-HTTP-Server (`tests/test_http_probe.py`): TGI-/vLLM-/Ollama-Antworten, OOM-,
+  Validierungs-, Timeout-, Verbindungsabbruch-, Abbruch- und Cleanup-Fälle sowie TGI-Health und Start/Stopp.
+  Noch nicht gegen echte GPU-/Docker-Läufe validiert.
+
 ## 1.6.5
 
 Ollama ist jetzt ein stabiles Backend (CPU und GPU). TGI wird als Beta ausgeliefert und soll in 1.7.0 stabil werden.

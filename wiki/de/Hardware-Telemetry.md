@@ -33,6 +33,10 @@ Typische Messwerte:
 
 AMD-Telemetrie wird über `rocm-smi` erfasst, soweit verfügbar.
 
+## Intel
+
+Intel-GPU-Telemetrie wird über `xpu-smi` erfasst (`xpu-smi discovery -j` zur Erkennung, `xpu-smi stats -d <id> -j` einmal pro GPU), soweit verfügbar: Auslastung, VRAM, Temperatur und Leistungsaufnahme. Von xpu-smi nicht gelieferte Werte bleiben leer statt `0`; Compute-Prozesse werden nicht aufgelistet.
+
 ## Baseline und Fremdlast
 
 Vor Lasttests versucht llmbench einen Ruhewert zu erfassen. Fremde GPU-Prozesse werden als möglicher Störfaktor markiert.

@@ -2076,7 +2076,9 @@
                 "tgi",
                 "vllm",
                 "wall_power_provider",
-                "wmi"
+                "wmi",
+                "xpu-smi",
+                "xpu_smi"
               ],
               "type": "string"
             },

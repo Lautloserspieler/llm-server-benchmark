@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .config import config_fingerprint, public_config, resolve_path
+from .config import config_fingerprint, is_runtime_model_ref, public_config, resolve_path
 from .context_capability import build_context_capability
 from .endpoint import run_endpoint_load, run_sanity_check
 from .energy import apply_energy_efficiency
@@ -76,14 +76,7 @@ def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware
 
 def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     raw_path = str(model["path"])
-    path_obj = Path(raw_path)
-    runtime_ref = (
-        backend_name(cfg) != "llama_cpp"
-        and not path_obj.exists()
-        and not path_obj.is_absolute()
-        and not raw_path.startswith((".", "~"))
-        and "\\" not in raw_path
-    )
+    runtime_ref = is_runtime_model_ref(raw_path, cfg, backend_name(cfg))
     if runtime_ref:
         fingerprint: dict[str, Any] = {
             "path": raw_path,

@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from llmbench.backends import backend_name, get_backend
-from llmbench.config import load_config, resolve_path
+from llmbench.config import load_config
 from llmbench.endpoint import run_endpoint_load
 from llmbench.i18n import _
-from llmbench.stress.base import require_capabilities
+from llmbench.stress.base import require_capabilities, resolve_model_ref
 from llmbench.utils import ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -65,7 +65,7 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
     )
 
     profile = profiles[0]
-    model_path = resolve_path(model["path"], cfg)
+    model_path = resolve_model_ref(model["path"], cfg, name)
     proc = None
 
     print_section(_("TTFT-Stresstest"))

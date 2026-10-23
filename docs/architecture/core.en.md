@@ -68,3 +68,18 @@ These APIs are the starting point, not necessarily the final multimodal API.
 When Phase 4 (Multimodal Core) starts, task and runtime responsibilities should become
 explicitly separate. The intended terms are `TaskAdapter` and `RuntimeAdapter`; Phase 0
 defines their responsibility boundary only and does not implement them.
+
+### Groundwork (package `llmbench/tasks/`)
+
+The package `llmbench/tasks/` exists as purely additive groundwork:
+
+- `TaskAdapter` (ABC): describes a task and its workloads and maps existing benchmark kinds
+  (`prompt`, `generation`, `long_context`, ...) to workload IDs.
+- `RuntimeAdapter` (ABC): declares which tasks a runtime can execute.
+  `BackendRuntimeAdapter` is only a read-only wrapper around an existing `BenchmarkBackend`
+  (text generation, capabilities); start/stop/health stay in the backend.
+- `TextGenerationTask` describes the existing text path. It executes nothing;
+  `run_suite()` remains the executor. `runner.py` was not changed.
+
+The adapters are not yet wired into the core flow. Migration under the rules in
+[Compatibility](compatibility.en.md) is still pending.

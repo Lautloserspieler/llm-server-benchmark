@@ -10,6 +10,7 @@ from llmbench.telemetry import (
     CompositeProvider,
     DefaultProvider,
     GpuSample,
+    IntelProvider,
     NvidiaProvider,
     get_telemetry_provider,
 )
@@ -325,3 +326,174 @@ def test_get_telemetry_provider_returns_bare_amd_provider_when_only_amd_succeeds
     assert isinstance(provider, AmdProvider)
     assert not isinstance(provider, CompositeProvider)
     assert provider.TELEMETRY_SOURCE == "rocm_smi"
+
+# ------------------------------------------------------------------- Intel
+
+
+_XPU_DISCOVERY = json.dumps({"device_list": [
+    {"device_id": 0, "device_name": "Intel(R) Arc(TM) A770", "memory_physical_size_byte": "17179869184"},
+    {"device_id": 1, "device_name": "Intel(R) Arc(TM) A380"},
+]})
+
+
+def _xpu_stats(**values):
+    return json.dumps({"device_id": 0, "device_level": [
+        {"metrics_type": k, "value": v} for k, v in values.items()
+    ]})
+
+
+def _fake_xpu_smi(monkeypatch, stats_by_id, *, discovery=_XPU_DISCOVERY):
+    calls = []
+
+    def _run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        if cmd[:2] == ["xpu-smi", "discovery"]:
+            return _cp(stdout=discovery)
+        if cmd[:2] == ["xpu-smi", "stats"]:
+            payload = stats_by_id.get(int(cmd[3]))
+            return _cp(returncode=0 if payload is not None else 1, stdout=payload or "")
+        return _cp(returncode=1)
+
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda name: name == "xpu-smi")
+    monkeypatch.setattr("llmbench.telemetry.run_capture", _run)
+    return calls
+
+
+def test_intel_provider_maps_fields_with_one_stats_call_per_gpu(monkeypatch):
+    calls = _fake_xpu_smi(monkeypatch, {
+        0: _xpu_stats(XPUM_STATS_GPU_UTILIZATION=42, XPUM_STATS_MEMORY_UTILIZATION=17.5,
+                      XPUM_STATS_MEMORY_USED=1024, XPUM_STATS_GPU_CORE_TEMPERATURE=65.5,
+                      XPUM_STATS_POWER=150.25),
+        1: _xpu_stats(XPUM_STATS_GPU_UTILIZATION=3),
+    })
+    provider = IntelProvider()
+    assert provider.initialize() is True
+    samples = provider.sample_gpus()
+    assert [c[:4] for c in calls if c[1] == "stats"] == [
+        ["xpu-smi", "stats", "-d", "0"], ["xpu-smi", "stats", "-d", "1"]]
+    assert all(c[-1] == "-j" for c in calls)
+    first, second = samples
+    assert (first.index, first.util_gpu_percent, first.util_memory_percent) == (0, 42.0, 17.5)
+    assert first.memory_used_bytes == 1024 * 1024 * 1024
+    assert first.memory_total_bytes == 17179869184
+    assert (first.temperature_c, first.power_w, first.compute_pids) == (65.5, 150.25, [])
+    assert provider.TELEMETRY_SOURCE == "xpu_smi"
+    # Missing metrics stay None, never 0.
+    assert second.util_gpu_percent == 3.0
+    assert second.util_memory_percent is None
+    assert second.memory_used_bytes is None
+    assert second.memory_total_bytes is None
+    assert second.temperature_c is None
+    assert second.power_w is None
+
+
+def test_intel_provider_non_numeric_values_become_none(monkeypatch):
+    _fake_xpu_smi(monkeypatch, {0: _xpu_stats(XPUM_STATS_GPU_UTILIZATION="N/A", XPUM_STATS_POWER=None),
+                                1: "{}"})
+    provider = IntelProvider()
+    assert provider.initialize()
+    sample = provider.sample_gpus()[0]
+    assert sample.util_gpu_percent is None
+    assert sample.power_w is None
+
+
+def test_intel_provider_absent_binary_fails_to_initialize(monkeypatch):
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda _name: False)
+    provider = IntelProvider()
+    assert provider.initialize() is False
+    assert provider.sample_gpus() == []
+
+
+def test_intel_provider_discovery_failures_fail_to_initialize(monkeypatch):
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda name: name == "xpu-smi")
+    for result in (_cp(returncode=1), _cp(stdout="not json"), _cp(stdout=json.dumps({"device_list": []}))):
+        monkeypatch.setattr("llmbench.telemetry.run_capture", lambda _c, _r=result, **_k: _r)
+        assert IntelProvider().initialize() is False
+
+    def _boom(_cmd, **_kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr("llmbench.telemetry.run_capture", _boom)
+    assert IntelProvider().initialize() is False
+
+
+def test_intel_provider_failing_device_keeps_position_with_none_metrics(monkeypatch):
+    _fake_xpu_smi(monkeypatch, {0: None, 1: _xpu_stats(XPUM_STATS_GPU_UTILIZATION=9)})
+    provider = IntelProvider()
+    assert provider.initialize()
+    samples = provider.sample_gpus()
+    # Device 0 fell out: it keeps its slot (monitor.py indexes positionally).
+    assert [s.index for s in samples] == [0, 1]
+    dead, alive = samples
+    assert dead.util_gpu_percent is None and dead.util_memory_percent is None
+    assert dead.memory_used_bytes is None and dead.temperature_c is None and dead.power_w is None
+    assert dead.compute_pids == []
+    assert alive.util_gpu_percent == 9.0
+    provider.shutdown()
+    assert provider.initialized is False
+    assert provider.sample_gpus() == []
+
+
+def test_intel_provider_ignores_memory_temperature(monkeypatch):
+    _fake_xpu_smi(monkeypatch, {0: _xpu_stats(XPUM_STATS_MEMORY_TEMPERATURE=70), 1: "{}"})
+    provider = IntelProvider()
+    assert provider.initialize()
+    assert provider.sample_gpus()[0].temperature_c is None
+
+
+def test_intel_provider_uses_short_subprocess_timeout(monkeypatch):
+    seen = []
+
+    def _run(cmd, **kwargs):
+        seen.append((cmd[1], kwargs.get("timeout")))
+        return _cp(stdout=_XPU_DISCOVERY if cmd[1] == "discovery" else _xpu_stats())
+
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda name: name == "xpu-smi")
+    monkeypatch.setattr("llmbench.telemetry.run_capture", _run)
+    provider = IntelProvider()
+    provider.initialize()
+    provider.sample_gpus()
+    assert [t for c, t in seen if c == "stats"] == [3, 3]
+
+
+def test_nvidia_provider_failing_device_keeps_position(monkeypatch):
+    fake = _install_fake_pynvml(monkeypatch, handle_count=2)
+
+    def _mem(h):
+        if h == 0:
+            raise RuntimeError("GPU fell off the bus")
+        return _FakeMemInfo(used=1000, total=8000)
+
+    fake.nvmlDeviceGetMemoryInfo = _mem
+    provider = NvidiaProvider()
+    provider.initialize()
+    samples = provider.sample_gpus()
+    assert [s.index for s in samples] == [0, 1]
+    assert samples[0].util_gpu_percent is None and samples[0].memory_used_bytes is None
+    assert samples[0].compute_pids == []
+    assert samples[1].util_gpu_percent == 42.0
+
+
+def test_get_telemetry_provider_returns_bare_intel_provider_when_only_intel_succeeds(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynvml", None)
+    _fake_xpu_smi(monkeypatch, {0: _xpu_stats(XPUM_STATS_GPU_UTILIZATION=1), 1: "{}"})
+    provider = get_telemetry_provider()
+    assert isinstance(provider, IntelProvider)
+    assert provider.TELEMETRY_SOURCE == "xpu_smi"
+
+
+def test_get_telemetry_provider_wraps_amd_and_intel_in_composite(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynvml", None)
+    monkeypatch.setattr("llmbench.telemetry.command_exists", lambda name: name in {"rocm-smi", "xpu-smi"})
+
+    def _run(cmd, **_kwargs):
+        if cmd[0] == "rocm-smi":
+            return _cp(stdout=_ROCM_SMI_PAYLOAD)
+        if cmd[1] == "discovery":
+            return _cp(stdout=json.dumps({"device_list": [{"device_id": 0}]}))
+        return _cp(stdout=_xpu_stats(XPUM_STATS_GPU_UTILIZATION=5))
+
+    monkeypatch.setattr("llmbench.telemetry.run_capture", _run)
+    provider = get_telemetry_provider()
+    assert isinstance(provider, CompositeProvider)
+    assert [s.index for s in provider.sample_gpus()] == [0, 1]

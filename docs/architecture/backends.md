@@ -77,7 +77,7 @@ Aktueller Adapterstand:
 | concurrency | ✅ | ✅ | ✅ | ✅ |
 | long_context | ✅ | ✅ | ✅ | ✅ |
 | kv_cache_observation | ✅ | ✅ | — | — |
-| oom_probe | ✅ | — | — | — |
+| oom_probe | ✅ | ✅ | ✅ | ✅ |
 | quantization | ✅ | — | — | — |
 | multi_model | ✅ | — | — | — |
 
@@ -124,8 +124,9 @@ Relevante Launcher-Argumente:
 - `--dtype`, zusätzliche `profile.additional_args`
 
 Aktuell unterstützt der TGI-Adapter die Basiscapabilities `endpoint`, `streaming`,
-`concurrency` und `long_context`. KV-Cache-Beobachtung, OOM-Probe und der lokale
-Quantisierungsvergleich sind noch nicht implementiert.
+`concurrency` und `long_context` sowie den HTTP-Kontext-/OOM-Probe (siehe unten).
+KV-Cache-Beobachtung, lokaler Quantisierungsvergleich und Multi-Model-Stress sind nicht
+implementiert.
 
 ### Ollama
 
@@ -144,10 +145,60 @@ Relevante Profileinstellungen:
 - `ollama_num_gpu` -> Ollama `num_gpu`
 - `gpu_layers: 0` oder `ollama_num_gpu: 0` hält den Container im CPU-Modus
 
+**Hinweis zum OOM-/Kontext-Probe:** Der Ollama-Probe setzt pro Stufe `num_ctx = level + 512`
+und fordert `truncate: false` sowie `shift: false` an. Aktuelle Server lehnen zu lange
+Prompts damit ab, statt Eingaben still zu kuerzen. Ollama 0.40.9 kann sonst auf etwa
+die halbe Kontextgroesse kuerzen; die bisherige Pruefung nahe der vollen Groesse erkennt
+das nicht. Diese Pruefung bleibt als Rueckfall fuer aeltere Server erhalten, die die Flags ignorieren.
+Ein geaendertes `num_ctx` kann Ollama zwingen, das Modell mit neuer Kontextgroesse neu zu laden.
+`cold_start_seconds` im OOM-Ergebnis beschreibt dann nicht das reale Ladeverhalten
+(Containerstart plus erzwungenes Neuladen). Meldet Ollama kein `prompt_eval_count`, gilt die
+Stufe als bestanden, aber mit `actual_unverified: true`; sie zählt nicht in
+`max_stable_prompt_tokens`. Eine gemeldete Länge nahe `num_ctx` ist nur dann
+`context_truncated`, wenn die Zielstufe nicht erreicht wurde; eine Tokenizer-Abweichung über
+512 Tokens führt nicht zum Fehlschlag (Flag `truncated_at_num_ctx`).
+
 Benchmark-Anfragen verwenden `raw: true`, damit ein Ollama-Modelltemplate den synthetischen
 Benchmark-Prompt nicht verändert. Der aktuelle Adapter stellt `endpoint`, `streaming`,
-`concurrency` und `long_context` bereit; KV-Cache-Beobachtung, OOM-Probe,
-Quantisierungsvergleich und Multi-Model-Stress sind noch nicht angebunden.
+`concurrency`, `long_context` und den HTTP-Kontext-/OOM-Probe bereit;
+KV-Cache-Beobachtung, Quantisierungsvergleich und Multi-Model-Stress sind nicht angebunden.
+
+## Generischer Kontext-/OOM-Probe über HTTP
+
+`oom_probe` ist für vLLM, TGI und Ollama über `llmbench/backends/http_probe.py` umgesetzt.
+`llmbench.stress.oom` startet pro Kontextstufe einen frischen Server (bei TGI/vLLM mit
+`--max-total-tokens` bzw. `--max-model-len`, bei Ollama mit `options.num_ctx`), sendet einen
+einzelnen nicht gestreamten Request mit Fülltext und stoppt den Server danach wieder, auch
+nach Fehlern, Timeouts und Abbruch. Die Tokenzahl stammt aus der Serverantwort
+(`usage.prompt_tokens` bzw. `prompt_eval_count`), nicht aus einer Schätzung.
+
+Fehlschläge werden als `failure_category` klassifiziert (Heuristik auf HTTP-Status und
+Fehlertext des Servers):
+
+| Kategorie | Bedeutung |
+| --- | --- |
+| `out_of_memory` | Server meldet CUDA-/Speicherfehler (z. B. `requires more system memory`) |
+| `context_exceeded` | Eingabe überschreitet das konfigurierte Limit (z. B. TGI `Input validation error`) |
+| `context_truncated` | Ollama hat den Prompt still auf `num_ctx` gekürzt; zählt nicht als bestanden |
+| `timeout` | Request-Timeout (`endpoint.timeout_seconds`) |
+| `connection_error` | Verbindung verweigert/gekappt, typisch nach OOM-Kill des Containers |
+| `model_not_found`, `server_error`, `client_error`, `invalid_response` | übrige Fälle, nie `ok` |
+
+Die Pfade sind ohne GPU/Docker gegen einen lokalen Fake-HTTP-Server getestet
+(`tests/test_http_probe.py`). Eine Validierung gegen echte GPU-Container steht aus; die
+Fehlertext-Heuristik kann bei neueren Upstream-Versionen abweichen und fällt dann in
+`server_error`/`client_error` zurück.
+
+**Bewusst weiter unsupported** (`status: skipped`, `reason: backend_capability_missing`,
+Exitcode 2):
+
+- `quantization`: Der Vergleich basiert auf lokalen GGUF-Varianten und llama-bench-förmigen
+  Ergebnissen. vLLM/TGI quantisieren HF-Gewichte zur Laufzeit (`--quantization`/`--quantize`),
+  Ollama importiert GGUF nur über die Create-API; ein vergleichbarer, reproduzierbarer Vertrag
+  existiert nicht.
+- `multi_model`: Die Backend-Instanzen verwalten genau einen Container (fester
+  Containername, ein Host-Port). Zwei gleichzeitige Server würden sich gegenseitig stoppen;
+  Ollamas parallele Modellresidenz bräuchte einen eigenen Workload statt zweier Server.
 
 ## Install/Remove-Symmetrie
 

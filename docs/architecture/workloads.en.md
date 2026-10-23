@@ -79,3 +79,29 @@ Faster output alone must not automatically be treated as better.
 A workload must be able to identify its input data reproducibly. Future dataset manifests
 should record at least source, version, license, hash, and sample selection. Publicly shared
 benchmark profiles must not require confidential business data.
+
+Implemented (groundwork) in `llmbench/tasks/dataset.py`: `DatasetManifest` is a validated,
+immutable dataclass with `id`, `version`, `task`, `source`, `license`, `sha256`, and
+`selection` (`all`, `first_n`, `ids`, `random_seeded`; randomness only with an explicit
+seed). `workloads`, `files` (relative paths with their own SHA-256), and `confidential` are
+optional. `load_dataset_manifest(path, verify_dir=...)` raises `DatasetManifestFormatError`
+(format/JSON/field problems) and `DatasetHashMismatchError` (hash mismatch); both inherit
+from `DatasetManifestError`.
+
+**Aggregate hash:** for manifests with `files`, the manifest `sha256` is the SHA-256 over the
+sorted lines `<path>:<sha256>` + newline (`
+`) of all `files[]` (paths with `/`, lower-case
+hashes, lines sorted as strings and concatenated without separator, UTF-8). A mismatch raises
+`DatasetHashMismatchError`. With `load_dataset_manifest(..., verify_dir=...)` all files are
+additionally hashed on disk; only then does `reference()` report `"verified": true`.
+Manifests without `files` stay allowed but are never verified (`"verified": false`). File
+paths must not contain NUL or `:` (NTFS streams, drive letters), reserved Windows names
+(`CON`, `NUL`, `PRN`, `AUX`, `COM1-9`, `LPT1-9`, also with an extension), or segments ending
+in `.` or a space (`DatasetManifestFormatError`).
+
+## Registry
+
+`llmbench/tasks/ids.py` contains `TaskId` (the ten IDs above) and a workload registry
+(`WORKLOADS`) with the seven text workloads (implemented) plus reserved, not yet implemented
+IDs (`stt.*`, `tts.*`, `ocr.*`, `image.*`, `embedding.*`). Metrics are listed per workload;
+there is deliberately no universal score.

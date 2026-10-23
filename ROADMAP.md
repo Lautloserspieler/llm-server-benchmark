@@ -39,7 +39,7 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 | --- | --- | --- | --- |
 | NVIDIA | ✅ fertig | NVML (`nvidia-ml-py`) | Auslastung, VRAM, Temperatur, Power, Compute-PIDs |
 | AMD | ✅ fertig (1.6.0) | `rocm-smi --json` | Phase D, `compute_pids` bleibt vorerst leer |
-| Intel | 📋 geplant | `xpu-smi stats -d <id> -j` | Phase E, ein Subprozessaufruf pro GPU |
+| Intel | ✅ fertig | `xpu-smi stats -d <id> -j` | Phase E, ein Subprozessaufruf pro GPU; `compute_pids` bleibt leer |
 
 Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
 (seit 1.6.0) alle verfügbaren Provider parallel.
@@ -63,13 +63,26 @@ mehr direkt, sondern verwenden `get_backend()` und prüfen benötigte Fähigkeit
 
 Ein nicht unterstützter Workload ist kein Benchmarkfehler: Er schreibt ein strukturiertes
 `status: skipped` mit `reason: backend_capability_missing` und liefert Exitcode 2.
-llama.cpp unterstützt die vorhandenen vier Stresspfade. vLLM kann den generischen
-TTFT/Concurrency-Stresstest ausführen; OOM-Probe, lokaler Quantisierungsvergleich und
-Multi-Model-Stress bleiben dort bis zu einer belastbaren Adapter-Implementierung explizit
-unsupported.
+llama.cpp unterstützt die vorhandenen vier Stresspfade. vLLM, TGI und Ollama führen den
+generischen TTFT/Concurrency-Stresstest und den HTTP-Kontext-/OOM-Probe aus
+(`llmbench/backends/http_probe.py`, inkl. Fehlerklassifikation `out_of_memory`,
+`context_exceeded`, `context_truncated`, `timeout`, `connection_error`; per Fake-HTTP-Server
+getestet, noch nicht gegen echte GPU-Container validiert). Lokaler Quantisierungsvergleich
+und Multi-Model-Stress bleiben dort explizit unsupported, weil kein reproduzierbarer
+Adaptervertrag existiert (siehe docs/architecture/backends.md).
 
 Die llama.cpp-spezifischen HTTP-Endpunkte für den Kontext-/OOM-Probe liegen nun im
 llama.cpp-Backend statt im generischen Stress-Runner.
+
+## Multimodal Groundwork 🚧 *in Arbeit (unveröffentlicht)*
+
+Additive Vorarbeit für spätere multimodale Tasks, ohne den Textpfad zu verändern:
+Paket `llmbench/tasks/` mit `TaskAdapter`/`RuntimeAdapter`, Task-ID-Enum, Workload-Registry und
+`TextGenerationTask`; validiertes Dataset-Manifest (Quelle, Version, Lizenz, SHA-256,
+Sample-Auswahl); optionale Felder `task`/`workload`/`dataset` in Schema v3 (bewusst kein v4,
+alte Resultate bleiben unverändert lesbar). Es gibt keinen universellen Score, und fehlende
+Werte werden nie als 0 gespeichert. Noch **nicht** enthalten: multimodale Backends, Workloads
+oder Runner-Integration. Siehe [docs/architecture/](docs/architecture/README.md).
 
 ## Nächste Schritte (Stand: nach 1.6.0)
 
@@ -108,7 +121,7 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
    Unabhängiger Strang, kann parallel zu den Backend-Phasen laufen. Neuer
    `AmdProvider` gegen `rocm-smi`, plus Fix für die aktuell fehlerhafte
    Telemetriequellen-Erkennung bei Nicht-NVIDIA-Providern.
-6. **Phase E — Intel-GPU-Telemetrie**
+6. **Phase E — Intel-GPU-Telemetrie** ✅ *umgesetzt (unveröffentlicht)*
    Direkt im Anschluss an Phase D wegen gemeinsamer Infrastruktur
    (`TelemetryProvider`-ABC, `CompositeProvider`).
 7. **Phase F, Rest — i18n-Sweep + Issue-/PR-Templates**

@@ -1,5 +1,7 @@
 # GitHub issue labels / Issue-Labels
 
+🇩🇪 [Deutsch](ISSUE_LABELS.de.md) | English
+
 **Source of truth:** [`.github/issue-labels.json`](../.github/issue-labels.json).
 
 The project uses color-coded labels to tell contributors **what an issue is, what subsystem it covers, how urgently it matters, and which release it targets**. Generic `enhancement` is intentionally removed from managed roadmap issues only; historical/unrelated issues remain untouched.

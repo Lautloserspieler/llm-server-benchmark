@@ -97,3 +97,15 @@ def test_dry_run_makes_no_write_requests():
 
     with patch.object(LABEL_MODULE, "api_request", side_effect=fake_api):
         sync_labels("test", "org/repo", config, dry_run=True)
+
+
+def test_issue_templates_use_new_taxonomy():
+    templates = {
+        "feature_request.md": 'labels: ["kind:feature"]',
+        "backend_request.md": 'labels: ["kind:feature", "area:backends"]',
+        "bug_report.md": 'labels: ["kind:bug"]',
+    }
+    for filename, expected in templates.items():
+        text = (ROOT / ".github" / "ISSUE_TEMPLATE" / filename).read_text(encoding="utf-8")
+        assert expected in text
+        assert 'labels: ["enhancement"' not in text

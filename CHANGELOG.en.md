@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Ollama context probe: `truncate: false` and `shift: false` prevent silent prompt truncation on current servers. A real GPU test with Ollama 0.40.9 otherwise reduced 4,173 input tokens to 514 at `num_ctx=1024`, incorrectly reporting success.
+
 ### Review fixes (stress, probe, telemetry, datasets)
 
 - OOM stress test: if `start_server` fails after `docker run`, the container is now cleaned up; `failure_category` is omitted on success; `startup_failed`/`probe_error` are constants.

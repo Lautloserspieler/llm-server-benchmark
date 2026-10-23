@@ -146,7 +146,11 @@ Relevante Profileinstellungen:
 - `gpu_layers: 0` oder `ollama_num_gpu: 0` hält den Container im CPU-Modus
 
 **Hinweis zum OOM-/Kontext-Probe:** Der Ollama-Probe setzt pro Stufe `num_ctx = level + 512`
-und zwingt Ollama damit gegebenenfalls, das Modell mit neuer Kontextgröße neu zu laden.
+und fordert `truncate: false` sowie `shift: false` an. Aktuelle Server lehnen zu lange
+Prompts damit ab, statt Eingaben still zu kuerzen. Ollama 0.40.9 kann sonst auf etwa
+die halbe Kontextgroesse kuerzen; die bisherige Pruefung nahe der vollen Groesse erkennt
+das nicht. Diese Pruefung bleibt als Rueckfall fuer aeltere Server erhalten, die die Flags ignorieren.
+Ein geaendertes `num_ctx` kann Ollama zwingen, das Modell mit neuer Kontextgroesse neu zu laden.
 `cold_start_seconds` im OOM-Ergebnis beschreibt dann nicht das reale Ladeverhalten
 (Containerstart plus erzwungenes Neuladen). Meldet Ollama kein `prompt_eval_count`, gilt die
 Stufe als bestanden, aber mit `actual_unverified: true`; sie zählt nicht in

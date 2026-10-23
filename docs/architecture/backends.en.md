@@ -142,7 +142,11 @@ Relevant profile settings:
 - `gpu_layers: 0` or `ollama_num_gpu: 0` keeps the container in CPU mode
 
 **Note on the OOM/context probe:** per level the Ollama probe sets `num_ctx = level + 512`,
-which may force Ollama to reload the model with the new context size. `cold_start_seconds`
+and requests `truncate: false` and `shift: false` so current servers reject overlong
+prompts instead of silently dropping input. Ollama 0.40.9 can otherwise shorten a
+prompt to roughly half the context window, which a near-limit token heuristic misses.
+The near-limit check below remains a fallback for older servers that ignore these flags.
+Changing `num_ctx` may force Ollama to reload the model with the new context size. `cold_start_seconds`
 in the OOM result therefore does not describe real load behaviour (container start plus a
 forced reload). If Ollama reports no `prompt_eval_count`, the level counts as passed but
 carries `actual_unverified: true` and does not contribute to `max_stable_prompt_tokens`. A

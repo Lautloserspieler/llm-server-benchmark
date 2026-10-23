@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Ollama-Kontextprobe: `truncate: false` und `shift: false` verhindern stille Prompt-Kuerzung auf aktuellen Servern. Im GPU-Praxistest mit Ollama 0.40.9 wurden sonst 4.173 Eingabe-Tokens bei `num_ctx=1024` auf 514 gekuerzt und faelschlich als bestanden gemeldet.
+
 ### Review-Korrekturen (Stress, Probe, Telemetrie, Datasets)
 
 - OOM-Stresstest: schlägt `start_server` nach `docker run` fehl, wird der Container jetzt aufgeräumt; `failure_category` entfällt bei Erfolg; `startup_failed`/`probe_error` sind Konstanten.

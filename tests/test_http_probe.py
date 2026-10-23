@@ -418,6 +418,8 @@ def test_ollama_probe_ok_requests_stage_context_via_num_ctx(server):
     assert calls[0]["options"]["num_ctx"] == 2560
     assert calls[0]["raw"] is True
     assert calls[0]["stream"] is False
+    assert calls[0]["truncate"] is False
+    assert calls[0]["shift"] is False
 
 
 def test_ollama_probe_detects_silent_truncation(server):
@@ -433,6 +435,26 @@ def test_ollama_probe_detects_silent_truncation(server):
     assert result["ok"] is False
     assert result["failure_category"] == CATEGORY_TRUNCATED
     assert result["actual_prompt_tokens"] == 1024
+
+
+def test_ollama_probe_disables_half_window_truncation(server):
+    """Ollama 0.40 may shorten 4173 tokens to 514 with num_ctx=1024.
+
+    Reject the overlong request at the server; the old near-num_ctx heuristic
+    cannot recognize that half-window result as truncated.
+    """
+    def handler(body):
+        if body.get("truncate", True) or body.get("shift", True):
+            return 200, {"done": True, "response": "ok", "prompt_eval_count": 514}
+        return 400, {"error": "prompt too long for context"}
+
+    server.routes[("POST", "/api/generate")] = handler
+    result = asyncio.run(probe_context_http(
+        server.url, 4096, {"model": "m", "context_size": 1024}, api_style=API_STYLE_OLLAMA_NATIVE,
+    ))
+    assert result["ok"] is False
+    assert result["failure_category"] == CATEGORY_CONTEXT
+    assert result["http_status"] == 400
 
 
 def test_ollama_probe_memory_error_is_out_of_memory(server):

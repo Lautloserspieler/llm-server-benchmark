@@ -202,6 +202,12 @@ async def probe_context_http(
                     "prompt": prompt,
                     "stream": False,
                     "raw": True,
+                    # Current Ollama may truncate to roughly half of num_ctx,
+                    # so a count near the context limit cannot detect every
+                    # truncation. Require an error instead of dropping input
+                    # or shifting the context during this capacity probe.
+                    "truncate": False,
+                    "shift": False,
                     "options": options,
                 }
 

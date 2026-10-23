@@ -2,7 +2,7 @@
 name: "Backend Request"
 about: "Unterstützung für einen neuen Inferencing-Server vorschlagen / Request support for a new inference server"
 title: "[Backend] "
-labels: ["enhancement", "backend"]
+labels: ["kind:feature", "area:backends"]
 assignees: []
 ---
 

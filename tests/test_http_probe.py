@@ -276,6 +276,36 @@ def test_openai_probe_non_json_success_body_is_invalid_response(server):
     assert result["failure_category"] == CATEGORY_INVALID
 
 
+@pytest.mark.parametrize("api_style,path,body", [
+    (API_STYLE_OPENAI_COMPLETIONS, "/v1/completions", {}),
+    (API_STYLE_OPENAI_COMPLETIONS, "/v1/completions", {"choices": []}),
+    (API_STYLE_OPENAI_COMPLETIONS, "/v1/completions", {"usage": {"prompt_tokens": 2048}}),
+    (API_STYLE_OLLAMA_NATIVE, "/api/generate", {}),
+    (API_STYLE_OLLAMA_NATIVE, "/api/generate", {"done": False, "response": "partial"}),
+    (API_STYLE_OLLAMA_NATIVE, "/api/generate", {"done": True}),
+])
+def test_probe_rejects_missing_or_incomplete_generation(server, api_style, path, body):
+    server.routes[("POST", path)] = (200, body)
+    result = asyncio.run(probe_context_http(server.url, 2048, {}, api_style=api_style))
+    assert result["ok"] is False
+    assert result["failure_category"] == CATEGORY_INVALID
+
+
+@pytest.mark.parametrize("count", [True, -1, 0, 3.5, "2048", float("inf"), float("nan")])
+@pytest.mark.parametrize("api_style,path", [
+    (API_STYLE_OPENAI_COMPLETIONS, "/v1/completions"),
+    (API_STYLE_OLLAMA_NATIVE, "/api/generate"),
+])
+def test_probe_rejects_invalid_token_counts(server, count, api_style, path):
+    body = ({"choices": [{"text": "ok"}], "usage": {"prompt_tokens": count}}
+            if api_style == API_STYLE_OPENAI_COMPLETIONS
+            else {"done": True, "response": "ok", "prompt_eval_count": count})
+    server.routes[("POST", path)] = (200, body)
+    result = asyncio.run(probe_context_http(server.url, 2048, {}, api_style=api_style))
+    assert result["ok"] is False
+    assert result["failure_category"] == CATEGORY_INVALID
+
+
 def test_probe_timeout_is_classified_and_does_not_raise(server):
     server.routes[("POST", "/v1/completions")] = lambda _b: (200, {"usage": {"prompt_tokens": 1}}, 1.5)
 
@@ -665,7 +695,8 @@ def test_oom_stress_docker_run_failure_is_structured(monkeypatch, server, docker
     assert "no space left" in doc["levels"][0]["error"]
 
 
-def test_vllm_oom_stress_records_oom_response(monkeypatch, server, docker, tmp_path: Path):
+@pytest.mark.usefixtures("docker")
+def test_vllm_oom_stress_records_oom_response(monkeypatch, server, tmp_path: Path):
     server.routes[("GET", "/health")] = (200, {})
     server.routes[("GET", "/v1/models")] = (200, {"data": [{"id": "m"}]})
 
@@ -817,7 +848,8 @@ def test_oom_stress_llama_cpp_start_failure_without_proc_does_not_crash(monkeypa
     assert doc["levels"][0]["failure_category"] == CATEGORY_STARTUP_FAILED
 
 
-def test_oom_stress_success_level_omits_failure_category(monkeypatch, server, docker, tmp_path: Path):
+@pytest.mark.usefixtures("docker")
+def test_oom_stress_success_level_omits_failure_category(monkeypatch, server, tmp_path: Path):
     server.routes[("GET", "/health")] = (200, {})
     server.routes[("POST", "/v1/completions")] = _openai_ok()
     cfg = _oom_config(server.url, "org/Model", [2048])
@@ -829,7 +861,8 @@ def test_oom_stress_success_level_omits_failure_category(monkeypatch, server, do
     assert "failure_category" not in level
 
 
-def test_oom_stress_unverified_token_count_never_becomes_max_stable(monkeypatch, server, docker, tmp_path: Path):
+@pytest.mark.usefixtures("docker")
+def test_oom_stress_unverified_token_count_never_becomes_max_stable(monkeypatch, server, tmp_path: Path):
     server.routes[("GET", "/api/tags")] = (200, {"models": []})
     server.routes[("POST", "/api/generate")] = (200, {"response": "ok", "done": True})
     cfg = _oom_config(server.url, "llama3.2:3b", [2048])

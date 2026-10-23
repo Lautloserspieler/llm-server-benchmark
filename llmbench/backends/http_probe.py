@@ -238,11 +238,24 @@ async def probe_context_http(
                        category=classify_failure(response.status_code, text), error=text[:500])
 
     if api_style == API_STYLE_OPENAI_COMPLETIONS:
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        choices = data.get("choices")
+        valid_completion = (
+            isinstance(choices, list) and bool(choices)
+            and all(isinstance(choice, dict) and isinstance(choice.get("text"), str) for choice in choices)
+        )
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
         actual = usage.get("prompt_tokens")
     else:
+        valid_completion = data.get("done") is True and isinstance(data.get("response"), str)
         actual = data.get("prompt_eval_count")
-    actual = int(actual) if isinstance(actual, (int, float)) else None
+    if not valid_completion:
+        return _result(prompt_target, started, ok=False, status=response.status_code,
+                       category=CATEGORY_INVALID, error="Antwort enthaelt keine abgeschlossene Generierung.")
+    if actual is not None and (isinstance(actual, bool) or not isinstance(actual, int) or actual <= 0):
+        return _result(prompt_target, started, ok=False, status=response.status_code,
+                       category=CATEGORY_INVALID, error="Prompt-Tokenzahl muss eine positive ganze Zahl sein.")
 
     extra: dict[str, Any] = {}
     if actual is None:

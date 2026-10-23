@@ -512,9 +512,12 @@ def _validate_task_fields(summary: dict[str, Any]) -> None:
             if not isinstance(benchmarks, dict):
                 continue
             for kind, benchmark in benchmarks.items():
-                if isinstance(benchmark, dict) and "workload" in benchmark:
-                    if not is_valid_workload_id_shape(benchmark["workload"]):
-                        _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}.workload", "must be a '<group>.<name>' id")
+                if (
+                    isinstance(benchmark, dict)
+                    and "workload" in benchmark
+                    and not is_valid_workload_id_shape(benchmark["workload"])
+                ):
+                    _fail(f"models[{mi}].profiles[{pi}].benchmarks.{kind}.workload", "must be a '<group>.<name>' id")
 
 
 def _walk_v3(summary: dict[str, Any]) -> None:

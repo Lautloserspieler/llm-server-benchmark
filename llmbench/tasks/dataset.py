@@ -79,16 +79,17 @@ class SampleSelection:
     def __post_init__(self) -> None:
         if self.method not in SELECTION_METHODS:
             raise DatasetManifestFormatError(f"selection.method must be one of {SELECTION_METHODS}, got {self.method!r}")
-        if self.method in ("first_n", "random_seeded"):
-            if isinstance(self.count, bool) or not isinstance(self.count, int) or self.count <= 0:
-                raise DatasetManifestFormatError(f"selection.count must be a positive integer for {self.method}")
+        if self.method in ("first_n", "random_seeded") and (
+            isinstance(self.count, bool) or not isinstance(self.count, int) or self.count <= 0
+        ):
+            raise DatasetManifestFormatError(f"selection.count must be a positive integer for {self.method}")
         if self.method == "random_seeded" and (isinstance(self.seed, bool) or not isinstance(self.seed, int)):
             raise DatasetManifestFormatError("selection.seed (integer) is required for random_seeded; no hidden randomness")
         if self.method == "ids" and not self.ids:
             raise DatasetManifestFormatError("selection.ids must not be empty for method 'ids'")
 
     @classmethod
-    def from_dict(cls, data: Any) -> "SampleSelection":
+    def from_dict(cls, data: Any) -> SampleSelection:
         if data is None:
             return cls()
         if not isinstance(data, dict):
@@ -133,7 +134,7 @@ class DatasetManifest:
     verified: bool = field(default=False, compare=False)
 
     @staticmethod
-    def compute_files_sha256(files: "tuple[DatasetFile, ...] | list[DatasetFile]") -> str:
+    def compute_files_sha256(files: tuple[DatasetFile, ...] | list[DatasetFile]) -> str:
         """Aggregate hash: SHA-256 over the sorted lines ``<path>:<sha256>\n``.
 
         ``path`` uses ``/`` separators, ``sha256`` is lower-case hex; lines are
@@ -143,7 +144,7 @@ class DatasetManifest:
         return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
 
     @classmethod
-    def from_dict(cls, data: Any) -> "DatasetManifest":
+    def from_dict(cls, data: Any) -> DatasetManifest:
         if not isinstance(data, dict):
             raise DatasetManifestFormatError("manifest must be a JSON object")
         ident = _str(data, "id", "manifest")
@@ -218,7 +219,7 @@ class DatasetManifest:
         """Hash every listed file below ``base_dir``; raise on missing/mismatch."""
         base = Path(base_dir).resolve()
         for entry in self.files:
-            target = (base / entry.path).resolve()
+            target = (base / entry.path.replace("\\", "/")).resolve()
             if base not in target.parents:
                 raise DatasetManifestFormatError(f"file path escapes dataset directory: {entry.path}")
             verify_file_sha256(target, entry.sha256)

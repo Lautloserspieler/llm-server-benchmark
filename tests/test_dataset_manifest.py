@@ -152,3 +152,12 @@ def test_no_verification_without_verify_dir(tmp_path):
                                       files=[{"path": "never-read.bin", "sha256": H}]))
     m = load_dataset_manifest(path)
     assert m.files[0].path == "never-read.bin" and m.verified is False
+
+
+def test_windows_manifest_paths_verify_on_every_platform(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "sample.txt").write_bytes(b"hello")
+    digest = hashlib.sha256(b"hello").hexdigest()
+    files = [{"path": "data\\sample.txt", "sha256": digest}]
+    path = _write(tmp_path, _manifest(sha256=_agg([("data/sample.txt", digest)]), files=files))
+    assert load_dataset_manifest(path, verify_dir=tmp_path).verified is True

@@ -11,6 +11,7 @@
 - Intel/NVIDIA telemetry: a failed device keeps its position (all values `null`) instead of being skipped; Intel uses only the core temperature and a 3 s `xpu-smi` timeout.
 - Dataset manifest: the aggregate hash over `files[]` is verified, `reference()` carries `verified`; stricter path checks (NUL, `:`, reserved Windows names); `infer_task_view` ignores non-dict items.
 - Model references: shared rule for `runner._model_meta` and stress tests; relative local paths are checked against the config directory instead of the CWD.
+- Local review: HTTP probes reject missing/incomplete generations and invalid token counts; dataset manifests with Windows path separators also verify on Linux. Corrected Ruff and mypy errors.
 
 ### Intel GPU telemetry (Phase E)
 

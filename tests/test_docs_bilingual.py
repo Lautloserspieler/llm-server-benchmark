@@ -11,6 +11,7 @@ DOC_PAIRS = (
     ("ROADMAP.md", "ROADMAP.en.md"),
     ("SECURITY.md", "SECURITY.de.md"),
     ("docs/DOCKER.md", "docs/DOCKER.en.md"),
+    ("docs/ISSUE_LABELS.md", "docs/ISSUE_LABELS.de.md"),
     ("docs/RELEASE_CHECKLIST.md", "docs/RELEASE_CHECKLIST.de.md"),
     (
         "docs/linux-llamacpp-source-build.md",

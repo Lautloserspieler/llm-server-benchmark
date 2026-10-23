@@ -2,7 +2,7 @@
 name: "Bug Report"
 about: "Einen Fehler melden / Report a bug"
 title: "[Bug] "
-labels: ["bug"]
+labels: ["kind:bug"]
 assignees: []
 ---
 

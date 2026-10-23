@@ -1,16 +1,25 @@
 """Offline checks for the version-controlled GitHub issue-label taxonomy."""
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from scripts.sync_issue_labels import sync_labels, validate_config
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "sync_issue_labels.py"
+SPEC = importlib.util.spec_from_file_location("label_sync_under_test", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+LABEL_MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = LABEL_MODULE
+SPEC.loader.exec_module(LABEL_MODULE)
+sync_labels = LABEL_MODULE.sync_labels
+validate_config = LABEL_MODULE.validate_config
 
-
-CONFIG = Path(__file__).resolve().parents[1] / ".github" / "issue-labels.json"
+CONFIG = ROOT / ".github" / "issue-labels.json"
 
 
 def load_config():
@@ -66,7 +75,7 @@ def test_sync_preserves_unrelated_labels_and_replaces_legacy_enhancement():
             return {"labels": [{"name": x} for x in state]}
         raise AssertionError(f"Unexpected API call: {method} {path}")
 
-    with patch("scripts.sync_issue_labels.api_request", side_effect=fake_api):
+    with patch.object(LABEL_MODULE, "api_request", side_effect=fake_api):
         sync_labels("test", "org/repo", config, dry_run=False)
         assert state == ["keep-me", "kind:feature", "release:1.8.0"]
         before = len([x for x in calls if x[0] == "PATCH"])
@@ -86,5 +95,5 @@ def test_dry_run_makes_no_write_requests():
             return {"labels": [{"name": "enhancement"}]}
         raise AssertionError(f"Unexpected GET: {path}")
 
-    with patch("scripts.sync_issue_labels.api_request", side_effect=fake_api):
+    with patch.object(LABEL_MODULE, "api_request", side_effect=fake_api):
         sync_labels("test", "org/repo", config, dry_run=True)

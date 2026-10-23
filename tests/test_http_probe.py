@@ -374,7 +374,7 @@ def test_probe_cancellation_propagates(server):
         await asyncio.sleep(0.3)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(task, timeout=5)
 
     asyncio.run(scenario())
 

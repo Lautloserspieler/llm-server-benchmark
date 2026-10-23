@@ -55,7 +55,7 @@ def test_sync_preserves_unrelated_labels_and_replaces_legacy_enhancement():
     }
     state = ["enhancement", "keep-me"]
 
-    def fake_api(token, method, path, data=None):
+    def fake_api(_token, method, path, data=None):
         calls.append((method, path, data))
         if path.endswith("/labels?per_page=100&page=1"):
             return list(actual.values())
@@ -77,7 +77,7 @@ def test_sync_preserves_unrelated_labels_and_replaces_legacy_enhancement():
 def test_dry_run_makes_no_write_requests():
     config = load_config()
 
-    def fake_api(token, method, path, data=None):
+    def fake_api(_token, method, path, _data=None):
         if method != "GET":
             raise AssertionError(f"Unexpected write in dry-run: {method}")
         if "/labels?" in path:

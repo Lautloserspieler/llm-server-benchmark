@@ -88,10 +88,14 @@ def test_backend_runtime_adapter_wraps_without_touching_backend():
     class Dummy(BenchmarkBackend):
         capabilities = BackendCapabilities(endpoint=True, streaming=True)
 
-        def run_benchmark(self, *a, **k): ...
-        def start_server(self, *a, **k): ...
-        def stop_server(self, proc): ...
-        def wait_health(self, *a, **k): ...
+        def run_benchmark(self, *a, **k):
+            raise NotImplementedError
+        def start_server(self, *a, **k):
+            raise NotImplementedError
+        def stop_server(self, proc):
+            raise NotImplementedError
+        def wait_health(self, *a, **k):
+            raise NotImplementedError
 
     backend = Dummy()
     adapter = BackendRuntimeAdapter(backend, "dummy")

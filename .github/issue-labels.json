@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "description": "Managed issue-label taxonomy. Existing unrelated labels remain untouched. Synchronization targets only listed roadmap issues.",
+  "labels": [
+    {
+      "name": "kind:tracking",
+      "color": "475569",
+      "description": "Umbrella issue / roadmap coordination rather than an implementation task"
+    },
+    {
+      "name": "kind:feature",
+      "color": "2563EB",
+      "description": "New functionality or supported workload"
+    },
+    {
+      "name": "kind:bug",
+      "color": "DC2626",
+      "description": "Fix incorrect behavior or a defect"
+    },
+    {
+      "name": "kind:validation",
+      "color": "0891B2",
+      "description": "Testing, benchmarking, qualification and release evidence"
+    },
+    {
+      "name": "kind:maintenance",
+      "color": "64748B",
+      "description": "CI, installers, dependencies and general upkeep"
+    },
+    {
+      "name": "kind:refactor",
+      "color": "7C3AED",
+      "description": "Internal restructuring without intended feature changes"
+    },
+    {
+      "name": "kind:documentation",
+      "color": "0D9488",
+      "description": "Documentation, translations and onboarding"
+    },
+    {
+      "name": "area:backends",
+      "color": "1D4ED8",
+      "description": "Inference backends and container/runtime adapters"
+    },
+    {
+      "name": "area:telemetry",
+      "color": "059669",
+      "description": "CPU/GPU telemetry, power and resource measurements"
+    },
+    {
+      "name": "area:benchmark",
+      "color": "B45309",
+      "description": "Load generation, workload execution, metrics and statistics"
+    },
+    {
+      "name": "area:reporting",
+      "color": "0F766E",
+      "description": "HTML/PDF/CSV/JSON reports, comparison and export"
+    },
+    {
+      "name": "area:platform",
+      "color": "4F46E5",
+      "description": "CLI, launchers, setup, CI and cross-platform compatibility"
+    },
+    {
+      "name": "area:multimodal",
+      "color": "9333EA",
+      "description": "Speech, image, vision and non-text AI tasks"
+    },
+    {
+      "name": "area:datasets",
+      "color": "C2410C",
+      "description": "Dataset manifests, fixtures, licenses and integrity"
+    },
+    {
+      "name": "priority:p0",
+      "color": "B91C1C",
+      "description": "Release blocker: correctness, critical cleanup or required qualification"
+    },
+    {
+      "name": "priority:p1",
+      "color": "EA580C",
+      "description": "High priority for its target release"
+    },
+    {
+      "name": "priority:p2",
+      "color": "EAB308",
+      "description": "Normal priority; does not block immediate stabilization"
+    },
+    {
+      "name": "release:1.7.0",
+      "color": "BFDBFE",
+      "description": "Planned for v1.7.0 backend stability release"
+    },
+    {
+      "name": "release:1.8.0",
+      "color": "BBF7D0",
+      "description": "Planned for v1.8.0 production load and SLOs"
+    },
+    {
+      "name": "release:1.9.0",
+      "color": "FED7AA",
+      "description": "Planned for v1.9.0 capacity and engine comparisons"
+    },
+    {
+      "name": "release:2.0.0",
+      "color": "E9D5FF",
+      "description": "Planned for v2.0.0 multimodal benchmark platform"
+    }
+  ],
+  "issue_assignments": {
+    "116": [
+      "kind:tracking",
+      "release:1.7.0"
+    ],
+    "117": [
+      "kind:tracking",
+      "release:1.8.0"
+    ],
+    "118": [
+      "kind:tracking",
+      "release:1.9.0"
+    ],
+    "119": [
+      "kind:tracking",
+      "release:2.0.0"
+    ],
+    "120": [
+      "kind:validation",
+      "area:backends",
+      "priority:p0",
+      "release:1.7.0"
+    ],
+    "121": [
+      "kind:bug",
+      "area:backends",
+      "priority:p0",
+      "release:1.7.0"
+    ],
+    "122": [
+      "kind:validation",
+      "area:telemetry",
+      "priority:p1",
+      "release:1.7.0"
+    ],
+    "123": [
+      "kind:maintenance",
+      "area:platform",
+      "priority:p1",
+      "release:1.7.0"
+    ],
+    "124": [
+      "kind:validation",
+      "area:platform",
+      "priority:p0",
+      "release:1.7.0"
+    ],
+    "125": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.8.0"
+    ],
+    "126": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.8.0"
+    ],
+    "127": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.8.0"
+    ],
+    "128": [
+      "kind:validation",
+      "area:reporting",
+      "priority:p1",
+      "release:1.8.0"
+    ],
+    "129": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.9.0"
+    ],
+    "130": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.9.0"
+    ],
+    "131": [
+      "kind:feature",
+      "area:benchmark",
+      "priority:p1",
+      "release:1.9.0"
+    ],
+    "132": [
+      "kind:feature",
+      "area:reporting",
+      "priority:p2",
+      "release:1.9.0"
+    ],
+    "133": [
+      "kind:feature",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "134": [
+      "kind:feature",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "135": [
+      "kind:feature",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "136": [
+      "kind:feature",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "137": [
+      "kind:feature",
+      "area:datasets",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "138": [
+      "kind:feature",
+      "area:multimodal",
+      "priority:p1",
+      "release:2.0.0"
+    ],
+    "139": [
+      "kind:validation",
+      "area:multimodal",
+      "priority:p0",
+      "release:2.0.0"
+    ],
+    "140": [
+      "kind:tracking"
+    ]
+  }
+}

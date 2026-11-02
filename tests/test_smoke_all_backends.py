@@ -12,29 +12,39 @@ def _script():
     return module
 
 
-def test_smallest_gguf_uses_local_file(tmp_path):
+def test_smallest_catalog_gguf_reuses_download(tmp_path, monkeypatch):
     script = _script()
     models = tmp_path / "models"
     models.mkdir()
-    (models / "large.gguf").write_bytes(b"12345")
     (models / "tiny.gguf").write_bytes(b"1")
-    cfg = {"models": [], "_config_dir": str(tmp_path)}
-    assert script._smallest_gguf(cfg) == str(models / "tiny.gguf")
+    selected = []
+    monkeypatch.setattr(script, "get_catalog_models", lambda: {
+        "large": {"estimated_gib": 10.0},
+        "small": {"estimated_gib": 6.0},
+    })
+    def find(_root, model_cfg):
+        selected.append(model_cfg["estimated_gib"])
+        return models / "tiny.gguf"
+    monkeypatch.setattr(script, "find_downloaded_model", find)
+    monkeypatch.setattr(script, "download_models", lambda *_args, **_kwargs: None)
+    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(models / "tiny.gguf")
+    assert selected == [6.0]
 
 
-def test_missing_gguf_is_skipped(tmp_path, monkeypatch):
+def test_smallest_catalog_gguf_downloads_only_selected_model(tmp_path, monkeypatch):
     script = _script()
-    monkeypatch.setattr(script, "_prerequisite", lambda *_args: None)
-    cfg = {
-        "_config_dir": str(tmp_path),
-        "tools": {"llama_server": "missing"},
-        "models": [],
-        "benchmark": {},
-        "endpoint": {"base_url": "http://127.0.0.1:18080"},
-    }
-    row = script.run_one(cfg, "llama_cpp", tmp_path)
-    assert row["status"] == "skipped"
-    assert "GGUF" in row["detail"]
+    model = tmp_path / "models" / "small.gguf"
+    monkeypatch.setattr(script, "get_catalog_models", lambda: {
+        "large": {"estimated_gib": 10.0},
+        "small": {"estimated_gib": 6.0},
+    })
+    monkeypatch.setattr(script, "find_downloaded_model", lambda *_args: model if model.exists() else None)
+    def download(_root, *, model_names):
+        assert model_names == ["small"]
+        model.parent.mkdir(exist_ok=True)
+        model.write_bytes(b"GGUF")
+    monkeypatch.setattr(script, "download_models", download)
+    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(model)
 
 
 def test_run_one_stops_server_on_request_failure(tmp_path, monkeypatch):

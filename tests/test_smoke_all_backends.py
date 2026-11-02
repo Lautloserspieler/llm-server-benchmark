@@ -2,6 +2,22 @@
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+def test_vllm_smoke_leaves_desktop_vram_free():
+    _, profile = _script()._case({}, "vllm")
+    assert profile["gpu_memory_utilization"] == 0.50
+
+
+def test_wait_ready_fails_when_container_exits(monkeypatch):
+    script = _script()
+    monkeypatch.setattr(script.docker_backend, "container_running", lambda _name: False)
+    monkeypatch.setattr(script.docker_backend, "container_logs", lambda *_args, **_kwargs: "VRAM exhausted")
+    with pytest.raises(RuntimeError, match="VRAM exhausted"):
+        script._wait_ready(None, "http://localhost", {}, SimpleNamespace(name="test-vllm"))
 
 
 def _script():

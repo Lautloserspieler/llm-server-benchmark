@@ -8,7 +8,7 @@ if [ ! -x .venv/bin/python ]; then
     exit 1
   fi
 fi
-if ! .venv/bin/python -c 'from pydantic import field_validator; import yaml, httpx, rich' >/dev/null 2>&1; then
+if ! .venv/bin/python -c 'from pydantic import field_validator; import yaml, httpx, rich, psutil, huggingface_hub' >/dev/null 2>&1; then
   echo "Installiere Projektabhaengigkeiten in .venv ..."
   .venv/bin/python -m pip install -e .
 fi

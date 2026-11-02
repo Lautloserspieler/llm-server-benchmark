@@ -177,9 +177,34 @@ class TgiBackend(BenchmarkBackend):
         model_ref, volumes = self._model_reference(model_path)
         args = self._serve_args(model_ref, profile, endpoint_cfg)
 
-        # Ein Rest aus einem abgebrochenen Lauf wuerde den Namen blockieren.
+        extra_args = ["--shm-size", SHM_SIZE]
+        memory_gib = profile.get("container_memory_gib")
+        if memory_gib is not None:
+            memory_gib = float(memory_gib)
+            if not 0 < memory_gib < float("inf"):
+                raise ValueError("container_memory_gib muss positiv und endlich sein")
+            limit = f"{memory_gib:g}g"
+            extra_args.extend(["--memory", limit, "--memory-swap", limit])
+        env = {}
+        jobs = profile.get("compilation_jobs")
+        if jobs is not None:
+            if int(jobs) < 1:
+                raise ValueError("compilation_jobs muss mindestens 1 sein")
+            env = {"MAX_JOBS": str(int(jobs))}
+        attention = profile.get("tgi_attention")
+        if attention is not None:
+            if attention not in {"paged", "flashinfer", "flashdecoding", "torch"}:
+                raise ValueError("Unbekannter tgi_attention-Modus")
+            env["ATTENTION"] = "paged" if attention == "torch" else str(attention)
+            if attention in {"paged", "torch"}:
+                env["PREFIX_CACHING"] = "0"
+                env["PREFILL_CHUNKING"] = "0"
+            if attention == "torch":
+                # TGI's generic Transformers path still runs on CUDA but avoids
+                # architecture-specific FlashAttention/FlashInfer kernels.
+                env["USE_FLASH_ATTENTION"] = "false"
+        # Validate the requested limits before removing an existing container.
         docker_backend.stop_container(self.container_name, log=log)
-
         container_id = docker_backend.run_container(
             self.container_name,
             self.image,
@@ -188,7 +213,8 @@ class TgiBackend(BenchmarkBackend):
             port_map={self._host_port(endpoint_cfg): CONTAINER_PORT},
             volumes=volumes,
             log=log,
-            extra_args=["--shm-size", SHM_SIZE],
+            extra_args=extra_args,
+            env=env,
         )
         self.container_id = container_id
         self.command = self._printable(args)
@@ -322,11 +348,15 @@ class TgiBackend(BenchmarkBackend):
         base_url: str,
         timeout_s: float,
         headers: dict[str, str] | None = None,
-        proc: Any = None,  # noqa: ARG002 - Container-Status prueft start_server selbst
+        proc: Any = None,
     ) -> float:
         # TGIs OpenAI-Server hat /health, ueber das veroeffentlichte Port
         # genauso erreichbar wie bei llama-server und vLLM.
-        return wait_health(base_url, timeout_s, headers)
+        handle_name = getattr(proc, "name", None)
+        name = handle_name or self.container_name
+        # Externally managed HTTP endpoints have no local Docker lifecycle.
+        check_alive = (lambda: docker_backend.check_container_alive(name)) if handle_name or self.container_id else None
+        return wait_health(base_url, timeout_s, headers, check_alive=check_alive)
 
 
 class _ContainerHandle:

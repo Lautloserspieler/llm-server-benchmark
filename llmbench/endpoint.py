@@ -9,6 +9,7 @@ import re
 import statistics
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -134,6 +135,7 @@ async def wait_health_async(
     headers: dict[str, str] | None = None,
     proc: Any = None,
     path: str = "/health",
+    check_alive: Callable[[], None] | None = None,
 ) -> float:
     """Wartet, bis ``path`` antwortet.
 
@@ -150,12 +152,16 @@ async def wait_health_async(
     # runners client initialization alone can consume a very short timeout;
     # without this poll an already-dying server may be reported as a generic
     # health timeout instead of with its real exit code.
+    if check_alive:
+        check_alive()
     code = _exited_code(proc)
     if code is not None:
         raise RuntimeError(server_exit_message(proc, code))
 
     async with httpx.AsyncClient() as client:
         while time.monotonic() < deadline:
+            if check_alive:
+                check_alive()
             code = _exited_code(proc)
             if code is not None:
                 raise RuntimeError(server_exit_message(proc, code))
@@ -171,6 +177,8 @@ async def wait_health_async(
             await asyncio.sleep(1)
     # Der letzte Versuch kann bis zu 5 s haengen - endete der Prozess in dieser
     # Zeit, soll trotzdem sein Exitcode samt Log gemeldet werden.
+    if check_alive:
+        check_alive()
     code = _exited_code(proc)
     if code is not None:
         raise RuntimeError(server_exit_message(proc, code))
@@ -188,14 +196,15 @@ def wait_health(
     headers: dict[str, str] | None = None,
     proc: Any = None,
     path: str = "/health",
+    check_alive: Callable[[], None] | None = None,
 ) -> float:
     """Synchronous wrapper using nested event loop compatibility."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(wait_health_async(base_url, timeout_s, headers, proc, path=path))
+        return asyncio.run(wait_health_async(base_url, timeout_s, headers, proc, path=path, check_alive=check_alive))
 
-    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers, proc, path=path))
+    return loop.run_until_complete(wait_health_async(base_url, timeout_s, headers, proc, path=path, check_alive=check_alive))
 
 
 def port_in_use(host: str, port: int) -> bool:

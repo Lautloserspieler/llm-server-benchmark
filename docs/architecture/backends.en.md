@@ -87,6 +87,17 @@ for it.
 
 ## Containerized backends
 
+### Release monitoring
+
+`backend-release-watch.yml` checks stable llama.cpp, vLLM, and TGI releases weekly.
+llama.cpp is already pinned in `llama-cpp-version.txt`. For vLLM and TGI, the
+first draft PR proposes replacing the moving `:latest` default image with a
+concrete version. Later checks compare releases with that reference. Documentation
+changes alone do not trigger a bump; unclear release notes require manual review.
+The bot runs code tests but no hardware benchmarks. Before merging, verify the
+image/binary, API startup, and representative CPU/GPU measurements. Existing
+personal `benchmark.yaml` files are not changed.
+
 In addition to the native llama.cpp backend, llmbench supports server-based backends as
 Docker containers. Containers unify installation (image pull), removal (container, image,
 volume), and behavior between Windows (Docker Desktop/WSL2) and Linux (native Docker).

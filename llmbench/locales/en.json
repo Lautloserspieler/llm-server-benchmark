@@ -155,6 +155,7 @@
   "Beide Server bereit.": "Both servers ready.",
   "Container {name} gestartet ({id}).": "Container {name} started ({id}).",
   "Das Modell besitzt kein Profil.": "The model has no profile.",
+  "Das Modell besitzt kein Profil fuer die gewaehlte Hardware.": "The model has no profile for the selected hardware.",
   "Das automatische Setup wurde beendet, aber {files} fehlen weiterhin unter {path}.": "The automatic setup finished, but {files} are still missing in {path}.",
   "Die Standard-Suite ist noch nicht vollstaendig.": "The standard suite is not complete yet.",
   "Docker ist nicht erreichbar - Container, Image und Volume koennen nicht entfernt werden. Es wird nur die lokale Zustandsdatei bereinigt.": "Docker is not reachable - container, image and volume cannot be removed. Only the local state file is cleaned up.",

@@ -482,7 +482,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_all_stress(config_path: str, out_dir: Path) -> dict[str, int]:
+def _run_all_stress(config_path: str, out_dir: Path, hardware_target: str = "both") -> dict[str, int]:
     from llmbench.stress.multitenant import run_multitenant
     from llmbench.stress.oom import run_oom_stress
     from llmbench.stress.quant import run_quant_stress
@@ -500,8 +500,8 @@ def _run_all_stress(config_path: str, out_dir: Path) -> dict[str, int]:
             print_err(_("Stress-Test '{name}' fehlgeschlagen: {error}").format(name=name, error=exc))
             return 1
 
-    statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(config_path, stress_root / "ttft"))
-    statuses["oom"] = _run("oom", lambda: asyncio.run(run_oom_stress(config_path, stress_root / "oom")))
+    statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(config_path, stress_root / "ttft", hardware_target=hardware_target))
+    statuses["oom"] = _run("oom", lambda: asyncio.run(run_oom_stress(config_path, stress_root / "oom", hardware_target=hardware_target)))
     if len(cfg.get("models", [])) >= 2:
         statuses["multitenant"] = _run(
             "multitenant",
@@ -791,7 +791,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"CSV: {out / 'benchmarks.csv'}")
             print(f"JSON: {out / 'summary.json'}")
             if args.stress:
-                statuses = _run_all_stress(args.config, out)
+                statuses = _run_all_stress(args.config, out, args.hardware)
                 print(f"Stress-Ergebnisse: {out / 'stress' / 'index.json'} ({statuses})")
         return 0
 

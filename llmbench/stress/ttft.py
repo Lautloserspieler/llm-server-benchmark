@@ -6,7 +6,7 @@ from llmbench.backends import backend_name, get_backend
 from llmbench.config import load_config
 from llmbench.endpoint import run_endpoint_load
 from llmbench.i18n import _
-from llmbench.stress.base import require_capabilities, resolve_model_ref
+from llmbench.stress.base import require_capabilities, resolve_model_ref, select_stress_profile
 from llmbench.utils import ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -19,7 +19,10 @@ def _ttft_levels(cfg: dict) -> list[int]:
     return sorted(set(endpoint_levels + [16, 32]))
 
 
-def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path | None = None) -> int:
+def run_ttft_stress(
+    config_path: str = "benchmark.yaml", output_dir: str | Path | None = None,
+    *, hardware_target: str = "both",
+) -> int:
     """Misst TTFT P50/P95 bei deutlich hoeherer Parallelitaet als der Standardlauf."""
     cfg = load_config(config_path)
     if not cfg.get("models"):
@@ -64,7 +67,10 @@ def run_ttft_stress(config_path: str = "benchmark.yaml", output_dir: str | Path 
         int(endpoint_cfg.get("parallel_slots", 1)), max(levels)
     )
 
-    profile = profiles[0]
+    profile = select_stress_profile(model, hardware_target)
+    if profile is None:
+        print_err(_("Das Modell besitzt kein Profil fuer die gewaehlte Hardware."))
+        return 2
     model_path = resolve_model_ref(model["path"], cfg, name)
     proc = None
 

@@ -93,6 +93,45 @@ def test_ttft_stress_uses_configured_backend_factory(monkeypatch, tmp_path: Path
     assert result["server_command"] == "fake server"
 
 
+def test_ttft_stress_cpu_selection_reaches_server(monkeypatch, tmp_path: Path):
+    cfg = _config()
+    cfg["models"][0]["profiles"].append({"name": "CPU", "gpu_layers": 0, "ollama_num_gpu": 0})
+    selected = []
+    backend = _FakeTtftBackend()
+    backend.start_server = lambda _path, profile, *_args: (selected.append(profile) or SimpleNamespace(pid=1), "cmd")
+    monkeypatch.setattr(ttft, "load_config", lambda _path: cfg)
+    monkeypatch.setattr(ttft, "get_backend", lambda _cfg: backend)
+    monkeypatch.setattr(ttft, "backend_name", lambda _cfg: "ollama")
+    monkeypatch.setattr(ttft, "run_endpoint_load", lambda *_a, **_k: {"levels": []})
+
+    assert ttft.run_ttft_stress("ignored.yaml", tmp_path, hardware_target="cpu") == 0
+    assert selected[0]["ollama_num_gpu"] == 0
+
+
+def test_oom_stress_cpu_selection_reaches_server(monkeypatch, tmp_path: Path):
+    cfg = _config()
+    cfg["stress"] = {"oom_contexts": [2048]}
+    cfg["models"][0]["profiles"].append({"name": "CPU", "gpu_layers": 0, "ollama_num_gpu": 0})
+    selected = []
+
+    class Backend(_FakeTtftBackend):
+        capabilities = BackendCapabilities(endpoint=True, oom_probe=True)
+
+        def start_server(self, _path, profile, *_args):
+            selected.append(profile)
+            return SimpleNamespace(pid=1), "cmd"
+
+        async def probe_context(self, _url, level, _cfg):
+            return {"ok": True, "actual_prompt_tokens": level}
+
+    monkeypatch.setattr(oom, "load_config", lambda _path: cfg)
+    monkeypatch.setattr(oom, "get_backend", lambda _cfg: Backend())
+    monkeypatch.setattr(oom, "backend_name", lambda _cfg: "ollama")
+
+    assert asyncio.run(oom.run_oom_stress("ignored.yaml", tmp_path, hardware_target="cpu")) == 0
+    assert selected[0]["ollama_num_gpu"] == 0
+
+
 def test_oom_stress_skips_unsupported_backend_before_backend_specific_work(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(oom, "load_config", lambda _path: _config())
     monkeypatch.setattr(oom, "get_backend", lambda _cfg: _UnsupportedOomBackend())

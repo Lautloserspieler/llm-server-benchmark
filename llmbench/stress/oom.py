@@ -10,7 +10,7 @@ from llmbench.backends import backend_name, get_backend
 from llmbench.backends.http_probe import CATEGORY_PROBE_ERROR, CATEGORY_STARTUP_FAILED
 from llmbench.config import load_config
 from llmbench.i18n import _
-from llmbench.stress.base import require_capabilities, resolve_model_ref
+from llmbench.stress.base import require_capabilities, resolve_model_ref, select_stress_profile
 from llmbench.utils import auth_headers, ensure_dir, print_err, print_msg, print_section, write_json
 
 
@@ -60,7 +60,10 @@ def _cleanup_failed_start(backend: Any, name: str, proc: Any) -> None:
         backend.stop_server(proc)
 
 
-async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | Path | None = None) -> int:
+async def run_oom_stress(
+    config_path: str = "benchmark.yaml", output_dir: str | Path | None = None,
+    *, hardware_target: str = "both",
+) -> int:
     """Ermittelt die praktische KV-/Kontextgrenze durch schrittweise Serverstarts."""
     cfg = load_config(config_path)
     if not cfg.get("models"):
@@ -96,7 +99,10 @@ async def run_oom_stress(config_path: str = "benchmark.yaml", output_dir: str | 
     base_endpoint.update(model.get("endpoint", {}) or {})
     base_endpoint["parallel_slots"] = 1
     base_url = str(base_endpoint.get("base_url", "http://127.0.0.1:8080"))
-    profile = profiles[0]
+    profile = select_stress_profile(model, hardware_target)
+    if profile is None:
+        print_err(_("Das Modell besitzt kein Profil fuer die gewaehlte Hardware."))
+        return 2
     levels = _context_levels(cfg)
     if not levels:
         print_err(_("Keine Kontextstufen fuer den OOM-Test konfiguriert."))

@@ -87,6 +87,18 @@ reproduzierbaren Benchmarkvertrag anbietet.
 
 ## Containerisierte Backends
 
+### Versionsüberwachung
+
+`backend-release-watch.yml` prüft wöchentlich stabile llama.cpp-, vLLM- und
+TGI-Releases. llama.cpp ist über `llama-cpp-version.txt` bereits festgelegt.
+Bei vLLM und TGI schlägt der erste Draft-PR vor, die beweglichen Standard-Images
+mit `:latest` auf eine konkrete Version umzustellen. Danach prüft der Bot neuere
+Releases gegen diese Referenz. Dokumentationsänderungen allein lösen keinen
+Versionswechsel aus; unklare Release-Notizen werden zur manuellen Prüfung vorgeschlagen.
+Der Bot führt Code-Tests aus, aber keine Hardware-Benchmarks. Vor einem Merge müssen
+Image/Binary, API-Start und repräsentative CPU/GPU-Messungen geprüft werden.
+Bestehende persönliche `benchmark.yaml`-Dateien ändert er nicht.
+
 Neben dem nativen llama.cpp-Backend unterstützt llmbench serverbasierte Backends als
 Docker-Container. Container vereinheitlichen Installation (Image-Pull), Deinstallation
 (Container, Image, Volume) und das Verhalten zwischen Windows (Docker Desktop/WSL2) und

@@ -214,7 +214,7 @@ Apple Silicon acceleration is provided by the platform llama.cpp build.
 
 ## Quick backend check
 
-Run `SMOKE_ALL_BACKENDS.bat` on Windows or `./SMOKE_ALL_BACKENDS.sh` on Linux. The script checks llama.cpp, Ollama, vLLM and TGI sequentially: server startup, health endpoint and a short text generation. It does not change `benchmark.yaml`; logs and a JSON summary are written under `results/backend-smoke/`.
+Run `SMOKE_ALL_BACKENDS.bat` on Windows or `bash SMOKE_ALL_BACKENDS.sh` on Linux. The script checks llama.cpp, Ollama, vLLM and TGI sequentially: server startup, health endpoint and a short text generation. It does not change `benchmark.yaml`; logs and a JSON summary are written under `results/backend-smoke/`.
 
 It uses the smallest local GGUF it finds for llama.cpp, `gemma3:1b` for Ollama and `Qwen/Qwen2.5-0.5B-Instruct` for vLLM/TGI. Models may be downloaded on first use and are cached. Missing Docker backends or GPU support are reported as `skipped`; images are never installed automatically. Existing benchmark containers are left running. The configured `endpoint.base_url` port must be free.
 

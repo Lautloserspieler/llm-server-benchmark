@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from llmbench import backend_setup, docker_backend  # noqa: E402
 from llmbench.backends import get_backend  # noqa: E402
 from llmbench.config import load_config, resolve_path  # noqa: E402
+from llmbench.download import download_models, find_downloaded_model, get_catalog_models  # noqa: E402
 from llmbench.endpoint import api_style_for  # noqa: E402
 from llmbench.http_bench import sanity_completion_async  # noqa: E402
 from llmbench.utils import auth_headers  # noqa: E402
@@ -34,29 +35,27 @@ class MissingPrerequisite(Exception):
     """A backend cannot be tested until a local prerequisite is provided."""
 
 
-def _smallest_gguf(cfg: dict) -> str | None:
-    candidates: list[Path] = []
-    for model in cfg.get("models") or []:
-        path = Path(resolve_path(str(model.get("path") or ""), cfg))
-        if path.is_file() and path.suffix.lower() == ".gguf":
-            candidates.append(path)
+def _smallest_catalog_gguf(cfg: dict) -> str:
+    catalog = get_catalog_models()
+    name, model_cfg = min(catalog.items(), key=lambda item: (item[1]["estimated_gib"], item[0]))
     models_dir = Path(cfg["_config_dir"]) / "models"
-    if models_dir.is_dir():
-        candidates.extend(models_dir.rglob("*.gguf"))
-    # A split GGUF must start with the first shard; duplicate paths are harmless.
-    candidates = [p for p in candidates if "-of-" not in p.name or "-00001-of-" in p.name]
-    return str(min(candidates, key=lambda p: (p.stat().st_size, str(p)))) if candidates else None
+    found = find_downloaded_model(models_dir, model_cfg)
+    if found is None:
+        print(f"[llama_cpp] Lade kleinstes Katalogmodell: {name} (ca. {model_cfg['estimated_gib']:g} GiB)", flush=True)
+        download_models(models_dir, model_names=[name])
+        found = find_downloaded_model(models_dir, model_cfg)
+    if found is None:
+        raise RuntimeError(f"Katalogmodell {name} konnte nicht vollstaendig geladen werden")
+    return str(found)
 
 
 def _case(cfg: dict, name: str) -> tuple[str, dict]:
     if name == "llama_cpp":
-        model = _smallest_gguf(cfg)
-        if not model:
-            raise MissingPrerequisite("Keine lokale GGUF-Datei unter models/ oder in benchmark.yaml gefunden")
         server = Path(resolve_path(str(cfg["tools"]["llama_server"]), cfg))
         if not server.is_file():
             raise MissingPrerequisite(f"llama-server fehlt: {server}")
         cfg["tools"]["llama_server"] = str(server)
+        model = _smallest_catalog_gguf(cfg)
         return model, {"name": "Smoke-CPU", "gpu_layers": 0, "threads": "auto"}
     if name == "ollama":
         return "gemma3:1b", {"name": "Smoke-CPU", "gpu_layers": 0, "ollama_num_ctx": 2048, "ollama_num_gpu": 0}
@@ -100,17 +99,17 @@ def run_one(source: dict, name: str, out: Path) -> dict:
     proc = None
     backend = None
     try:
+        endpoint = cfg["endpoint"]
+        if not _free_port(str(endpoint["base_url"])):
+            raise RuntimeError(f"Port belegt: {endpoint['base_url']}")
         model, profile = _case(cfg, name)
         row["model"] = model
-        endpoint = cfg["endpoint"]
         endpoint["context_size"] = 2048
         endpoint["parallel_slots"] = 1
         endpoint["timeout_seconds"] = 120
         endpoint["max_tokens"] = 16
         if name in {"vllm", "tgi"}:
             endpoint["model"] = model
-        if not _free_port(str(endpoint["base_url"])):
-            raise RuntimeError(f"Port belegt: {endpoint['base_url']}")
         backend = get_backend(cfg)
         log_path = out / f"{name}.log"
         proc, _command = backend.start_server(model, profile, endpoint, cfg["benchmark"], log_path)

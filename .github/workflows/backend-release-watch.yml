@@ -1,0 +1,98 @@
+name: Backend release watch
+
+on:
+  schedule:
+    - cron: '41 7 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  review:
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [llama_cpp, vllm, tgi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Review stable releases
+        id: check
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          python scripts/backend_release_watch.py "$BACKEND" --report "$RUNNER_TEMP/backend-review.json"
+          echo "update=$(jq -r .update "$RUNNER_TEMP/backend-review.json")" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/backend-review.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: steps.check.outputs.update == 'true'
+        with:
+          python-version: '3.12'
+      - name: Check proposed source changes
+        if: steps.check.outputs.update == 'true'
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest tests/test_backend_release_watch.py tests/test_config.py tests/test_backend_setup.py tests/test_runner.py tests/test_llama_cpp_setup.py -q --no-cov
+          ruff check llmbench/config.py llmbench/backend_setup.py scripts/backend_release_watch.py
+
+  propose:
+    needs: review
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [llama_cpp, vllm, tgi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Prepare candidate
+        id: check
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          python scripts/backend_release_watch.py "$BACKEND" --report "$RUNNER_TEMP/backend-review.json"
+          echo "update=$(jq -r .update "$RUNNER_TEMP/backend-review.json")" >> "$GITHUB_OUTPUT"
+          echo "candidate=$(jq -r .candidate "$RUNNER_TEMP/backend-review.json")" >> "$GITHUB_OUTPUT"
+      - name: Check existing proposal
+        if: steps.check.outputs.update == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKEND: ${{ matrix.backend }}
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+        run: |
+          branch="bot/${BACKEND}-${CANDIDATE}"
+          count=$(gh pr list --state all --head "$branch" --json number --jq 'length')
+          echo "exists=$([[ "$count" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Open draft PR
+        if: steps.check.outputs.update == 'true' && steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKEND: ${{ matrix.backend }}
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+        run: |
+          branch="bot/${BACKEND}-${CANDIDATE}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            gh pr create --draft --base main --head "$branch" \
+              --title "chore: review ${BACKEND} ${CANDIDATE} reference" \
+              --body-file "$RUNNER_TEMP/backend-review.md"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          case "$BACKEND" in
+            llama_cpp) git add llama-cpp-version.txt ;;
+            vllm) git add llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_runner.py tests/test_backend_setup.py ;;
+            tgi) git add llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_runner.py ;;
+          esac
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: propose ${BACKEND} ${CANDIDATE} reference"
+          git push origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "chore: review ${BACKEND} ${CANDIDATE} reference" \
+            --body-file "$RUNNER_TEMP/backend-review.md"

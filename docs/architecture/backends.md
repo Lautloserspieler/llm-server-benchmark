@@ -134,6 +134,15 @@ implementiert.
 `/api/generate`-API auf Port 11434. Ollama kann mit reinen CPU-Profilen oder mit einer
 durch Docker bereitgestellten NVIDIA-GPU laufen.
 
+Der Standard ist `ollama/ollama:0.40.9`, die auf realer Hardware dokumentierte
+Referenzversion. `tools.ollama_image` kann ein anderes Image wählen; bestehende
+Konfigurationen mit `:latest` bleiben ausdrücklich unverändert und sollten für
+reproduzierbare Läufe auf eine konkrete Version umgestellt werden. `summary.json`
+zeichnet Image und lokalen Digest auf. Neue Ollama-Versionen werden zunächst
+zusätzlich gegen dieselben Kontext- und Fehlerszenarien geprüft. Der Standard
+wird erst nach erfolgreichen CPU- und GPU-Tests bewusst angehoben, spätestens
+bei der nächsten llmbench-Release-Prüfung; ein festes Zeitfenster gibt es nicht.
+
 Vorhandene Ollama-Modellnamen liegen im persistenten Backend-Volume unter
 `/root/.ollama`. Fehlt ein Library-Modell, wird es vor dem Benchmark geladen. Lokale
 GGUF-Dateien werden über Ollamas Blob- und Create-APIs importiert; gesplittete GGUF-Sätze

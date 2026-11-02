@@ -199,8 +199,33 @@ ui_choice() {
     fi
 }
 
+ui_ttft_levels() {
+    local answer="" index level
+    local -a available=(1 2 4 8 16 32) selected=()
+    printf '\n  %s\n' "$(ui_t run.ttft_question)"
+    for index in 1 2 3 4 5 6; do
+        printf '     %s) %s\n' "$index" "${available[index-1]}"
+    done
+    UI_TTFT_LEVELS=()
+    [ -t 0 ] || return 0
+    while true; do
+        read -r -p "  $(ui_t run.ttft_prompt) " answer || true
+        [ -n "${answer//[[:space:]]/}" ] || return 0
+        if [[ "$answer" =~ ^[[:space:]]*[1-6]([[:space:]]*,[[:space:]]*[1-6])*[[:space:]]*$ ]]; then
+            for index in 1 2 3 4 5 6; do
+                if [[ ",$answer," =~ ,\ *$index\ *, ]]; then
+                    selected+=("${available[index-1]}")
+                fi
+            done
+            UI_TTFT_LEVELS=("${selected[@]}")
+            return 0
+        fi
+        ui_warn run.ttft_invalid
+    done
+}
+
 # Gemeinsames Startmenue fuer nativen und Docker-Lauf.
-# Ergebnis: UI_DURATION, UI_HARDWARE, UI_STRESS (0/1)
+# Ergebnis: UI_DURATION, UI_HARDWARE, UI_STRESS (0/1), UI_TTFT_LEVELS
 ui_benchmark_options() {
     ui_section run.title
     ui_choice run.duration_question 2 run.duration_short run.duration_medium run.duration_long
@@ -210,6 +235,8 @@ ui_benchmark_options() {
     printf '\n'
     UI_STRESS=0
     if ui_confirm run.stress_question; then UI_STRESS=1; fi
+    UI_TTFT_LEVELS=()
+    if [ "$UI_STRESS" = "1" ]; then ui_ttft_levels; fi
     local stress_label
     if [ "$UI_STRESS" = "1" ]; then stress_label="$(ui_t ui.yes)"; else stress_label="$(ui_t ui.no)"; fi
     printf '\n'

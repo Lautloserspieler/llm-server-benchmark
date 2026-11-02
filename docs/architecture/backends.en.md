@@ -131,7 +131,7 @@ observation, local quantization comparison, and multi-model stress are not imple
 `/api/generate` API on port 11434. Ollama can run with CPU-only profiles or with an
 NVIDIA GPU passed through by Docker.
 
-The default is `ollama/ollama:0.40.9`, the reference version documented on real
+The default is `ollama/ollama:0.40.13`, the reference version documented on real
 hardware. `tools.ollama_image` can select another image; existing configurations
 with `:latest` remain unchanged and should be set to a concrete version for
 reproducible runs. `summary.json` records the image and local digest. New Ollama

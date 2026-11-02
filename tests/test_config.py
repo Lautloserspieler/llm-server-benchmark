@@ -149,7 +149,7 @@ def test_tools_tgi_image_has_default():
 
 
 def test_tools_ollama_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:0.40.9"
+    assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:0.40.13"
     from llmbench.backend_setup import DEFAULT_OLLAMA_IMAGE
 
     assert DEFAULT_CONFIG["tools"]["ollama_image"] == DEFAULT_OLLAMA_IMAGE

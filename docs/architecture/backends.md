@@ -134,7 +134,7 @@ implementiert.
 `/api/generate`-API auf Port 11434. Ollama kann mit reinen CPU-Profilen oder mit einer
 durch Docker bereitgestellten NVIDIA-GPU laufen.
 
-Der Standard ist `ollama/ollama:0.40.9`, die auf realer Hardware dokumentierte
+Der Standard ist `ollama/ollama:0.40.13`, die auf realer Hardware dokumentierte
 Referenzversion. `tools.ollama_image` kann ein anderes Image wählen; bestehende
 Konfigurationen mit `:latest` bleiben ausdrücklich unverändert und sollten für
 reproduzierbare Läufe auf eine konkrete Version umgestellt werden. `summary.json`

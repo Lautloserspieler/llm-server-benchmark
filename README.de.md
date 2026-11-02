@@ -212,6 +212,14 @@ Apple-Silicon-Beschleunigung wird durch den plattformeigenen llama.cpp-Build ber
 
 ---
 
+# Kurzer Test aller Backends
+
+`SMOKE_ALL_BACKENDS.bat` unter Windows oder `./SMOKE_ALL_BACKENDS.sh` unter Linux starten. Das Skript prueft nacheinander llama.cpp, Ollama, vLLM und TGI: Serverstart, Health-Endpoint und eine kurze Textgenerierung. Es veraendert `benchmark.yaml` nicht und schreibt `results/backend-smoke/report.json` sowie Server-Logs.
+
+Es verwendet die kleinste gefundene lokale GGUF-Datei fuer llama.cpp, `gemma3:1b` fuer Ollama und `Qwen/Qwen2.5-0.5B-Instruct` fuer vLLM/TGI. Modelle werden beim ersten Start ggf. heruntergeladen; bereits heruntergeladene Modelle bleiben im jeweiligen Cache. Fehlende Backends, Docker oder NVIDIA-GPU werden als `skipped` angezeigt. Docker-Images werden nicht automatisch installiert. Ein bereits laufender Benchmark-Container bleibt unberuehrt. Der konfigurierte `endpoint.base_url`-Port muss frei sein; bei Portkonflikten kann `benchmark.yaml` angepasst werden.
+
+Einzelne Backends: `python scripts/smoke_all_backends.py --backends ollama vllm`. Der Test ist ein Funktionscheck und liefert keine vergleichbaren Performancewerte.
+
 ## Manuelle Python-Installation
 
 Für Entwicklung oder manuelle CLI-Nutzung:

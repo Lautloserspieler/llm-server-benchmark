@@ -459,7 +459,10 @@ function Run-DockerBenchmark {
     Write-UiHeader 'LLM Server Benchmark' (T 'run.subtitle_docker')
     $options = Read-BenchmarkOptions
     $runArgs = @('run','--rm','llmbench','python','-m','llmbench','run','--config','/workspace/benchmark.yaml','--duration',$options.Duration,'--hardware',$options.Hardware)
-    if ($options.Stress) { $runArgs += '--stress' }
+    if ($options.Stress) {
+        $runArgs += '--stress'
+        if ($options.TtftConcurrency.Count -gt 0) { $runArgs += @('--ttft-concurrency') + @($options.TtftConcurrency) }
+    }
     Set-ContainerImageId | Out-Null
     Invoke-Compose @runArgs
 }

@@ -215,6 +215,7 @@ function Invoke-BenchmarkRun {
     $runArgs = @("-m", "llmbench", "run", "--config", $Config, "--duration", $options.Duration, "--hardware", $hardware)
     if ($options.Stress) {
         $runArgs += "--stress"
+        if ($options.TtftConcurrency.Count -gt 0) { $runArgs += @('--ttft-concurrency') + @($options.TtftConcurrency) }
     }
 
     & $VenvPython @runArgs

@@ -281,6 +281,7 @@ llmbench_docker_run() {
     local args=(python -m llmbench run --config /workspace/benchmark.yaml --duration "$UI_DURATION" --hardware "$UI_HARDWARE")
     if [ "$UI_STRESS" = "1" ]; then
         args+=(--stress)
+        if [ "${#UI_TTFT_LEVELS[@]}" -gt 0 ]; then args+=(--ttft-concurrency "${UI_TTFT_LEVELS[@]}"); fi
     fi
 
     llmbench_set_container_image_id || return 1

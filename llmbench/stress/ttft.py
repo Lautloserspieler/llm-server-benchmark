@@ -21,7 +21,7 @@ def _ttft_levels(cfg: dict) -> list[int]:
 
 def run_ttft_stress(
     config_path: str = "benchmark.yaml", output_dir: str | Path | None = None,
-    *, hardware_target: str = "both",
+    *, hardware_target: str = "both", concurrency: list[int] | None = None,
 ) -> int:
     """Misst TTFT P50/P95 bei deutlich hoeherer Parallelitaet als der Standardlauf."""
     cfg = load_config(config_path)
@@ -35,7 +35,7 @@ def run_ttft_stress(
         print_err(_("Das Modell besitzt kein Profil."))
         return 1
 
-    levels = _ttft_levels(cfg)
+    levels = sorted(set(concurrency)) if concurrency is not None else _ttft_levels(cfg)
     if not levels:
         print_err(_("Keine Concurrency-Stufen fuer TTFT konfiguriert."))
         return 1

@@ -108,6 +108,22 @@ def test_ttft_stress_cpu_selection_reaches_server(monkeypatch, tmp_path: Path):
     assert selected[0]["ollama_num_gpu"] == 0
 
 
+def test_ttft_stress_selection_overrides_default_levels(monkeypatch, tmp_path: Path):
+    selected = []
+    backend = _FakeTtftBackend()
+    monkeypatch.setattr(ttft, "load_config", lambda _path: _config())
+    monkeypatch.setattr(ttft, "get_backend", lambda _cfg: backend)
+    monkeypatch.setattr(ttft, "backend_name", lambda _cfg: "fake")
+    monkeypatch.setattr(
+        ttft, "run_endpoint_load",
+        lambda _url, cfg, *_args, **_kwargs: (selected.append(dict(cfg)) or {"levels": []}),
+    )
+
+    assert ttft.run_ttft_stress("ignored.yaml", tmp_path, concurrency=[4, 1, 4]) == 0
+    assert selected[0]["concurrency"] == [1, 4]
+    assert selected[0]["requests_per_level"] >= 8
+
+
 def test_oom_stress_cpu_selection_reaches_server(monkeypatch, tmp_path: Path):
     cfg = _config()
     cfg["stress"] = {"oom_contexts": [2048]}

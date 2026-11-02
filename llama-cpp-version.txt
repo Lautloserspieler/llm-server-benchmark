@@ -4,6 +4,6 @@
 # Versionswechsel nur bewusst zu Beginn einer neuen Vergleichsserie.
 #
 # Beispiel (Kommentarzeichen entfernen und Tag anpassen):
-b11748
+b12052
 #
 # Verfuegbare Tags: https://github.com/ggml-org/llama.cpp/releases

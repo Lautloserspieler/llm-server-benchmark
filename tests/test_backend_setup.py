@@ -73,16 +73,16 @@ def test_state_file_path_follows_runtime_convention(tmp_path: Path):
 def test_ensure_backend_pulls_and_writes_state(docker, tmp_path: Path):
     state = backend_setup.ensure_backend("vllm", tmp_path)
 
-    assert ("pull", "vllm/vllm-openai:latest") in docker.calls
+    assert ("pull", "vllm/vllm-openai:v0.32.0") in docker.calls
     path = backend_setup.state_file("vllm", tmp_path)
     assert path.exists()
 
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written == state
     assert written["backend"] == "vllm"
-    assert written["image"] == "vllm/vllm-openai:latest"
-    assert written["tag"] == "latest"
-    assert written["digest"] == "vllm/vllm-openai:latest@sha256:deadbeef"
+    assert written["image"] == "vllm/vllm-openai:v0.32.0"
+    assert written["tag"] == "v0.32.0"
+    assert written["digest"] == "vllm/vllm-openai:v0.32.0@sha256:deadbeef"
     assert written["container"] == "llmbench-vllm"
     assert written["volume"] == "llmbench-vllm-cache"
     assert written["installed_at"]
@@ -128,7 +128,7 @@ def test_ensure_backend_repulls_when_image_changed(docker, tmp_path: Path):
     backend_setup.ensure_backend("vllm", tmp_path)
     backend_setup.ensure_backend("vllm", tmp_path, image="vllm/vllm-openai:v0.6.0")
     pulls = [c[1] for c in docker.calls if c[0] == "pull"]
-    assert pulls == ["vllm/vllm-openai:latest", "vllm/vllm-openai:v0.6.0"]
+    assert pulls == ["vllm/vllm-openai:v0.32.0", "vllm/vllm-openai:v0.6.0"]
 
 
 def test_ensure_backend_repulls_when_image_vanished_locally(docker, tmp_path: Path):
@@ -153,7 +153,7 @@ def test_remove_backend_removes_container_image_and_state(docker, tmp_path: Path
     backend_setup.remove_backend("vllm", tmp_path)
 
     assert ("stop", "llmbench-vllm") in docker.calls
-    assert ("rmi", "vllm/vllm-openai:latest") in docker.calls
+    assert ("rmi", "vllm/vllm-openai:v0.32.0") in docker.calls
     assert not backend_setup.state_file("vllm", tmp_path).exists()
     assert not backend_setup.is_installed("vllm", tmp_path)
 

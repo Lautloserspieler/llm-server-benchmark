@@ -17,7 +17,7 @@ def release(tag: str, body: str = "", *, prerelease: bool = False) -> dict:
 
 
 def test_llama_cpp_batches_stable_releases_and_skips_docs_only():
-    releases = [release("b11748"), release("b11749", "- README typo"),
+    releases = [release("b11748", prerelease=True), release("b11749", "- README typo"),
                 release("b11750", "- Fix CUDA server crash"),
                 release("b11751-rc1", "- GPU", prerelease=True)]
     result = watch.review("llama_cpp", releases, "b11748")
@@ -25,6 +25,26 @@ def test_llama_cpp_batches_stable_releases_and_skips_docs_only():
     assert [entry["status"] for entry in result["findings"]] == ["irrelevant", "relevant"]
     assert result["update"] is True
     assert watch.review("llama_cpp", releases[:2], "b11748")["update"] is False
+
+
+def test_numbered_llama_prereleases_are_candidates():
+    result = watch.review("llama_cpp", [release("b11748", prerelease=True),
+                                        release("b11749", "- GPU", prerelease=True)], "b11748")
+    assert result["candidate"] == "b11749"
+    assert result["update"] is True
+
+
+def test_large_llama_release_batch_has_bounded_pr_report():
+    releases = [release("b11748", prerelease=True)]
+    releases.extend(release(f"b{n}", "- Fix GPU model loading", prerelease=True)
+                    for n in range(11749, 12041))
+    result = watch.review("llama_cpp", releases, "b11748")
+    assert result["candidate"] == "b12040"
+    assert len(result["findings"]) == 292
+    report = watch.markdown(result)
+    assert "Reviewed 292 releases; showing the latest 12" in report
+    assert "b11748...b12040" in report
+    assert len(report) < 20000
 
 
 def test_first_vllm_pin_uses_latest_stable_release():

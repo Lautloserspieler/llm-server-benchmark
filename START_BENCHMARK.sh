@@ -96,5 +96,6 @@ ui_benchmark_options
 args=(python -m llmbench run --config "$CONFIG" --duration "$UI_DURATION" --hardware "$UI_HARDWARE")
 if [ "$UI_STRESS" = "1" ]; then
     args+=(--stress)
+    if [ "${#UI_TTFT_LEVELS[@]}" -gt 0 ]; then args+=(--ttft-concurrency "${UI_TTFT_LEVELS[@]}"); fi
 fi
 "${args[@]}"

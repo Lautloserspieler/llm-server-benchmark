@@ -151,7 +151,7 @@ def test_get_backend_dispatches_to_vllm():
 
     backend = get_backend({"tools": _tools(backend="vllm"), "endpoint": {}})
     assert isinstance(backend, VllmBackend)
-    assert backend.image == "vllm/vllm-openai:latest"
+    assert backend.image == "vllm/vllm-openai:v0.32.0"
 
 
 def test_get_backend_dispatches_to_tgi():

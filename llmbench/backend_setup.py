@@ -21,7 +21,7 @@ from .i18n import _
 
 LogFn = Callable[[str], None]
 
-DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0"
 DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
 DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13"
 

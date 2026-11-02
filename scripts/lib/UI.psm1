@@ -168,6 +168,25 @@ function Read-UiChoice {
     return $Default
 }
 
+function Read-TtftLevels {
+    Write-Host ''
+    Write-Host (T 'run.ttft_question') -ForegroundColor White
+    $levels = @(1, 2, 4, 8, 16, 32)
+    for ($i = 0; $i -lt $levels.Count; $i++) {
+        Write-Host ("     {0}) {1}" -f ($i + 1), $levels[$i]) -ForegroundColor Gray
+    }
+    if (-not (Test-UiInteractive)) { return @() }
+    while ($true) {
+        $answer = Read-Host ("  " + (T 'run.ttft_prompt'))
+        if (-not $answer.Trim()) { return @() }
+        $indices = @($answer.Split(',') | ForEach-Object { $_.Trim() })
+        if (@($indices | Where-Object { $_ -notmatch '^[1-6]$' }).Count -eq 0) {
+            return @($indices | Sort-Object -Unique | ForEach-Object { $levels[[int]$_ - 1] })
+        }
+        Write-UiWarn (T 'run.ttft_invalid')
+    }
+}
+
 function Read-BenchmarkOptions {
     # Gemeinsames Startmenue fuer nativen und Docker-Lauf.
     param([switch]$NoStress)
@@ -181,9 +200,11 @@ function Read-BenchmarkOptions {
         Write-Host ''
         $stress = Confirm-UiYesNo (T 'run.stress_question')
     }
+    $ttftLevels = @()
+    if ($stress) { $ttftLevels = @(Read-TtftLevels) }
     Write-Host ''
     Write-UiInfo (T 'run.selection' $duration $hardware $(if ($stress) { T 'ui.yes' } else { T 'ui.no' }))
-    return [pscustomobject]@{ Duration = $duration; Hardware = $hardware; Stress = $stress }
+    return [pscustomobject]@{ Duration = $duration; Hardware = $hardware; Stress = $stress; TtftConcurrency = $ttftLevels }
 }
 
 # --------------------------------------------------------------- Download
@@ -296,4 +317,4 @@ function Invoke-RebootFlow {
 
 Export-ModuleMember -Function T, Invoke-RebootFlow, Get-ResumeCommand, Initialize-LlmbenchUI, Select-LlmbenchLanguage, Get-LlmbenchLanguage, Set-LlmbenchLanguage,
     Write-UiHeader, Write-UiSection, Write-UiStep, Write-UiOk, Write-UiWarn, Write-UiFail, Write-UiInfo, Write-UiDone,
-    Confirm-UiYesNo, Confirm-Install, Read-UiChoice, Read-BenchmarkOptions, Invoke-UiDownload, Test-UiInteractive
+    Confirm-UiYesNo, Confirm-Install, Read-UiChoice, Read-TtftLevels, Read-BenchmarkOptions, Invoke-UiDownload, Test-UiInteractive

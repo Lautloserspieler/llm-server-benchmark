@@ -167,7 +167,7 @@ def test_get_backend_dispatches_to_ollama():
 
     backend = get_backend({"tools": _tools(backend="ollama"), "endpoint": {}})
     assert isinstance(backend, OllamaBackend)
-    assert backend.image == "ollama/ollama:0.40.9"
+    assert backend.image == "ollama/ollama:0.40.13"
     assert backend.base_url == DEFAULT_BASE_URL
 
 

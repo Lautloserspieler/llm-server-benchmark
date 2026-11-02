@@ -153,6 +153,8 @@ def _openai_ok(limit: int | None = None, calls: list | None = None):
         (500, "model requires more system memory (12.1 GiB) than is available (8.0 GiB)", CATEGORY_OOM),
         (500, "llama runner process has terminated: cudaMalloc failed", CATEGORY_OOM),
         (422, "Input validation error: `inputs` must have less than 4096 tokens. Given: 5000", CATEGORY_CONTEXT),
+        (422, "Input validation error: unsupported parameter temperature", CATEGORY_CLIENT),
+        (422, "Input validation error: unknown model identifier", CATEGORY_CLIENT),
         (400, "This model's maximum context length is 8192 tokens", CATEGORY_CONTEXT),
         (404, "model 'x' not found, try pulling it first", CATEGORY_MODEL),
         (404, "", CATEGORY_MODEL),

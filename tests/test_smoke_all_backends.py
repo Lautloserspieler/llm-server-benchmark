@@ -22,6 +22,21 @@ def test_smallest_gguf_uses_local_file(tmp_path):
     assert script._smallest_gguf(cfg) == str(models / "tiny.gguf")
 
 
+def test_missing_gguf_is_skipped(tmp_path, monkeypatch):
+    script = _script()
+    monkeypatch.setattr(script, "_prerequisite", lambda *_args: None)
+    cfg = {
+        "_config_dir": str(tmp_path),
+        "tools": {"llama_server": "missing"},
+        "models": [],
+        "benchmark": {},
+        "endpoint": {"base_url": "http://127.0.0.1:18080"},
+    }
+    row = script.run_one(cfg, "llama_cpp", tmp_path)
+    assert row["status"] == "skipped"
+    assert "GGUF" in row["detail"]
+
+
 def test_run_one_stops_server_on_request_failure(tmp_path, monkeypatch):
     script = _script()
     stopped = []

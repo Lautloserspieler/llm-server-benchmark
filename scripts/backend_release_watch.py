@@ -90,9 +90,15 @@ def review(backend: str, releases: list[dict], baseline: str) -> dict:
                         and not baseline.startswith("v") else baseline)
     if baseline != "latest" and not spec["tag"].fullmatch(release_baseline):
         raise ValueError(f"Invalid baseline {baseline}")
-    stable = [r for r in releases if not r.get("draft") and not r.get("prerelease")
+    # llama.cpp publishes numbered b-builds as GitHub prereleases. The b-tag
+    # itself is our candidate policy; vLLM and TGI require stable releases.
+    stable = [r for r in releases if not r.get("draft")
+              and (backend == "llama_cpp" or not r.get("prerelease"))
               and spec["tag"].fullmatch(str(r.get("tag_name", "")))]
-    if baseline != "latest" and not any(r["tag_name"] == release_baseline for r in stable):
+    # A manually pinned llama.cpp build can be marked prerelease upstream.
+    if baseline != "latest" and not any(
+        r.get("tag_name") == release_baseline and not r.get("draft") for r in releases
+    ):
         raise ValueError(f"Baseline {baseline} absent from release history")
     newer = sorted((r for r in stable if baseline == "latest"
                     or version_key(r["tag_name"]) > version_key(release_baseline)),
@@ -151,10 +157,16 @@ def markdown(result: dict) -> str:
     repo = BACKENDS[backend]["repo"]
     rows = [f"## Review {backend} release", "", f"`{baseline}` → `{candidate or 'no candidate'}`", "",
             "Automated proposal only. No backend image or binary has been installed or tested.", ""]
+    if candidate and baseline != "latest":
+        rows.extend([f"[Compare all changes](https://github.com/{repo}/compare/{baseline}...{candidate})", ""])
     if baseline == "latest":
         rows.extend(["The current default uses a moving `:latest` image. This PR proposes the first",
                      "fixed version. Check that the matching image exists before merging.", ""])
-    for item in result["findings"]:
+    findings = result["findings"]
+    if len(findings) > 12:
+        rows.extend([f"Reviewed {len(findings)} releases; showing the latest 12. "
+                     "Use the comparison link above for the full range.", ""])
+    for item in findings[-12:]:
         tag = item["version"]
         rows.extend([f"### [{tag}](https://github.com/{repo}/releases/tag/{tag}) — {item['status']}", ""])
         for note in item["evidence"]:

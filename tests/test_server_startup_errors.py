@@ -161,7 +161,14 @@ def test_container_check_stops_health_wait_before_http_request(monkeypatch):
 
 
 def test_container_death_during_health_request_is_detected(monkeypatch):
+    from types import SimpleNamespace
+
     polls = []
+    requests = []
+    clock = [0.0]
+    # Client initialization must not consume this test's logical deadline.
+    # Replace only endpoint's clock, leaving asyncio's scheduler clock intact.
+    monkeypatch.setattr(endpoint, "time", SimpleNamespace(monotonic=lambda: clock[0]))
 
     def alive():
         polls.append(True)
@@ -169,11 +176,19 @@ def test_container_death_during_health_request_is_detected(monkeypatch):
             raise RuntimeError("container exited while waiting")
 
     async def unavailable(*_a, **_k):
+        requests.append(True)
+        clock[0] = 1.0  # The request outlasts the deadline while the container dies.
         raise endpoint.httpx.ConnectError("not ready")
 
+    async def no_sleep(_seconds):
+        pass
+
     monkeypatch.setattr(endpoint.httpx.AsyncClient, "get", unavailable)
+    monkeypatch.setattr(endpoint.asyncio, "sleep", no_sleep)
     with pytest.raises(RuntimeError, match="container exited while waiting"):
         endpoint.wait_health("http://127.0.0.1:9", 0.01, check_alive=alive)
+    assert len(requests) == 1
+    assert len(polls) == 3
 
 
 @pytest.mark.parametrize("name,class_name", [("vllm", "VllmBackend"), ("tgi", "TgiBackend"), ("ollama", "OllamaBackend")])

@@ -302,16 +302,20 @@ def _free_port(base_url: str) -> bool:
 
 
 def _available_url(base_url: str, fixed: bool = False) -> str:
+    base_url = _local_url(base_url)
     if _free_port(base_url):
         return base_url
     if fixed:
         raise RuntimeError(f"Port belegt oder nicht bindbar: {base_url}")
-    host = urlparse(base_url).hostname
+    host = urlparse(base_url).hostname or "127.0.0.1"
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    # Always bind a concrete loopback address, even when this helper is called
+    # directly. Never pass an empty or wildcard host through to socket.bind.
+    bind_host = "::1" if family == socket.AF_INET6 else "127.0.0.1"
     with socket.socket(family, socket.SOCK_STREAM) as probe:
-        probe.bind((host, 0))
+        probe.bind((bind_host, 0))
         port = probe.getsockname()[1]
-    return f"http://{'[' + host + ']' if ':' in host else host}:{port}"
+    return f"http://{'[' + bind_host + ']' if ':' in bind_host else bind_host}:{port}"
 
 
 def run_one(

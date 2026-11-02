@@ -631,3 +631,38 @@ def test_cached_gguf_does_not_contact_hub(tmp_path, monkeypatch):
     cached.write_bytes(b"GGUF")
     monkeypatch.setattr(script, "hf_hub_download", lambda **_kwargs: pytest.fail("cache should avoid network request"))
     assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(cached)
+
+
+@pytest.mark.parametrize("url", ["", "http://0.0.0.0:8080", "http://[::]:8080", "http://example.org:8080"])
+def test_port_selection_rejects_non_loopback_urls_before_probing(monkeypatch, url):
+    script = _script()
+    monkeypatch.setattr(script, "_free_port", lambda *_args: pytest.fail("invalid host must not be probed"))
+    with pytest.raises(ValueError):
+        script._available_url(url)
+
+
+@pytest.mark.parametrize("url,expected_host", [("http://localhost:8080", "127.0.0.1"),
+                                              ("http://[::1]:8080", "::1")])
+def test_fallback_port_binds_only_explicit_loopback(monkeypatch, url, expected_host):
+    script = _script()
+    bound = []
+
+    class Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def bind(self, address):
+            bound.append(address)
+
+        def getsockname(self):
+            return expected_host, 12345
+
+    monkeypatch.setattr(script, "_free_port", lambda _url: False)
+    monkeypatch.setattr(script.socket, "socket", lambda *_args: Socket())
+    selected = script._available_url(url)
+    assert bound == [(expected_host, 0)]
+    assert script.urlparse(selected).hostname == expected_host
+    assert script.urlparse(selected).port == 12345

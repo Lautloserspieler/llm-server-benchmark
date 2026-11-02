@@ -12,39 +12,19 @@ def _script():
     return module
 
 
-def test_smallest_catalog_gguf_reuses_download(tmp_path, monkeypatch):
+def test_gemma_gguf_download_uses_small_model(tmp_path, monkeypatch):
     script = _script()
-    models = tmp_path / "models"
-    models.mkdir()
-    (models / "tiny.gguf").write_bytes(b"1")
-    selected = []
-    monkeypatch.setattr(script, "get_catalog_models", lambda: {
-        "large": {"estimated_gib": 10.0},
-        "small": {"estimated_gib": 6.0},
-    })
-    def find(_root, model_cfg):
-        selected.append(model_cfg["estimated_gib"])
-        return models / "tiny.gguf"
-    monkeypatch.setattr(script, "find_downloaded_model", find)
-    monkeypatch.setattr(script, "download_models", lambda *_args, **_kwargs: None)
-    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(models / "tiny.gguf")
-    assert selected == [6.0]
-
-
-def test_smallest_catalog_gguf_downloads_only_selected_model(tmp_path, monkeypatch):
-    script = _script()
-    model = tmp_path / "models" / "small.gguf"
-    monkeypatch.setattr(script, "get_catalog_models", lambda: {
-        "large": {"estimated_gib": 10.0},
-        "small": {"estimated_gib": 6.0},
-    })
-    monkeypatch.setattr(script, "find_downloaded_model", lambda *_args: model if model.exists() else None)
-    def download(_root, *, model_names):
-        assert model_names == ["small"]
-        model.parent.mkdir(exist_ok=True)
-        model.write_bytes(b"GGUF")
-    monkeypatch.setattr(script, "download_models", download)
-    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(model)
+    calls = []
+    def download(**kwargs):
+        calls.append(kwargs)
+        return tmp_path / "gemma.gguf"
+    monkeypatch.setattr(script, "hf_hub_download", download)
+    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(tmp_path / "gemma.gguf")
+    assert calls == [{
+        "repo_id": "ggml-org/gemma-3-1b-it-GGUF",
+        "filename": "gemma-3-1b-it-Q4_K_M.gguf",
+        "local_dir": tmp_path / "models" / "smoke-gemma3-1b",
+    }]
 
 
 def test_run_one_stops_server_on_request_failure(tmp_path, monkeypatch):

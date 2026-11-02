@@ -34,6 +34,21 @@ def test_docs_only_skips_and_unknown_notes_require_review():
     assert watch.review([baseline, release("v0.40.10", "Changed something")], "0.40.9")["update"] is True
 
 
+def test_contributor_noise_is_not_evidence_and_report_is_readable():
+    result = watch.review([
+        release("v0.40.9", ""),
+        release("v0.40.10", "- @person made their first contribution in https://github.com/ollama/ollama/pull/1"),
+        release("v0.40.11", "- Fix context truncation\n- Update README"),
+    ], "0.40.9")
+    assert result["findings"][0]["status"] == "unclear"
+    assert result["findings"][0]["evidence"] == []
+    report = watch.markdown(result)
+    assert "### Release review" in report
+    assert "- Fix context truncation" in report
+    assert "first contribution" not in report
+    assert "- [ ] Run the pinned context" in report
+
+
 def test_missing_baseline_fails_closed():
     with pytest.raises(ValueError, match="missing"):
         watch.review([release("v0.40.13", "- Improve API")], "0.40.9")

@@ -505,8 +505,8 @@ def test_ollama_probe_measured_count_is_not_flagged_unverified(server):
     assert "actual_unverified" not in result
 
 
-def test_ollama_probe_tokenizer_overshoot_beyond_margin_is_not_a_false_failure(server):
-    """Tokenizer deviates >512 tokens: Ollama clips to num_ctx, but the level was reached."""
+def test_ollama_probe_tokenizer_overshoot_at_limit_is_not_verified(server):
+    """Reaching the target does not prove that Ollama consumed the whole prompt."""
     server.routes[("POST", "/api/generate")] = lambda body: (
         200, {"response": "ok", "done": True, "prompt_eval_count": int(body["options"]["num_ctx"])}
     )
@@ -515,9 +515,9 @@ def test_ollama_probe_tokenizer_overshoot_beyond_margin_is_not_a_false_failure(s
         probe_context_http(server.url, 2048, {"model": "m", "context_size": 2560}, api_style=API_STYLE_OLLAMA_NATIVE)
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert result["actual_prompt_tokens"] == 2560
-    assert result["truncated_at_num_ctx"] is True
+    assert result["failure_category"] == CATEGORY_TRUNCATED
 
 
 def test_openai_probe_missing_usage_is_unverified(server):
@@ -897,4 +897,21 @@ def test_oom_stress_unverified_token_count_never_becomes_max_stable(monkeypatch,
     assert doc["levels"][0]["probe"]["actual_unverified"] is True
     assert doc["max_stable_prompt_tokens"] == 0
     assert doc["status"] == "unverified"
+    assert rc == 1
+
+
+@pytest.mark.usefixtures("docker")
+def test_ollama_oom_stress_does_not_verify_count_at_context_limit(monkeypatch, server, tmp_path: Path):
+    server.routes[("GET", "/api/tags")] = (200, {"models": []})
+    server.routes[("POST", "/api/generate")] = lambda body: (
+        200, {"response": "ok", "done": True, "prompt_eval_count": body["options"]["num_ctx"]}
+    )
+    cfg = _oom_config(server.url, "llama3.2:3b", [2048])
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    rc = _run_oom(monkeypatch, cfg, backend, "ollama", tmp_path)
+
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["levels"][0]["failure_category"] == CATEGORY_TRUNCATED
+    assert doc["max_stable_prompt_tokens"] == 0
     assert rc == 1

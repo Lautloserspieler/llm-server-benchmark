@@ -1,0 +1,59 @@
+name: Ollama release watch
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check stable Ollama releases
+        id: check
+        run: |
+          python scripts/ollama_release_watch.py --report "$RUNNER_TEMP/ollama-review.json"
+          echo "update=$(jq -r .update "$RUNNER_TEMP/ollama-review.json")" >> "$GITHUB_OUTPUT"
+          echo "candidate=$(jq -r .candidate "$RUNNER_TEMP/ollama-review.json")" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/ollama-review.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Skip existing candidate PR
+        if: steps.check.outputs.update == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+        run: |
+          branch="bot/ollama-${CANDIDATE}"
+          count=$(gh pr list --state all --head "$branch" --json number --jq 'length')
+          echo "exists=$([[ "$count" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.update == 'true' && steps.existing.outputs.exists == 'false'
+        with:
+          python-version: '3.12'
+      - name: Run relevant tests
+        if: steps.check.outputs.update == 'true' && steps.existing.outputs.exists == 'false'
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest tests/test_config.py tests/test_backend_setup.py tests/test_runner.py tests/test_backend_select.py tests/test_http_probe.py -q --no-cov
+          ruff check llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_backend_setup.py tests/test_runner.py
+      - name: Open draft PR
+        if: steps.check.outputs.update == 'true' && steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+        run: |
+          branch="bot/ollama-${CANDIDATE}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_backend_setup.py tests/test_runner.py docs/architecture/backends.md docs/architecture/backends.en.md
+          git commit -m "chore: propose Ollama ${CANDIDATE} reference"
+          git push origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "chore: review Ollama ${CANDIDATE} reference" \
+            --body-file "$RUNNER_TEMP/ollama-review.md"

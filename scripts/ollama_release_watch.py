@@ -19,13 +19,13 @@ FILES = (
     "docs/architecture/backends.en.md",
 )
 VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
-IMAGE = re.compile(r'ollama/ollama:(\d+\.\d+\.\d+)')
 RELEVANT = re.compile(
     r"api|endpoint|context|token|truncat|shift|gpu|cuda|rocm|model|gguf|"
     r"memory|oom|load|runner|server|docker|security|vulnerab|fix|bug",
     re.IGNORECASE,
 )
 DOCS_ONLY = re.compile(r"\bdocs?\b|documentation|readme|website|typo|spelling", re.IGNORECASE)
+CONTRIBUTOR = re.compile(r"first contribution|new contributors?|full changelog", re.IGNORECASE)
 
 
 def version_key(tag: str) -> tuple[int, int, int] | None:
@@ -69,7 +69,8 @@ def review(releases: list[dict], baseline: str) -> dict:
     findings = []
     for release in newer:
         body = str(release.get("body") or "")
-        bullets = [line.strip() for line in body.splitlines() if re.match(r"^\s*[-*]\s+", line)]
+        bullets = [re.sub(r"^\s*[-*]\s+", "", line).strip() for line in body.splitlines()
+                   if re.match(r"^\s*[-*]\s+", line) and not CONTRIBUTOR.search(line)]
         relevant = [line for line in bullets if RELEVANT.search(line)]
         docs_only = bool(bullets) and all(DOCS_ONLY.search(line) for line in bullets)
         status = "relevant" if relevant else "irrelevant" if docs_only else "unclear"
@@ -92,14 +93,26 @@ def bump(root: Path, old: str, new: str) -> None:
 
 
 def markdown(result: dict) -> str:
-    rows = ["## Ollama release review", "", f"Current reference: `{result['baseline']}`. Proposed: `{result['candidate']}`.",
-            "", "| Release | Assessment | Evidence |", "|---|---|---|"]
+    rows = ["## Proposed Ollama reference update", "",
+            f"`{result['baseline']}` → `{result['candidate']}`", "",
+            "The weekly check found upstream releases that may affect llmbench. This is an automated",
+            "proposal for review, not a claim that the new version is compatible.", "",
+            "### Release review", ""]
     for item in result["findings"]:
-        evidence = "; ".join(re.sub(r"[|\r\n]", " ", s)[:160] for s in item["evidence"]) or "No detailed notes"
-        rows.append(f"| [{item['version']}]({item['url']}) | {item['status']} | {evidence} |")
-    rows.extend(["", "Automated keyword triage is conservative: unclear changes require review.",
-                 "Review release notes, run the pinned Ollama context suite on CPU and NVIDIA,",
-                 "verify the image digest, then approve the new reference. No automatic merge."])
+        labels = {"relevant": "Potentially relevant", "unclear": "Needs manual review",
+                  "irrelevant": "Documentation only"}
+        rows.extend([f"**[{item['version']}]({item['url']}) — {labels[item['status']]}**", ""])
+        if item["evidence"]:
+            for note in item["evidence"][:4]:
+                clean_note = re.sub(r"[\r\n]", " ", note)[:240]
+                rows.append(f"- {clean_note}")
+        else:
+            rows.append("- No actionable release-note bullets were found. Read the upstream release.")
+        rows.append("")
+    rows.extend(["### Before merging", "", "- [ ] Read the linked release notes and confirm relevance.",
+                 "- [ ] Run the pinned context and error tests on CPU and NVIDIA hardware.",
+                 "- [ ] Verify the pulled image digest and check report provenance.", "",
+                 "Keyword triage may be incomplete. No automatic merge is configured."])
     return "\n".join(rows) + "\n"
 
 

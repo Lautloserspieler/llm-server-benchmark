@@ -30,6 +30,10 @@ BACKENDS = ("llama_cpp", "ollama", "vllm", "tgi")
 HF_TINY = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
+class MissingPrerequisite(Exception):
+    """A backend cannot be tested until a local prerequisite is provided."""
+
+
 def _smallest_gguf(cfg: dict) -> str | None:
     candidates: list[Path] = []
     for model in cfg.get("models") or []:
@@ -48,10 +52,10 @@ def _case(cfg: dict, name: str) -> tuple[str, dict]:
     if name == "llama_cpp":
         model = _smallest_gguf(cfg)
         if not model:
-            raise ValueError("Keine lokale GGUF-Datei unter models/ oder in benchmark.yaml gefunden")
+            raise MissingPrerequisite("Keine lokale GGUF-Datei unter models/ oder in benchmark.yaml gefunden")
         server = Path(resolve_path(str(cfg["tools"]["llama_server"]), cfg))
         if not server.is_file():
-            raise ValueError(f"llama-server fehlt: {server}")
+            raise MissingPrerequisite(f"llama-server fehlt: {server}")
         cfg["tools"]["llama_server"] = str(server)
         return model, {"name": "Smoke-CPU", "gpu_layers": 0, "threads": "auto"}
     if name == "ollama":
@@ -122,6 +126,8 @@ def run_one(source: dict, name: str, out: Path) -> dict:
         if not answer:
             raise RuntimeError("API antwortete ohne Text")
         row.update(status="passed", detail="Start, Health und Generierung erfolgreich")
+    except MissingPrerequisite as exc:
+        row.update(status="skipped", detail=str(exc))
     except Exception as exc:
         row["detail"] = str(exc)[:500]
     finally:

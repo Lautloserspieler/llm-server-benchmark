@@ -61,7 +61,6 @@ _CONTEXT_MARKERS = (
     "max_input_length",
     "must have less than",
     "must be <=",
-    "input validation error",
     "context length",
     "context window",
     "too long",

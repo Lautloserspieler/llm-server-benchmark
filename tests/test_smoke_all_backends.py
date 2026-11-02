@@ -12,29 +12,19 @@ def _script():
     return module
 
 
-def test_smallest_gguf_uses_local_file(tmp_path):
+def test_gemma_gguf_download_uses_small_model(tmp_path, monkeypatch):
     script = _script()
-    models = tmp_path / "models"
-    models.mkdir()
-    (models / "large.gguf").write_bytes(b"12345")
-    (models / "tiny.gguf").write_bytes(b"1")
-    cfg = {"models": [], "_config_dir": str(tmp_path)}
-    assert script._smallest_gguf(cfg) == str(models / "tiny.gguf")
-
-
-def test_missing_gguf_is_skipped(tmp_path, monkeypatch):
-    script = _script()
-    monkeypatch.setattr(script, "_prerequisite", lambda *_args: None)
-    cfg = {
-        "_config_dir": str(tmp_path),
-        "tools": {"llama_server": "missing"},
-        "models": [],
-        "benchmark": {},
-        "endpoint": {"base_url": "http://127.0.0.1:18080"},
-    }
-    row = script.run_one(cfg, "llama_cpp", tmp_path)
-    assert row["status"] == "skipped"
-    assert "GGUF" in row["detail"]
+    calls = []
+    def download(**kwargs):
+        calls.append(kwargs)
+        return tmp_path / "gemma.gguf"
+    monkeypatch.setattr(script, "hf_hub_download", download)
+    assert script._smallest_catalog_gguf({"_config_dir": str(tmp_path)}) == str(tmp_path / "gemma.gguf")
+    assert calls == [{
+        "repo_id": "ggml-org/gemma-3-1b-it-GGUF",
+        "filename": "gemma-3-1b-it-Q4_K_M.gguf",
+        "local_dir": tmp_path / "models" / "smoke-gemma3-1b",
+    }]
 
 
 def test_run_one_stops_server_on_request_failure(tmp_path, monkeypatch):

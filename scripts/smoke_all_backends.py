@@ -56,6 +56,9 @@ def _case(cfg: dict, name: str) -> tuple[str, dict]:
         return model, {"name": "Smoke-CPU", "gpu_layers": 0, "threads": "auto"}
     if name == "ollama":
         return "gemma3:1b", {"name": "Smoke-CPU", "gpu_layers": 0, "ollama_num_ctx": 2048, "ollama_num_gpu": 0}
+    if name == "vllm":
+        return HF_TINY, {"name": "Smoke-GPU", "gpu_layers": -1, "tensor_parallel_size": 1,
+                         "gpu_memory_utilization": 0.50}
     return HF_TINY, {"name": "Smoke-GPU", "gpu_layers": -1, "tensor_parallel_size": 1}
 
 
@@ -84,6 +87,24 @@ def _free_port(base_url: str) -> bool:
         return True
 
 
+def _wait_ready(backend, base_url: str, headers: dict, proc, timeout: float = 300) -> None:
+    name = getattr(proc, "name", None)
+    if not name:
+        backend.wait_health(base_url, timeout, headers, proc)
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not docker_backend.container_running(name):
+            logs = docker_backend.container_logs(name, tail=80)
+            raise RuntimeError(f"Container {name} beim Start beendet.\n{logs}")
+        try:
+            backend.wait_health(base_url, min(5, deadline - time.monotonic()), headers, proc)
+            return
+        except TimeoutError:
+            continue
+    raise TimeoutError(f"Container {name} nach {timeout:g}s nicht bereit")
+
+
 def run_one(source: dict, name: str, out: Path) -> dict:
     started = time.monotonic()
     row = {"backend": name, "status": "failed", "model": None, "detail": ""}
@@ -110,7 +131,7 @@ def run_one(source: dict, name: str, out: Path) -> dict:
         backend = get_backend(cfg)
         log_path = out / f"{name}.log"
         proc, _command = backend.start_server(model, profile, endpoint, cfg["benchmark"], log_path)
-        backend.wait_health(str(endpoint["base_url"]), 300, auth_headers(endpoint), proc)
+        _wait_ready(backend, str(endpoint["base_url"]), auth_headers(endpoint), proc)
         request_cfg = backend.prepare_endpoint_config(endpoint)
         async def check() -> str:
             async with httpx.AsyncClient(headers=auth_headers(request_cfg)) as client:

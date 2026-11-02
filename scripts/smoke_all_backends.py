@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from llmbench import backend_setup, docker_backend  # noqa: E402
 from llmbench.backends import get_backend  # noqa: E402
 from llmbench.config import load_config, resolve_path  # noqa: E402
-from llmbench.download import download_models, find_downloaded_model, get_catalog_models  # noqa: E402
+from huggingface_hub import hf_hub_download  # noqa: E402
 from llmbench.endpoint import api_style_for  # noqa: E402
 from llmbench.http_bench import sanity_completion_async  # noqa: E402
 from llmbench.utils import auth_headers  # noqa: E402
@@ -36,17 +36,14 @@ class MissingPrerequisite(Exception):
 
 
 def _smallest_catalog_gguf(cfg: dict) -> str:
-    catalog = get_catalog_models()
-    name, model_cfg = min(catalog.items(), key=lambda item: (item[1]["estimated_gib"], item[0]))
-    models_dir = Path(cfg["_config_dir"]) / "models"
-    found = find_downloaded_model(models_dir, model_cfg)
-    if found is None:
-        print(f"[llama_cpp] Lade kleinstes Katalogmodell: {name} (ca. {model_cfg['estimated_gib']:g} GiB)", flush=True)
-        download_models(models_dir, model_names=[name])
-        found = find_downloaded_model(models_dir, model_cfg)
-    if found is None:
-        raise RuntimeError(f"Katalogmodell {name} konnte nicht vollstaendig geladen werden")
-    return str(found)
+    # Gemma 3 1B is the smallest model in our Ollama selection.
+    # Download exactly one matching GGUF; HF reuses completed cached files.
+    print("[llama_cpp] Bereite Gemma 3 1B Q4_K_M vor (ca. 0.8 GB) ...", flush=True)
+    return str(hf_hub_download(
+        repo_id="ggml-org/gemma-3-1b-it-GGUF",
+        filename="gemma-3-1b-it-Q4_K_M.gguf",
+        local_dir=Path(cfg["_config_dir"]) / "models" / "smoke-gemma3-1b",
+    ))
 
 
 def _case(cfg: dict, name: str) -> tuple[str, dict]:

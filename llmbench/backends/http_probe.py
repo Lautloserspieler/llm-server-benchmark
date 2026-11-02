@@ -71,10 +71,10 @@ _MODEL_MARKERS = ("model not found", "not found, try pulling", "does not exist",
 
 # Ollama kuerzt zu lange Prompts still auf num_ctx. Meldet Ollama eine
 # Prompt-Laenge nahe num_ctx, ist unklar, ob gekuerzt wurde. Es gilt als
-# Fehlschlag (``context_truncated``) nur, wenn dabei die Zielstufe nicht
-# erreicht wurde (actual < target). Liegt actual >= target (der Tokenizer
-# zaehlt mehr Tokens als die Fuelltext-Schaetzung, ggf. > 512 Abweichung), wurde
-# die Stufe nachweislich verarbeitet: ok, aber mit ``truncated_at_num_ctx``.
+# Fehlschlag (``context_truncated``), wenn die Zielstufe nicht erreicht wurde.
+# Selbst bei actual >= target ist ein Wert am Kontextlimit kein Beweis, dass
+# der gesamte Prompt verarbeitet wurde: der Tokenizer kann mehr Tokens zaehlen
+# als die Fuelltext-Schaetzung und Ollama kann danach still kuerzen.
 _TRUNCATION_MARGIN_TOKENS = 4
 
 
@@ -273,12 +273,10 @@ async def probe_context_http(
         and num_ctx is not None
         and actual >= num_ctx - _TRUNCATION_MARGIN_TOKENS
     ):
-        if actual < prompt_target:
-            return _result(
-                prompt_target, started, ok=False, actual=actual, status=response.status_code,
-                category=CATEGORY_TRUNCATED,
-                error=f"Prompt fuellt num_ctx={num_ctx} vollstaendig aus ({actual} Tokens); "
-                      "Ollama kuerzt vermutlich still.",
-            )
-        extra["truncated_at_num_ctx"] = True
+        return _result(
+            prompt_target, started, ok=False, actual=actual, status=response.status_code,
+            category=CATEGORY_TRUNCATED,
+            error=f"Prompt fuellt num_ctx={num_ctx} vollstaendig aus ({actual} Tokens); "
+                  "vollstaendige Verarbeitung ist nicht verifizierbar.",
+        )
     return _result(prompt_target, started, ok=True, actual=actual, status=response.status_code, **extra)

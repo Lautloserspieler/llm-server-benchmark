@@ -428,11 +428,15 @@ class VllmBackend(BenchmarkBackend):
         base_url: str,
         timeout_s: float,
         headers: dict[str, str] | None = None,
-        proc: Any = None,  # noqa: ARG002 - Container-Status prueft start_server selbst
+        proc: Any = None,
     ) -> float:
         # vLLMs OpenAI-Server hat /health, ueber das veroeffentlichte Port
         # genauso erreichbar wie bei llama-server - deshalb unveraendert.
-        return wait_health(base_url, timeout_s, headers)
+        handle_name = getattr(proc, "name", None)
+        name = handle_name or self.container_name
+        # Externally managed HTTP endpoints have no local Docker lifecycle.
+        check_alive = (lambda: docker_backend.check_container_alive(name)) if handle_name or self.container_id else None
+        return wait_health(base_url, timeout_s, headers, check_alive=check_alive)
 
 
 class _ContainerHandle:

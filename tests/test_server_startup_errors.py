@@ -144,3 +144,86 @@ def test_gpu_idle_wait_is_not_counted_as_benchmark_duration(monkeypatch, tmp_pat
         {"name": "p"}, "prompt", tmp_path,
     )
     assert result["duration_seconds"] < 0.3
+
+
+def test_container_check_stops_health_wait_before_http_request(monkeypatch):
+    async def unexpected_request(*_a, **_k):
+        pytest.fail("Exited container should be detected before any HTTP request")
+
+    def exited():
+        raise RuntimeError("vLLM exited: Free memory on device is less than desired")
+
+    monkeypatch.setattr(endpoint.httpx.AsyncClient, "get", unexpected_request)
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="Free memory on device"):
+        endpoint.wait_health("http://127.0.0.1:9", 600, check_alive=exited)
+    assert time.monotonic() - started < 1
+
+
+def test_container_death_during_health_request_is_detected(monkeypatch):
+    from types import SimpleNamespace
+
+    polls = []
+    requests = []
+    clock = [0.0]
+    # Client initialization must not consume this test's logical deadline.
+    # Replace only endpoint's clock, leaving asyncio's scheduler clock intact.
+    monkeypatch.setattr(endpoint, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def alive():
+        polls.append(True)
+        if len(polls) >= 3:
+            raise RuntimeError("container exited while waiting")
+
+    async def unavailable(*_a, **_k):
+        requests.append(True)
+        clock[0] = 1.0  # The request outlasts the deadline while the container dies.
+        raise endpoint.httpx.ConnectError("not ready")
+
+    async def no_sleep(_seconds):
+        pass
+
+    monkeypatch.setattr(endpoint.httpx.AsyncClient, "get", unavailable)
+    monkeypatch.setattr(endpoint.asyncio, "sleep", no_sleep)
+    with pytest.raises(RuntimeError, match="container exited while waiting"):
+        endpoint.wait_health("http://127.0.0.1:9", 0.01, check_alive=alive)
+    assert len(requests) == 1
+    assert len(polls) == 3
+
+
+@pytest.mark.parametrize("name,class_name", [("vllm", "VllmBackend"), ("tgi", "TgiBackend"), ("ollama", "OllamaBackend")])
+def test_container_adapters_connect_health_check_to_actual_handle(monkeypatch, name, class_name):
+    import importlib
+    from types import SimpleNamespace
+
+    module = importlib.import_module(f"llmbench.backends.{name}")
+    seen = []
+    monkeypatch.setattr(module.docker_backend, "check_container_alive", seen.append)
+
+    def health(_url, _timeout, _headers, **kwargs):
+        kwargs["check_alive"]()
+        return 0.1
+
+    monkeypatch.setattr(module, "wait_health", health)
+    backend = getattr(module, class_name)("test-image", container_name="default-name")
+    assert backend.wait_health("http://127.0.0.1:9", 600, proc=SimpleNamespace(name="actual-smoke-name")) == 0.1
+    assert seen == ["actual-smoke-name"]
+
+
+@pytest.mark.parametrize("name,class_name", [("vllm", "VllmBackend"), ("tgi", "TgiBackend"), ("ollama", "OllamaBackend")])
+def test_external_endpoint_health_does_not_require_docker(monkeypatch, name, class_name):
+    import importlib
+
+    module = importlib.import_module(f"llmbench.backends.{name}")
+
+    def unexpected(_name):
+        pytest.fail("External endpoints must not inspect Docker")
+
+    def health(_url, _timeout, _headers, **kwargs):
+        assert kwargs["check_alive"] is None
+        return 0.1
+
+    monkeypatch.setattr(module.docker_backend, "check_container_alive", unexpected)
+    monkeypatch.setattr(module, "wait_health", health)
+    backend = getattr(module, class_name)("test-image")
+    assert backend.wait_health("http://external.test", 10) == 0.1

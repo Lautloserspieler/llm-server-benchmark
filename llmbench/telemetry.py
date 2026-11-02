@@ -252,6 +252,9 @@ class AmdProvider(TelemetryProvider):
         except Exception:
             return []
 
+        if not isinstance(data, dict):
+            return []
+
         out: list[GpuSample] = []
         for card_id, info in data.items():
             if not isinstance(info, dict) or not card_id.startswith("card"):

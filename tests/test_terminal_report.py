@@ -44,7 +44,8 @@ def _summary(bench_status: str = "ok") -> dict:
 
 def _render(summary: dict) -> str:
     buf = io.StringIO()
-    console = Console(file=buf, width=120, force_terminal=True, color_system=None)
+    # Rendering assertions use a real terminal layout even in TERM=dumb CI shells.
+    console = Console(file=buf, width=120, force_terminal=True, color_system=None, _environ={"TERM": "xterm"})
     print_run_report(summary, console)
     return buf.getvalue()
 

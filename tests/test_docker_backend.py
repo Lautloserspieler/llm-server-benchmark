@@ -224,6 +224,21 @@ def test_stop_container_tolerates_missing_container(monkeypatch):
     docker_backend.stop_container("ghost")  # darf nicht werfen
 
 
+@pytest.mark.parametrize("code,stdout,stderr,error", [
+    (0, "", "", None),
+    (0, "container-id\n", "", "nicht entfernt"),
+    (1, "", "Cannot connect to Docker", "Cannot connect"),
+])
+def test_verify_container_removed_checks_daemon_and_remaining_container(monkeypatch, code, stdout, stderr, error):
+    monkeypatch.setattr(docker_backend.shutil, "which", lambda _name: "/usr/bin/docker")
+    monkeypatch.setattr(docker_backend.subprocess, "run", lambda *_a, **_k: _FakeCompleted(code, stdout, stderr))
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            docker_backend.verify_container_removed("smoke-test")
+    else:
+        docker_backend.verify_container_removed("smoke-test")
+
+
 def test_container_pid_returns_int(monkeypatch):
     monkeypatch.setattr(docker_backend.shutil, "which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(docker_backend.subprocess, "run", lambda *_a, **_k: _FakeCompleted(0, "4242\n"))
@@ -287,3 +302,52 @@ def test_timeout_is_reported_as_runtime_error(monkeypatch):
     monkeypatch.setattr(docker_backend.subprocess, "run", _timeout)
     with pytest.raises(RuntimeError, match="Zeitlimit"):
         docker_backend.pull_image("x:y")
+
+
+@pytest.mark.parametrize("state", [
+    {"Status": "running", "Running": True},
+    {"Status": "created", "Running": False},
+    {"Status": "restarting", "Running": False},
+])
+def test_check_container_alive_accepts_starting_or_running_container(monkeypatch, state):
+    import json
+
+    monkeypatch.setattr(docker_backend, "_run", lambda *_a, **_k: _FakeCompleted(0, json.dumps(state)))
+    docker_backend.check_container_alive("smoke-vllm")
+
+
+def test_check_container_alive_reports_gpu_memory_root_cause(monkeypatch):
+    import json
+
+    state = {"Status": "exited", "Running": False, "ExitCode": 1, "OOMKilled": False}
+    monkeypatch.setattr(docker_backend, "_run", lambda *_a, **_k: _FakeCompleted(0, json.dumps(state)))
+    logs = "ValueError: Free memory on device cuda:0 (9.32/11.58 GiB) is less than desired GPU memory utilization\n"
+    logs += "follow-up traceback\n" * 500
+    monkeypatch.setattr(docker_backend, "container_logs", lambda *_a, **_k: logs)
+    with pytest.raises(RuntimeError) as error:
+        docker_backend.check_container_alive("llmbench-smoke-vllm-test")
+    assert "Exitcode=1" in str(error.value)
+    assert "Free memory on device" in str(error.value)[:400]
+
+
+@pytest.mark.parametrize("state,expected", [
+    ({"Status": "exited", "ExitCode": 137, "OOMKilled": True}, "OOMKilled=true"),
+    ({"Status": "dead", "ExitCode": 1, "Error": "runtime error"}, "runtime error"),
+    ({"Status": "paused", "Running": True, "Paused": True}, "paused"),
+])
+def test_check_container_alive_reports_unusable_state(monkeypatch, state, expected):
+    import json
+
+    monkeypatch.setattr(docker_backend, "_run", lambda *_a, **_k: _FakeCompleted(0, json.dumps(state)))
+    monkeypatch.setattr(docker_backend, "container_logs", lambda *_a, **_k: "logs")
+    with pytest.raises(RuntimeError, match=expected):
+        docker_backend.check_container_alive("smoke-test")
+
+
+def test_check_container_alive_does_not_hide_inspect_errors(monkeypatch):
+    def fail(*_a, **_k):
+        raise RuntimeError("No such container")
+
+    monkeypatch.setattr(docker_backend, "_run", fail)
+    with pytest.raises(RuntimeError, match="No such container"):
+        docker_backend.check_container_alive("gone")

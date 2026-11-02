@@ -384,6 +384,13 @@ def container_exists(name_or_id: str) -> bool:
     return proc.returncode == 0
 
 
+def container_running(name_or_id: str) -> bool:
+    """Check actual running state, including containers retained after a crash."""
+    result = _run(["container", "inspect", "--format", "{{.State.Running}}", name_or_id],
+                  timeout=INSPECT_TIMEOUT_SECONDS, check=False)
+    return result.returncode == 0 and result.stdout.strip().lower() == "true"
+
+
 def container_pid(name_or_id: str) -> int | None:
     """Host-sichtbare PID des Hauptprozesses im Container, sonst None.
 

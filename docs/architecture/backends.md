@@ -89,8 +89,10 @@ reproduzierbaren Benchmarkvertrag anbietet.
 
 ### Versionsüberwachung
 
-`backend-release-watch.yml` prüft wöchentlich stabile llama.cpp-, vLLM- und
-TGI-Releases. llama.cpp ist über `llama-cpp-version.txt` bereits festgelegt.
+`backend-release-watch.yml` prüft wöchentlich nummerierte llama.cpp-Builds sowie
+stabile vLLM- und TGI-Releases. llama.cpp ist über `llama-cpp-version.txt` bereits
+festgelegt. GitHub kennzeichnet auch reguläre llama.cpp-`b`-Builds als Prereleases;
+für dieses Backend gilt daher das `b<Nummer>`-Tag statt GitHubs Stable-Markierung.
 Bei vLLM und TGI schlägt der erste Draft-PR vor, die beweglichen Standard-Images
 mit `:latest` auf eine konkrete Version umzustellen. Danach prüft der Bot neuere
 Releases gegen diese Referenz. Dokumentationsänderungen allein lösen keinen

@@ -35,7 +35,7 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 VALID_BACKENDS = ("llama_cpp", "vllm", "tgi", "ollama")
 DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
 DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
-DEFAULT_OLLAMA_IMAGE = "ollama/ollama:latest"
+DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.9"
 
 class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"

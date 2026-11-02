@@ -30,7 +30,7 @@ from .utils import ask_yes_no, console, print_err, print_msg, print_section
 BACKEND_DOWNLOAD_GIB: dict[str, float] = {
     "vllm": 10,
     "tgi": 10,
-    # Docker Hub (linux/amd64, ollama/ollama:latest) liegt aktuell bei ~3.52 GB.
+    # Ungefaehre Groesse des gepinnten Ollama-Images (plattformabhaengig).
     "ollama": 3.5,
 }
 

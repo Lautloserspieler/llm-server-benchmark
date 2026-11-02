@@ -97,13 +97,13 @@ def test_ensure_backend_honours_image_override(docker, tmp_path: Path):
 
 def test_ensure_backend_ollama_pulls_and_writes_state(docker, tmp_path: Path):
     state = backend_setup.ensure_backend("ollama", tmp_path)
-    assert ("pull", "ollama/ollama:latest") in docker.calls
+    assert ("pull", "ollama/ollama:0.40.9") in docker.calls
     path = backend_setup.state_file("ollama", tmp_path)
     assert path.exists()
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written == state
     assert written["backend"] == "ollama"
-    assert written["image"] == "ollama/ollama:latest"
+    assert written["image"] == "ollama/ollama:0.40.9"
     assert written["container"] == "llmbench-ollama"
     assert written["volume"] == "llmbench-ollama-cache"
 
@@ -203,7 +203,7 @@ def test_remove_backend_ollama_removes_container_image_and_state(docker, tmp_pat
     backend_setup.ensure_backend("ollama", tmp_path)
     backend_setup.remove_backend("ollama", tmp_path)
     assert ("stop", "llmbench-ollama") in docker.calls
-    assert ("rmi", "ollama/ollama:latest") in docker.calls
+    assert ("rmi", "ollama/ollama:0.40.9") in docker.calls
     assert not backend_setup.state_file("ollama", tmp_path).exists()
     assert not backend_setup.is_installed("ollama", tmp_path)
 

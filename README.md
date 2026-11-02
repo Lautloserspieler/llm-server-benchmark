@@ -216,7 +216,7 @@ Apple Silicon acceleration is provided by the platform llama.cpp build.
 
 Run `SMOKE_ALL_BACKENDS.bat` on Windows or `bash SMOKE_ALL_BACKENDS.sh` on Linux. The launcher creates `.venv` and installs the project's Python dependencies if needed. The script checks llama.cpp, Ollama, vLLM and TGI sequentially: server startup, health endpoint and a short text generation. It does not change `benchmark.yaml`; logs and a JSON summary are written under `results/backend-smoke/`.
 
-It uses the smallest local GGUF it finds for llama.cpp, `gemma3:1b` for Ollama and `Qwen/Qwen2.5-0.5B-Instruct` for vLLM/TGI. Container models may be downloaded on first use and are cached. A missing local GGUF, Docker backend or GPU support is reported as `skipped`; place a small GGUF in `models/` for the llama.cpp check. Images are never installed automatically. Existing benchmark containers are left running. The configured `endpoint.base_url` port must be free.
+For llama.cpp it selects Gemma 3 1B Q4_K_M, matching the smallest model in our Ollama selection (about 0.8 GB) and downloads it to `models/` when needed. It uses `gemma3:1b` for Ollama and `Qwen/Qwen2.5-0.5B-Instruct` for vLLM/TGI. Completed downloads remain cached. Missing Docker backends or GPU support are reported as `skipped`; images are never installed automatically. Existing benchmark containers are left running. The configured `endpoint.base_url` port must be free.
 
 To select backends, run `python scripts/smoke_all_backends.py --backends ollama vllm`. This is a functional check, not a comparable performance benchmark.
 

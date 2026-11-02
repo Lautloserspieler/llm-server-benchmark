@@ -33,7 +33,7 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 # Unterstuetzte Mess-Backends. Ein Tippfehler soll sofort bei validate_config()
 # auffallen und nicht erst mitten im Lauf.
 VALID_BACKENDS = ("llama_cpp", "vllm", "tgi", "ollama")
-DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:latest"
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0"
 DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
 DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13"
 

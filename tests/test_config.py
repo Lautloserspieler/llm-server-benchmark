@@ -141,7 +141,7 @@ def test_tools_backend_defaults_to_llama_cpp():
 
 
 def test_tools_vllm_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:latest"
+    assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:v0.32.0"
 
 
 def test_tools_tgi_image_has_default():

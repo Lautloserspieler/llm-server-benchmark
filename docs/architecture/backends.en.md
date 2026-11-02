@@ -131,6 +131,15 @@ observation, local quantization comparison, and multi-model stress are not imple
 `/api/generate` API on port 11434. Ollama can run with CPU-only profiles or with an
 NVIDIA GPU passed through by Docker.
 
+The default is `ollama/ollama:0.40.9`, the reference version documented on real
+hardware. `tools.ollama_image` can select another image; existing configurations
+with `:latest` remain unchanged and should be set to a concrete version for
+reproducible runs. `summary.json` records the image and local digest. New Ollama
+versions are first tested alongside the reference against the same context and
+failure cases. The default is updated deliberately after successful CPU and GPU
+checks, at the latest during the next llmbench release qualification, rather
+than on a fixed calendar interval.
+
 Existing Ollama model names are stored in the persistent `/root/.ollama` backend volume.
 A missing library model is pulled before the benchmark. Local GGUF files are imported via
 Ollama's blob and create APIs; split GGUF sets are validated and uploaded shard by shard.

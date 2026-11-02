@@ -372,6 +372,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Nach dem normalen Lauf zusaetzlich TTFT-, Multi-Tenant-, OOM- und Quant-Stresstests starten.",
     )
+    run.add_argument(
+        "--ttft-concurrency", nargs="+", type=int, metavar="N",
+        help="TTFT-Stufen fuer diesen Lauf, z. B. 1 2 4 (nur mit --stress).",
+    )
 
     boot = sub.add_parser("bootstrap", help="Werkzeuge eintragen und GGUF-Modelle erkennen")
     boot.add_argument("--config", default="benchmark.yaml")
@@ -482,7 +486,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_all_stress(config_path: str, out_dir: Path, hardware_target: str = "both") -> dict[str, int]:
+def _run_all_stress(
+    config_path: str, out_dir: Path, hardware_target: str = "both",
+    ttft_concurrency: list[int] | None = None,
+) -> dict[str, int]:
     from llmbench.stress.multitenant import run_multitenant
     from llmbench.stress.oom import run_oom_stress
     from llmbench.stress.quant import run_quant_stress
@@ -500,7 +507,10 @@ def _run_all_stress(config_path: str, out_dir: Path, hardware_target: str = "bot
             print_err(_("Stress-Test '{name}' fehlgeschlagen: {error}").format(name=name, error=exc))
             return 1
 
-    statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(config_path, stress_root / "ttft", hardware_target=hardware_target))
+    statuses["ttft"] = _run("ttft", lambda: run_ttft_stress(
+        config_path, stress_root / "ttft", hardware_target=hardware_target,
+        concurrency=ttft_concurrency,
+    ))
     statuses["oom"] = _run("oom", lambda: asyncio.run(run_oom_stress(config_path, stress_root / "oom", hardware_target=hardware_target)))
     if len(cfg.get("models", [])) >= 2:
         statuses["multitenant"] = _run(
@@ -766,6 +776,11 @@ def main(argv: list[str] | None = None) -> int:
             print("\nTipp: `llmbench setup` erstellt die Konfiguration interaktiv.")
             return 2
 
+        if (args.cmd == "run" and args.ttft_concurrency is not None
+                and (not args.stress or any(n < 1 for n in args.ttft_concurrency))):
+            print("--ttft-concurrency benoetigt --stress und positive Werte.", file=sys.stderr)
+            return 2
+
         if args.cmd == "doctor":
             data = doctor(cfg)
             if args.as_json:
@@ -791,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"CSV: {out / 'benchmarks.csv'}")
             print(f"JSON: {out / 'summary.json'}")
             if args.stress:
-                statuses = _run_all_stress(args.config, out, args.hardware)
+                statuses = _run_all_stress(args.config, out, args.hardware, args.ttft_concurrency)
                 print(f"Stress-Ergebnisse: {out / 'stress' / 'index.json'} ({statuses})")
         return 0
 

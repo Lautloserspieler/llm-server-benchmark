@@ -159,7 +159,7 @@ def test_get_backend_dispatches_to_tgi():
 
     backend = get_backend({"tools": _tools(backend="tgi"), "endpoint": {}})
     assert isinstance(backend, TgiBackend)
-    assert backend.image == "ghcr.io/huggingface/text-generation-inference:latest"
+    assert backend.image == "ghcr.io/huggingface/text-generation-inference:3.3.7"
 
 
 def test_get_backend_dispatches_to_ollama():

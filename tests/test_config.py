@@ -145,7 +145,7 @@ def test_tools_vllm_image_has_default():
 
 
 def test_tools_tgi_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["tgi_image"] == "ghcr.io/huggingface/text-generation-inference:latest"
+    assert DEFAULT_CONFIG["tools"]["tgi_image"] == "ghcr.io/huggingface/text-generation-inference:3.3.7"
 
 
 def test_tools_ollama_image_has_default():

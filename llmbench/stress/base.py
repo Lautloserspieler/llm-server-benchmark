@@ -7,9 +7,16 @@ from typing import Any
 from llmbench.backends.base import BenchmarkBackend
 from llmbench.config import is_runtime_model_ref, resolve_path
 from llmbench.i18n import _
+from llmbench.runner import filter_profiles_by_hardware
 from llmbench.utils import print_msg, write_json
 
 SKIPPED_EXIT_CODE = 2
+
+
+def select_stress_profile(model: dict[str, Any], hardware_target: str = "both") -> dict[str, Any] | None:
+    """Use the same hardware selection as the benchmark for follow-up stress runs."""
+    profiles = filter_profiles_by_hardware(model.get("profiles") or [], hardware_target)
+    return profiles[0] if profiles else None
 
 
 def require_capabilities(

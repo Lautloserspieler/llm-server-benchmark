@@ -35,6 +35,11 @@ def test_build_parser_run_rejects_invalid_hardware_choice():
         build_parser().parse_args(["run", "--hardware", "npu"])
 
 
+def test_build_parser_run_accepts_ttft_levels():
+    args = build_parser().parse_args(["run", "--stress", "--ttft-concurrency", "1", "2", "4"])
+    assert args.ttft_concurrency == [1, 2, 4]
+
+
 def test_build_parser_install_llama_cpp_defaults_and_options():
     args = build_parser().parse_args(["install-llama-cpp"])
     assert args.root == "."

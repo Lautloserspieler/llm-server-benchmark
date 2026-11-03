@@ -7,6 +7,18 @@ Since v1.5.0, `llm-server-benchmark` can run on Linux and Windows inside a repro
 - Linux/macOS: `./setup.sh` and `./START_BENCHMARK.sh`
 - Windows: `setup.bat` and `START_BENCHMARK.bat`
 
+
+Local builds use `compose.build.yaml` and the separate tag `llmbench-local:dev`.
+The pinned GHCR digest remains the download reference. The launchers record the selected
+image in `.runtime/docker-image` for the next start.
+Set `LLMBENCH_DOCKER_BUILD_IMAGE` to choose a different local tag.
+To build and start manually:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml build llmbench
+LLMBENCH_DOCKER_IMAGE=llmbench-local:dev docker compose run --rm llmbench container-check
+```
+
 ## Why Docker?
 
 The container fixes the result-relevant software layer:

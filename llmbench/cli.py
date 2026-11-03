@@ -202,9 +202,12 @@ def run_setup_wizard(allow_system_search: bool = False) -> int:
         default=socket.gethostname(),
     )
     cfg.setdefault("project", {})["language"] = lang_val
-    config_path.write_text(
+    from llmbench.utils import write_text_atomic
+
+    write_text_atomic(
+        config_path,
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120),
-        encoding="utf-8",
+        mode=0o600,
     )
 
     print_panel(

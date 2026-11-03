@@ -63,6 +63,74 @@ def test_all_powershell_files_parse(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def _run_llama_zip_check(tmp_path: Path, entry_name: str):
+    import zipfile
+
+    archive = tmp_path / "package.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(entry_name, b"content")
+    destination = tmp_path / "out"
+    script = tmp_path / "check-zip.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        "$module = Import-Module ./scripts/lib/LlamaCpp.psm1 -Force -PassThru\n"
+        "& $module { param($zip, $destination)\n"
+        "  Assert-LlamaZipSafe -Zip $zip -Destination $destination\n"
+        f"}} '{archive}' '{destination}'\n",
+        encoding="utf-8",
+    )
+    return _run([PWSH, "-NoProfile", "-File", str(script)], "en"), destination
+
+
+@needs_pwsh
+def test_llama_zip_check_accepts_regular_entries(tmp_path: Path):
+    proc, _ = _run_llama_zip_check(tmp_path, "bundle/llama-bench.exe")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@needs_pwsh
+def test_llama_zip_check_rejects_path_traversal(tmp_path: Path):
+    proc, _ = _run_llama_zip_check(tmp_path, "../escape.txt")
+    assert proc.returncode != 0
+    assert not (tmp_path.parent / "escape.txt").exists()
+
+
+@needs_pwsh
+@pytest.mark.parametrize("forced", [False, True])
+def test_windows_local_build_switches_compose_and_inspection_image(tmp_path, forced):
+    script = tmp_path / "local-build.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        "$ast = [System.Management.Automation.Language.Parser]::ParseFile("
+        f"'{ROOT.as_posix()}/scripts/DOCKER_BENCHMARK.ps1', [ref]$null, [ref]$null)\n"
+        "$fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]"
+        " -and $n.Name -eq 'Ensure-BenchmarkImage' }, $true)\n"
+        "Invoke-Expression $fn.Extent.Text\n"
+        f"$BuildLocal = ${str(forced).lower()}\n"
+        "$Root = 'test-root'; $Image = 'registry.invalid/pinned@sha256:synthetic'\n"
+        "$env:LLMBENCH_DOCKER_BUILD_IMAGE = ''\n"
+        "function T { param($key, $value) $key }\n"
+        "function Write-UiStep {}\nfunction Write-UiWarn {}\n"
+        "function docker { $global:LASTEXITCODE = 1 }\n"
+        "function Invoke-Compose {\n"
+        " if ($args[0] -ne '-f' -or $args[1] -notlike '*compose.build.yaml'"
+        " -or $args[2] -ne 'build') { throw 'wrong build configuration' }\n"
+        " if ($env:LLMBENCH_DOCKER_BUILD_IMAGE -ne 'llmbench-local:dev') { throw 'wrong build tag' }\n"
+        " $script:built = $true\n}\n"
+        "function Set-ContainerImageId {\n"
+        " if (-not $script:built) { throw 'image absent' }\n"
+        " if ($Image -ne 'llmbench-local:dev' -or $env:LLMBENCH_DOCKER_IMAGE -ne $Image)"
+        " { throw 'inspection uses wrong image' }\n"
+        " 'sha256:synthetic'\n}\n"
+        "function Test-BenchmarkImageCompatible { $true }\n"
+        "$id = Ensure-BenchmarkImage\n"
+        "if ($id -ne 'sha256:synthetic') { throw 'wrong image id' }\n",
+        encoding="utf-8",
+    )
+    proc = _run([PWSH, "-NoProfile", "-File", str(script)], "en")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 @needs_pwsh
 @pytest.mark.parametrize(
     ("lang", "expected"),

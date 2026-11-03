@@ -1,3 +1,5 @@
+import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -8,12 +10,15 @@ from llmbench.utils import (
     ensure_dir,
     file_fingerprint,
     human_bytes,
+    redact_command,
+    redact_secrets,
     resolve_executable,
     safe_name,
     sha256_file,
     utc_now_compact,
     utc_now_iso,
     write_json,
+    write_text_atomic,
     read_json,
 )
 
@@ -41,6 +46,113 @@ def test_write_json_then_read_json_roundtrip(tmp_path: Path):
     path = tmp_path / "out" / "data.json"
     write_json(path, {"a": 1, "b": [1, 2, 3]})
     assert read_json(path) == {"a": 1, "b": [1, 2, 3]}
+
+
+def test_write_json_redacts_credentials_at_persistence_boundary(tmp_path: Path):
+    path = tmp_path / "data.json"
+    write_json(path, {"api_key": "sk-live", "metrics": {"tokens": 7}})
+    assert read_json(path) == {"api_key": "***", "metrics": {"tokens": 7}}
+
+
+def test_write_json_leaves_no_temporary_file(tmp_path: Path):
+    path = tmp_path / "data.json"
+    path.write_text('{"old": true}', encoding="utf-8")
+    write_json(path, {"new": True})
+    assert read_json(path) == {"new": True}
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-Dateirechte werden unter Windows nicht abgebildet.")
+def test_write_text_atomic_applies_restrictive_mode(tmp_path: Path):
+    path = tmp_path / "secret.json"
+    write_text_atomic(path, "{}", mode=0o600)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_redact_secrets_masks_credentials_but_keeps_metrics():
+    data = {
+        "endpoint": {"api_key": "sk-top", "base_url": "https://user:pass@example.test/v1"},
+        "models": [{"endpoint": {"api_key": "sk-nested"}}],
+        "metrics": {"tokens": 42, "prompt_tokens": 10, "completion_tokens": 32},
+        "password": "secret",
+        "authorization": "Bearer abc",
+        "safe": "value",
+    }
+
+    redacted = redact_secrets(data)
+
+    assert redacted["endpoint"]["api_key"] == "***"
+    assert redacted["endpoint"]["base_url"] == "https://***@example.test/v1"
+    assert redacted["models"][0]["endpoint"]["api_key"] == "***"
+    assert redacted["metrics"] == {"tokens": 42, "prompt_tokens": 10, "completion_tokens": 32}
+    assert redacted["password"] == "***"
+    assert redacted["authorization"] == "***"
+    assert redacted["safe"] == "value"
+    assert data["endpoint"]["api_key"] == "sk-top"
+
+
+def test_redact_command_masks_secret_flag_values():
+    assert redact_command(["docker", "run", "--api-key", "sk-123", "image"]) == (
+        "docker run --api-key *** image"
+    )
+    assert redact_command(["docker", "run", "--api-key=sk-123", "image"]) == (
+        "docker run --api-key=*** image"
+    )
+    assert redact_command(["docker", "run", "--hf-token", "hf_123", "image"]) == (
+        "docker run --hf-token *** image"
+    )
+    assert redact_command(["curl", "-H", "Authorization: Bearer abc"]) == (
+        "curl -H Authorization: ***"
+    )
+
+
+def test_redact_secrets_masks_environment_assignments_but_keeps_metric_variables():
+    assert redact_secrets("HF_TOKEN=hf_secret GITHUB_TOKEN=ghp_value") == (
+        "HF_TOKEN=*** GITHUB_TOKEN=***"
+    )
+    assert redact_secrets("MAX_TOKENS=4096 NVIDIA_VISIBLE_DEVICES=all") == (
+        "MAX_TOKENS=4096 NVIDIA_VISIBLE_DEVICES=all"
+    )
+
+
+def test_redact_command_does_not_mask_metrics_or_flags():
+    assert redact_command(["tool", "--tokens", "42", "--tokenizer", "auto"]) == (
+        "tool --tokens 42 --tokenizer auto"
+    )
+
+
+@pytest.mark.parametrize(("prefix", "expected"), [
+    ("Authorization: Basic ", "Authorization: ***"),
+    ("authorization=basic\t", "authorization=***"),
+    ("Authorization: Bearer ", "Authorization: ***"),
+])
+def test_redact_authorization_masks_complete_credential(prefix, expected):
+    assert redact_secrets(prefix + "dXNlcjpzeW50aGV0aWM=") == expected
+
+
+@pytest.mark.parametrize("text", [
+    '"Authorization": "Basic dXNlcjpzeW50aGV0aWM="',
+    "'Authorization': 'Basic dXNlcjpzeW50aGV0aWM='",
+    'Authorization: "Basic dXNlcjpzeW50aGV0aWM="',
+    '--api-key "synthetic secret with spaces" --tokens 42',
+    "--password='synthetic secret with spaces'",
+    'HF_TOKEN="synthetic secret with spaces"',
+])
+def test_redact_quoted_secret_values(text):
+    result = redact_secrets(text)
+    assert "dXNlcjpzeW50aGV0aWM=" not in result
+    assert "synthetic" not in result
+    assert "secret with spaces" not in result
+
+
+def test_redact_nested_argument_sequences_preserves_types_and_metrics():
+    data = {"args": ["--api-key", "-synthetic secret", "--tokens", 42, {"password": "hidden"}],
+            "tuple": ("--hf-token", "hf_secret", "--tokenizer", "auto")}
+    result = redact_secrets(data)
+    assert result["args"] == ["--api-key", "***", "--tokens", 42, {"password": "***"}]
+    assert result["tuple"] == ("--hf-token", "***", "--tokenizer", "auto")
+    assert data["args"][1] == "-synthetic secret"
+    assert redact_command(["tool", "--password", "-synthetic"]) == "tool --password ***"
 
 
 def test_read_json_accepts_utf8_bom(tmp_path: Path):

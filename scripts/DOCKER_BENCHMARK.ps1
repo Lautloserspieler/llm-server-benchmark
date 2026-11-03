@@ -8,13 +8,17 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $Root 'compose.yaml'
-$Image = if ($env:LLMBENCH_DOCKER_IMAGE) { $env:LLMBENCH_DOCKER_IMAGE } else { 'ghcr.io/lautloserspieler/llm-server-benchmark:latest' }
+$Image = if ($env:LLMBENCH_DOCKER_IMAGE) { $env:LLMBENCH_DOCKER_IMAGE } else { 'ghcr.io/lautloserspieler/llm-server-benchmark:latest@sha256:9b61a21c55d0d803ae26cd33c29adf9f00ec12d0145490bcea033b843dbbcce3' }
 $BuildLocal = ($env:LLMBENCH_DOCKER_BUILD_LOCAL -eq '1')
-$SmokeImage = if ($env:LLMBENCH_CUDA_SMOKE_IMAGE) { $env:LLMBENCH_CUDA_SMOKE_IMAGE } else { 'nvidia/cuda:13.2.1-base-ubuntu24.04' }
+$SmokeImage = if ($env:LLMBENCH_CUDA_SMOKE_IMAGE) { $env:LLMBENCH_CUDA_SMOKE_IMAGE } else { 'nvidia/cuda:13.2.1-base-ubuntu24.04@sha256:7be56e69d8ae7c3648b8fca009fa35980ecd9c6eefaafbff3ee8c224e0043eb5' }
 $ConfigPath = if ([System.IO.Path]::IsPathRooted($Config)) { $Config } else { Join-Path $Root $Config }
 $RuntimeDir = Join-Path $Root '.runtime'
 $ReadyFile = Join-Path $RuntimeDir 'docker-ready'
 $ImageFile = Join-Path $RuntimeDir 'docker-image'
+if ($Action -ne 'Setup' -and -not $env:LLMBENCH_DOCKER_IMAGE -and (Test-Path -LiteralPath $ImageFile)) {
+    $savedImage = (Get-Content -LiteralPath $ImageFile -Raw).Trim()
+    if ($savedImage) { $Image = $savedImage }
+}
 
 Import-Module (Join-Path $PSScriptRoot 'lib\UI.psm1') -Force -DisableNameChecking
 Initialize-LlmbenchUI
@@ -385,7 +389,11 @@ function Ensure-BenchmarkImage {
         Write-UiStep (T 'docker.image_build_forced')
     }
 
-    Invoke-Compose build llmbench
+    $localImage = if ($env:LLMBENCH_DOCKER_BUILD_IMAGE) { $env:LLMBENCH_DOCKER_BUILD_IMAGE } else { 'llmbench-local:dev' }
+    $env:LLMBENCH_DOCKER_BUILD_IMAGE = $localImage
+    Invoke-Compose -f (Join-Path $Root 'compose.build.yaml') build llmbench
+    $script:Image = $localImage
+    $env:LLMBENCH_DOCKER_IMAGE = $localImage
     $id = Set-ContainerImageId
     if (-not (Test-BenchmarkImageCompatible $Image)) {
         throw (T 'docker.image_build_incompatible')

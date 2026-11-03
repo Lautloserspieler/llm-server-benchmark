@@ -424,10 +424,12 @@ def bootstrap_config(
         cfg[BOOTSTRAP_GPU_LAYERS_MARKER] = markers
     else:
         cfg.pop(BOOTSTRAP_GPU_LAYERS_MARKER, None)
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
+    from llmbench.utils import write_text_atomic
+
+    write_text_atomic(
+        config_path,
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120),
-        encoding="utf-8",
+        mode=0o600,
     )
 
     return {

@@ -8,10 +8,11 @@ if ! declare -F ui_t >/dev/null 2>&1; then
     source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/ui.sh"
 fi
 
+LLMBENCH_DOCKER_IMAGE_EXPLICIT="${LLMBENCH_DOCKER_IMAGE:-}"
 LLMBENCH_DOCKER_CMD=()
-LLMBENCH_DOCKER_IMAGE="${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest}"
+LLMBENCH_DOCKER_IMAGE="${LLMBENCH_DOCKER_IMAGE:-ghcr.io/lautloserspieler/llm-server-benchmark:latest@sha256:9b61a21c55d0d803ae26cd33c29adf9f00ec12d0145490bcea033b843dbbcce3}"
 LLMBENCH_DOCKER_BUILD_LOCAL="${LLMBENCH_DOCKER_BUILD_LOCAL:-0}"
-LLMBENCH_CUDA_SMOKE_IMAGE="${LLMBENCH_CUDA_SMOKE_IMAGE:-nvidia/cuda:13.2.1-base-ubuntu24.04}"
+LLMBENCH_CUDA_SMOKE_IMAGE="${LLMBENCH_CUDA_SMOKE_IMAGE:-nvidia/cuda:13.2.1-base-ubuntu24.04@sha256:7be56e69d8ae7c3648b8fca009fa35980ecd9c6eefaafbff3ee8c224e0043eb5}"
 
 _llmbench_sudo() {
     if [ "$(id -u)" -eq 0 ]; then
@@ -22,6 +23,10 @@ _llmbench_sudo() {
         ui_fail docker.sudo_missing
         return 1
     fi
+}
+
+_llmbench_curl() {
+    curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 "$@"
 }
 
 _llmbench_compose() {
@@ -75,10 +80,19 @@ llmbench_install_docker_engine_linux() {
     ui_confirm_install "Docker Engine + Buildx + Compose" || { ui_fail docker.declined "Docker Engine"; return 1; }
     ui_step docker.install_engine
     _llmbench_sudo apt-get update
-    _llmbench_sudo apt-get install -y ca-certificates curl
+    _llmbench_sudo apt-get install -y --no-install-recommends ca-certificates curl
     _llmbench_sudo install -m 0755 -d /etc/apt/keyrings
-    _llmbench_sudo curl -fsSL "https://download.docker.com/linux/${family}/gpg" -o /etc/apt/keyrings/docker.asc
-    _llmbench_sudo chmod a+r /etc/apt/keyrings/docker.asc
+    local key_tmp
+    key_tmp=$(mktemp)
+    if ! _llmbench_curl "https://download.docker.com/linux/${family}/gpg" -o "$key_tmp"; then
+        rm -f "$key_tmp"
+        return 1
+    fi
+    if ! _llmbench_sudo install -m 0644 "$key_tmp" /etc/apt/keyrings/docker.asc; then
+        rm -f "$key_tmp"
+        return 1
+    fi
+    rm -f "$key_tmp"
 
     local tmp
     tmp=$(mktemp)
@@ -94,7 +108,7 @@ EOF
     rm -f "$tmp"
 
     _llmbench_sudo apt-get update
-    _llmbench_sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    _llmbench_sudo apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     if command -v systemctl >/dev/null 2>&1; then
         _llmbench_sudo systemctl enable --now docker
     fi
@@ -108,7 +122,7 @@ llmbench_install_compose_plugin_linux() {
         ui_confirm_install "Docker Compose Plugin" || { ui_fail docker.declined "Docker Compose Plugin"; return 1; }
         ui_step docker.install_compose
         _llmbench_sudo apt-get update
-        _llmbench_sudo apt-get install -y docker-compose-plugin || return 1
+        _llmbench_sudo apt-get install -y --no-install-recommends docker-compose-plugin || return 1
     fi
 }
 
@@ -126,15 +140,37 @@ llmbench_install_nvidia_toolkit_linux() {
         ui_confirm_install "NVIDIA Container Toolkit" || { ui_fail docker.declined "NVIDIA Container Toolkit"; return 1; }
         ui_step docker.install_toolkit
         _llmbench_sudo apt-get update
-        _llmbench_sudo apt-get install -y ca-certificates curl gnupg
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-            | gpg --dearmor \
-            | _llmbench_sudo tee /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg >/dev/null
-        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-            | _llmbench_sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+        _llmbench_sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
+        local key_tmp key_gpg list_tmp list_final
+        key_tmp=$(mktemp)
+        key_gpg=$(mktemp)
+        list_tmp=$(mktemp)
+        list_final=$(mktemp)
+        if ! _llmbench_curl https://nvidia.github.io/libnvidia-container/gpgkey -o "$key_tmp"; then
+            rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
+            return 1
+        fi
+        if ! gpg --dearmor < "$key_tmp" > "$key_gpg"; then
+            rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
+            return 1
+        fi
+        if ! _llmbench_sudo install -m 0644 "$key_gpg" /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg; then
+            rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
+            return 1
+        fi
+        if ! _llmbench_curl https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list -o "$list_tmp"; then
+            rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
+            return 1
+        fi
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+            "$list_tmp" > "$list_final"
+        if ! _llmbench_sudo install -m 0644 "$list_final" /etc/apt/sources.list.d/nvidia-container-toolkit.list; then
+            rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
+            return 1
+        fi
+        rm -f "$key_tmp" "$key_gpg" "$list_tmp" "$list_final"
         _llmbench_sudo apt-get update
-        _llmbench_sudo apt-get install -y nvidia-container-toolkit
+        _llmbench_sudo apt-get install -y --no-install-recommends nvidia-container-toolkit
     fi
 
     ui_step docker.configure_runtime
@@ -218,7 +254,9 @@ llmbench_docker_build() {
         ui_step docker.image_build_forced
     fi
 
-    _llmbench_compose build llmbench
+    export LLMBENCH_DOCKER_BUILD_IMAGE="${LLMBENCH_DOCKER_BUILD_IMAGE:-llmbench-local:dev}"
+    _llmbench_compose -f "$ROOT_DIR/compose.build.yaml" build llmbench || return 1
+    LLMBENCH_DOCKER_IMAGE="$LLMBENCH_DOCKER_BUILD_IMAGE"
     llmbench_set_container_image_id || return 1
 }
 
@@ -257,6 +295,9 @@ llmbench_setup_docker() {
 
 llmbench_docker_ready() {
     [ -f "$ROOT_DIR/.runtime/docker-ready" ] || return 1
+    if [ -z "$LLMBENCH_DOCKER_IMAGE_EXPLICIT" ] && [ -s "$ROOT_DIR/.runtime/docker-image" ]; then
+        IFS= read -r LLMBENCH_DOCKER_IMAGE < "$ROOT_DIR/.runtime/docker-image"
+    fi
     llmbench_resolve_docker_cmd || return 1
     llmbench_docker_container_check >/dev/null 2>&1
 }

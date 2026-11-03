@@ -238,9 +238,41 @@ function Invoke-LlamaBenchProbe([string]$BenchExe) {
     }
 }
 
+function Assert-LlamaZipSafe([string]$Zip, [string]$Destination) {
+    # Expand-Archive prueft keine Pfade. Vor dem Entpacken alle Eintraege
+    # ablehnen, die das Zielverzeichnis verlassen oder Links anlegen koennten.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $root = [System.IO.Path]::GetFullPath($Destination)
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $prefix = $root.TrimEnd($separator) + $separator
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Zip)
+    try {
+        foreach ($entry in $archive.Entries) {
+            $name = $entry.FullName
+            if ([string]::IsNullOrWhiteSpace($name)) { throw "Leerer Eintrag im ZIP-Archiv." }
+            if ($name.Contains('\')) { throw "Backslash im ZIP-Pfad: $name" }
+            if ($name -match '^[\\/]' -or $name -match '^[A-Za-z]:') {
+                throw "Absoluter Pfad im ZIP-Archiv: $name"
+            }
+            if (($name -split '/') -contains '..') { throw "Unsicherer Pfad im ZIP-Archiv: $name" }
+            $attributes = [int]$entry.ExternalAttributes
+            if (($attributes -band 0xF000) -eq 0xA000) {
+                throw "Links sind im ZIP-Archiv nicht erlaubt: $name"
+            }
+            $target = [System.IO.Path]::GetFullPath((Join-Path $root $name))
+            if (-not $target.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Unsicherer Pfad im ZIP-Archiv: $name"
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
 function Expand-LlamaPackage([string]$Zip, [string]$Destination) {
     # $ProgressPreference des Aufrufers gilt im Modul nicht; der Fortschrittsbalken
     # von Expand-Archive macht Windows PowerShell 5.1 sehr langsam.
+    Assert-LlamaZipSafe -Zip $Zip -Destination $Destination
     $ProgressPreference = 'SilentlyContinue'
     Expand-Archive -Path $Zip -DestinationPath $Destination -Force
     # Manche Pakete liegen in einem Unterordner - die Programme muessen oben liegen,

@@ -12,12 +12,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [llama_cpp, vllm, tgi]
+        backend: [llama_cpp, vllm]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: backend-release-watch-review-${{ matrix.backend }}
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Review upstream releases
         id: check
         env:
@@ -42,13 +48,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [llama_cpp, vllm, tgi]
+        backend: [llama_cpp, vllm]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: backend-release-watch-propose-${{ matrix.backend }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Configure git credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh auth setup-git
       - name: Prepare candidate
         id: check
         env:
@@ -88,7 +104,6 @@ jobs:
           case "$BACKEND" in
             llama_cpp) git add llama-cpp-version.txt ;;
             vllm) git add llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_runner.py tests/test_backend_setup.py ;;
-            tgi) git add llmbench/config.py llmbench/backend_setup.py tests/test_config.py tests/test_runner.py ;;
           esac
           git diff --cached --quiet && exit 0
           git commit -m "chore: propose ${BACKEND} ${CANDIDATE} reference"

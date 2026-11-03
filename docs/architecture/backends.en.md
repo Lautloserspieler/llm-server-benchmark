@@ -89,13 +89,15 @@ for it.
 
 ### Release monitoring
 
-`backend-release-watch.yml` checks numbered llama.cpp builds and stable vLLM/TGI
+`backend-release-watch.yml` checks numbered llama.cpp builds and stable vLLM
 releases weekly. llama.cpp is already pinned in `llama-cpp-version.txt`. GitHub
 marks regular llama.cpp `b` builds as prereleases, so this backend uses the
-`b<number>` tag instead of GitHub's stable flag. For vLLM and TGI, the
-first draft PR proposes replacing the moving `:latest` default image with a
-concrete version. Later checks compare releases with that reference. Documentation
-changes alone do not trigger a bump; unclear release notes require manual review.
+`b<number>` tag instead of GitHub's stable flag. vLLM and the other container
+images are pinned to a version and `sha256` digest; the bot's draft PR intentionally
+drops the old digest and requires a freshly resolved digest before merging. TGI
+remains a supported backend but is no longer watched automatically, so TGI image
+updates are manual. Documentation changes alone do not trigger a bump; unclear
+release notes require manual review.
 The bot runs code tests but no hardware benchmarks. Before merging, verify the
 image/binary, API startup, and representative CPU/GPU measurements. Existing
 personal `benchmark.yaml` files are not changed.

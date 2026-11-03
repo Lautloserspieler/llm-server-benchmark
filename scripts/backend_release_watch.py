@@ -50,7 +50,11 @@ def current_reference(root: Path, backend: str) -> str:
     image = BACKENDS[backend]["image"]
     cfg = (root / "llmbench/config.py").read_text(encoding="utf-8")
     key = f"DEFAULT_{backend.upper()}_IMAGE"
-    match = re.search(rf'^{key} = "{re.escape(image)}:([^"\n]+)"$', cfg, re.MULTILINE)
+    match = re.search(
+        rf'^{key} = "{re.escape(image)}:([^"@\n]+)(?:@sha256:[0-9a-f]{{64}})?"$',
+        cfg,
+        re.MULTILINE,
+    )
     if not match:
         raise ValueError(f"Missing default image for {backend}")
     return match.group(1)
@@ -136,13 +140,16 @@ def bump(root: Path, result: dict) -> None:
         lines[hits[0]] = lines[hits[0]].replace(baseline, candidate)
         path.write_text("".join(lines), encoding="utf-8")
         return
-    old, new = f"{spec['image']}:{baseline}", f"{spec['image']}:{image_tag(backend, candidate)}"
+    old_reference = re.compile(
+        rf"{re.escape(spec['image'])}:{re.escape(baseline)}(?:@sha256:[0-9a-f]{{64}})?"
+    )
+    new_reference = f"{spec['image']}:{image_tag(backend, candidate)}"
     for name in spec["files"]:
         path = root / name
         content = path.read_text(encoding="utf-8")
-        if old not in content:
+        updated, replacements = old_reference.subn(new_reference, content)
+        if replacements == 0:
             raise ValueError(f"Expected reference missing in {name}")
-        updated = content.replace(old, new)
         if backend == "vllm" and name == "tests/test_backend_setup.py":
             assertion = f'assert written["tag"] == "{baseline}"'
             if assertion not in updated:
@@ -176,7 +183,9 @@ def markdown(result: dict) -> str:
         rows.append("")
     rows.extend(["### Before merging", "", "- [ ] Read the upstream release and verify image/binary provenance.",
                  "- [ ] Run representative model start, API, context and error tests on CPU/GPU as applicable.",
-                 "- [ ] Compare measurements against the pinned baseline and record image digest/build tag.", "",
+                 "- [ ] Compare measurements against the pinned baseline and record image digest/build tag.",
+                 "- [ ] Resolve the new image digest (`docker buildx imagetools inspect <ref>`) and "
+                 "commit it to the default image constant before merging.", "",
                  "Keyword triage is incomplete. No automatic merge is configured."])
     return "\n".join(rows) + "\n"
 

@@ -4,7 +4,9 @@
 
 ## Unterstützte Versionen
 
-Sicherheitskorrekturen werden auf den aktuellen `main`-Branch und die neueste veröffentlichte Version angewendet.
+Sicherheitskorrekturen werden auf den aktuellen `main`-Branch, die 1.7.x-Reihe und die neueste
+veröffentlichte Version angewendet. Hardening-Details und manuelle Repository-Einstellungen stehen
+in [SECURITY_HARDENING.de.md](docs/SECURITY_HARDENING.de.md).
 
 ## Eine Schwachstelle melden
 

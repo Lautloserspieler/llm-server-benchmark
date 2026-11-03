@@ -162,6 +162,59 @@ def test_extract_rejects_path_traversal(tmp_path: Path):
         lcs._extract(archive, dest)
 
 
+def test_extract_keeps_existing_install_when_archive_is_rejected(tmp_path: Path):
+    dest = tmp_path / "out"
+    dest.mkdir()
+    marker = dest / "llama-bench"
+    marker.write_text("previous install", encoding="utf-8")
+
+    archive = tmp_path / "evil.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        data = b"evil"
+        info = tarfile.TarInfo(name="../../evil")
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+
+    with pytest.raises(RuntimeError, match="Unsicherer Pfad"):
+        lcs._extract(archive, dest)
+
+    assert marker.read_text(encoding="utf-8") == "previous install"
+    assert list(tmp_path.glob("llmbench-extract-*")) == []
+
+
+def test_download_file_rejects_oversized_response(tmp_path: Path, monkeypatch):
+    destination = tmp_path / "download.tar.gz"
+    monkeypatch.setattr(lcs, "urlopen", lambda *_args, **_kwargs: io.BytesIO(b"x" * 64))
+
+    with pytest.raises(RuntimeError, match="zu gross"):
+        lcs._download_file("https://example.invalid/file.tar.gz", destination, max_bytes=32)
+
+    assert not destination.exists()
+
+
+def test_download_file_rejects_non_https_url(tmp_path: Path):
+    with pytest.raises(RuntimeError, match="HTTPS"):
+        lcs._download_file("http://example.invalid/file.tar.gz", tmp_path / "file.tar.gz")
+
+
+def test_extract_rejects_symlink_members(tmp_path: Path):
+    archive = tmp_path / "links.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        data = b"target"
+        target = tarfile.TarInfo(name="target")
+        target.size = len(data)
+        tf.addfile(target, io.BytesIO(data))
+        link = tarfile.TarInfo(name="llama-bench")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        tf.addfile(link)
+
+    dest = tmp_path / "out"
+    with pytest.raises(RuntimeError, match="Symlink-Ziel"):
+        lcs._extract(archive, dest)
+
+
+
 def _release(tag: str, assets: list[str]) -> dict:
     return {
         "tag_name": tag,

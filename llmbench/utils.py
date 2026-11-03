@@ -3,10 +3,12 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import re
 import socket
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,10 +80,132 @@ def ensure_dir(path: str | Path) -> Path:
     return p
 
 
-def write_json(path: str | Path, data: Any) -> None:
+def write_text_atomic(path: str | Path, text: str, *, mode: int | None = None) -> None:
+    """Schreibt Text ueber eine Temp-Datei und ersetzt das Ziel atomar."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=p.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            with contextlib.suppress(OSError):
+                os.chmod(tmp_name, mode)
+        os.replace(tmp_name, p)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise
+
+
+def write_json(path: str | Path, data: Any, *, mode: int | None = None) -> None:
+    write_text_atomic(
+        path,
+        json.dumps(redact_secrets(data), indent=2, ensure_ascii=False),
+        mode=mode,
+    )
+
+
+_SECRET_KEYS = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "api-key",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "passwd",
+        "secret",
+        "client_secret",
+        "authorization",
+        "auth",
+    }
+)
+_SECRET_FLAG_NAMES = r"(?:api[-_]?key|token|password|passwd|secret)"
+_SECRET_FLAG_EQ_RE = re.compile(
+    rf"(?i)^(--?[A-Za-z0-9_-]*{_SECRET_FLAG_NAMES})=(.*)$"
+)
+_SECRET_FLAG_RE = re.compile(rf"(?i)^(--?[A-Za-z0-9_-]*{_SECRET_FLAG_NAMES})$")
+_URL_USERINFO_RE = re.compile(r"(https?://)[^/\s:@]+(?::[^/\s@]*)?@")
+_SECRET_TEXT_VALUE = r'''(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)'''
+_AUTHORIZATION_RE = re.compile(
+    r'''(?i)(\bauthorization["']?\s*[:=][ \t]*)("[^"\r\n]*"|'[^'\r\n]*'|[^\r\n"'<>]+)'''
+)
+_BEARER_RE = re.compile(r"(?i)\b(bearer)\s+\S+")
+_ENV_SECRET_RE = re.compile(
+    rf"(?i)\b([A-Z][A-Z0-9_]*(?:_API_KEY|_TOKEN|_PASSWORD|_SECRET)|API_KEY|TOKEN|PASSWORD|SECRET)=({_SECRET_TEXT_VALUE})"
+)
+_SECRET_FLAG_TEXT_EQ_RE = re.compile(
+    rf"(?i)(--?[A-Za-z0-9_-]*{_SECRET_FLAG_NAMES})=({_SECRET_TEXT_VALUE})"
+)
+_SECRET_FLAG_TEXT_RE = re.compile(
+    rf"(?i)(--?[A-Za-z0-9_-]*{_SECRET_FLAG_NAMES})[ \t]+({_SECRET_TEXT_VALUE})"
+)
+
+
+def _redact_string(value: str) -> str:
+    def mask(match: re.Match[str], separator: str = "") -> str:
+        secret = match.group(2)
+        quote = secret[0] if secret.startswith(('"', "'")) else ""
+        return f"{match.group(1)}{separator}{quote}***{quote}"
+
+    value = _SECRET_FLAG_TEXT_EQ_RE.sub(lambda m: mask(m, "="), value)
+    value = _SECRET_FLAG_TEXT_RE.sub(lambda m: mask(m, " "), value)
+    value = _AUTHORIZATION_RE.sub(mask, value)
+    value = _BEARER_RE.sub(r"\1 ***", value)
+    value = _ENV_SECRET_RE.sub(lambda m: mask(m, "="), value)
+    return _URL_USERINFO_RE.sub(r"\1***@", value)
+
+
+def redact_secrets(value: Any) -> Any:
+    """Kopiert eine Struktur und maskiert bekannte Zugangsdatenfelder."""
+    if isinstance(value, dict):
+        redacted: dict[Any, Any] = {}
+        for key, item in value.items():
+            if isinstance(key, str) and key.lower() in _SECRET_KEYS:
+                redacted[key] = "***"
+            else:
+                redacted[key] = redact_secrets(item)
+        return redacted
+    if isinstance(value, list):
+        return _redact_sequence(value)
+    if isinstance(value, tuple):
+        return tuple(_redact_sequence(value))
+    if isinstance(value, str):
+        return _redact_string(value)
+    return value
+
+
+def _redact_sequence(args: Iterable[Any]) -> list[Any]:
+    """Maskiert Flag/Wert-Paare, ohne Typen oder Argumentgrenzen zu aendern."""
+    rendered: list[Any] = []
+    mask_next = False
+    for arg in args:
+        if mask_next:
+            rendered.append("***")
+            mask_next = False
+            continue
+        if not isinstance(arg, str):
+            rendered.append(redact_secrets(arg))
+            continue
+        eq_match = _SECRET_FLAG_EQ_RE.match(arg)
+        if eq_match:
+            rendered.append(f"{eq_match.group(1)}=***")
+            continue
+        if _SECRET_FLAG_RE.match(arg):
+            rendered.append(arg)
+            mask_next = True
+            continue
+        rendered.append(_redact_string(arg))
+    return rendered
+
+
+def redact_command(args: Iterable[str]) -> str:
+    """Rendert eine Kommandozeile fuer Logs, ohne Secret-Werte zu zeigen."""
+    return " ".join(_redact_sequence(args))
 
 
 def read_json(path: str | Path) -> Any:

@@ -13,6 +13,7 @@ DOC_PAIRS = (
     ("docs/DOCKER.md", "docs/DOCKER.en.md"),
     ("docs/ISSUE_LABELS.md", "docs/ISSUE_LABELS.de.md"),
     ("docs/RELEASE_CHECKLIST.md", "docs/RELEASE_CHECKLIST.de.md"),
+    ("docs/SECURITY_HARDENING.md", "docs/SECURITY_HARDENING.de.md"),
     (
         "docs/linux-llamacpp-source-build.md",
         "docs/linux-llamacpp-source-build.en.md",

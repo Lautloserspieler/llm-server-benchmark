@@ -4,7 +4,9 @@
 
 ## Supported versions
 
-Security fixes are applied to the current `main` branch and the latest released version.
+Security fixes are applied to the current `main` branch, the 1.7.x line and the latest released
+version. Hardening details and manual repository settings are documented in
+[SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md).
 
 ## Reporting a vulnerability
 

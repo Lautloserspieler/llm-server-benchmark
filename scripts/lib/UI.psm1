@@ -218,39 +218,75 @@ function Invoke-UiDownload {
     # Download mit eigenem Fortschrittsbalken (Prozent, Menge, Tempo, Restzeit).
     # Invoke-WebRequest zeigt unter Windows PowerShell keinen brauchbaren
     # Fortschritt und ist mit aktivem Fortschritt sehr langsam.
-    param([string]$Url, [string]$OutFile, [string]$Label = '')
+    param(
+        [string]$Url,
+        [string]$OutFile,
+        [string]$Label = '',
+        [string]$ExpectedSha256 = '',
+        [long]$MaxBytes = 0,
+        [int]$Retries = 3
+    )
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
     if (-not $Label) { $Label = Split-Path -Leaf $OutFile }
     Write-UiStep (T 'ui.download' $Label)
-    $request = [System.Net.HttpWebRequest]::Create($Url)
-    $request.UserAgent = 'llm-server-benchmark-installer'
-    $response = $request.GetResponse()
-    try {
-        $total = [double]$response.ContentLength
-        $inStream = $response.GetResponseStream()
-        $outStream = [System.IO.File]::Create($OutFile)
+
+    $part = "$OutFile.part"
+    if ($Retries -lt 1) { $Retries = 1 }
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
         try {
-            $buffer = New-Object byte[] 262144
-            $done = 0.0
-            $watch = [System.Diagnostics.Stopwatch]::StartNew()
-            $lastDraw = -1.0
-            while (($read = $inStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                $outStream.Write($buffer, 0, $read)
-                $done += $read
-                $elapsed = $watch.Elapsed.TotalSeconds
-                if (($elapsed - $lastDraw) -ge 0.25) {
-                    $lastDraw = $elapsed
-                    Write-UiProgress $done $total $elapsed
+            if (Test-Path -LiteralPath $part) { Remove-Item -LiteralPath $part -Force }
+            $request = [System.Net.HttpWebRequest]::Create($Url)
+            $request.UserAgent = 'llm-server-benchmark-installer'
+            $request.Timeout = 120000
+            $request.ReadWriteTimeout = 120000
+            $response = $request.GetResponse()
+            try {
+                $total = [double]$response.ContentLength
+                if ($MaxBytes -gt 0 -and $total -gt $MaxBytes) {
+                    throw "Download ist zu gross (Content-Length $total > $MaxBytes)."
+                }
+                $inStream = $response.GetResponseStream()
+                $outStream = [System.IO.File]::Create($part)
+                try {
+                    $buffer = New-Object byte[] 262144
+                    $done = 0.0
+                    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $lastDraw = -1.0
+                    while (($read = $inStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                        $done += $read
+                        if ($MaxBytes -gt 0 -and $done -gt $MaxBytes) {
+                            throw "Download ist zu gross (mehr als $MaxBytes Bytes)."
+                        }
+                        $outStream.Write($buffer, 0, $read)
+                        $elapsed = $watch.Elapsed.TotalSeconds
+                        if (($elapsed - $lastDraw) -ge 0.25) {
+                            $lastDraw = $elapsed
+                            Write-UiProgress $done $total $elapsed
+                        }
+                    }
+                    Write-UiProgress $done $(if ($total -gt 0) { $total } else { $done }) $watch.Elapsed.TotalSeconds
+                    Write-Host ''
+                } finally {
+                    $outStream.Dispose()
+                    $inStream.Dispose()
+                }
+            } finally {
+                $response.Dispose()
+            }
+            if ($ExpectedSha256) {
+                $expected = ($ExpectedSha256 -replace '^sha256:', '').ToUpperInvariant()
+                $actual = (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash
+                if ($actual -ne $expected) {
+                    throw "SHA-256 stimmt nicht: erwartet $expected, erhalten $actual."
                 }
             }
-            Write-UiProgress $done $(if ($total -gt 0) { $total } else { $done }) $watch.Elapsed.TotalSeconds
-            Write-Host ''
-        } finally {
-            $outStream.Dispose()
-            $inStream.Dispose()
+            Move-Item -LiteralPath $part -Destination $OutFile -Force
+            return
+        } catch {
+            if (Test-Path -LiteralPath $part) { Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue }
+            if ($attempt -ge $Retries) { throw }
+            Start-Sleep -Seconds ([Math]::Min(5, $attempt * 2))
         }
-    } finally {
-        $response.Dispose()
     }
 }
 

@@ -24,6 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .i18n import _
+from .utils import redact_command
 
 LogFn = Callable[[str], None]
 
@@ -122,7 +123,8 @@ def _run(
     log = log or _noop
     exe = _require_docker()
     cmd = [exe, *args]
-    log("$ " + " ".join(cmd))
+    printable = redact_command(cmd)
+    log("$ " + printable)
     try:
         proc = subprocess.run(
             cmd,
@@ -135,13 +137,13 @@ def _run(
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(
-            _("docker-Befehl hat das Zeitlimit ueberschritten: {cmd}").format(cmd=" ".join(cmd))
+            _("docker-Befehl hat das Zeitlimit ueberschritten: {cmd}").format(cmd=printable)
         ) from exc
 
     if check and proc.returncode != 0:
         detail = ((proc.stderr or "") + (proc.stdout or "")).strip()[-2000:]
         raise RuntimeError(
-            _("docker-Befehl fehlgeschlagen ({code}): {cmd}").format(code=proc.returncode, cmd=" ".join(cmd))
+            _("docker-Befehl fehlgeschlagen ({code}): {cmd}").format(code=proc.returncode, cmd=printable)
             + "\n"
             + detail
         )

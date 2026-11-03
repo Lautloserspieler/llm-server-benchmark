@@ -79,6 +79,40 @@ def test_vllm_bump_updates_default_tag_assertion(tmp_path: Path):
     assert 'assert written["tag"] == "v0.32.0"' in assertion.read_text()
 
 
+def test_current_reference_reads_digest_pinned_default(tmp_path: Path):
+    config = tmp_path / "llmbench" / "config.py"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        'DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0@sha256:'
+        + "a" * 64
+        + '"\n',
+        encoding="utf-8",
+    )
+
+    assert watch.current_reference(tmp_path, "vllm") == "v0.32.0"
+
+
+def test_bump_drops_stale_digest_so_the_pr_can_add_a_fresh_one(tmp_path: Path):
+    digest = "a" * 64
+    for name in watch.BACKENDS["vllm"]["files"]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"vllm/vllm-openai:v0.32.0@sha256:{digest}\n", encoding="utf-8")
+    assertion = tmp_path / "tests/test_backend_setup.py"
+    assertion.write_text(
+        f"vllm/vllm-openai:v0.32.0@sha256:{digest}\n"
+        'assert written["tag"] == "v0.32.0"\n',
+        encoding="utf-8",
+    )
+
+    watch.bump(tmp_path, {"backend": "vllm", "baseline": "v0.32.0", "candidate": "v0.33.0"})
+
+    for name in watch.BACKENDS["vllm"]["files"]:
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        assert "vllm/vllm-openai:v0.33.0" in text
+        assert "sha256:" not in text
+
+
 def test_missing_baseline_fails_closed():
     with pytest.raises(ValueError, match="absent"):
         watch.review("llama_cpp", [release("b12040", "- CUDA")], "b11748")

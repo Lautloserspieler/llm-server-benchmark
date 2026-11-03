@@ -619,12 +619,15 @@ def docker(monkeypatch):
         def container_exists(self, _name):
             return False
 
+        def check_container_alive(self, _name):
+            return None
+
         def container_logs(self, _name, tail=None):  # noqa: ARG002
             return "container log"
 
     fake = _Fake()
     for backend_module in ("tgi", "ollama", "vllm"):
-        for fn in ("run_container", "stop_container", "container_pid", "container_exists", "container_logs"):
+        for fn in ("run_container", "stop_container", "container_pid", "container_exists", "container_logs", "check_container_alive"):
             monkeypatch.setattr(f"llmbench.backends.{backend_module}.docker_backend.{fn}", getattr(fake, fn))
         monkeypatch.setattr(
             f"llmbench.backends.{backend_module}.backend_setup.ensure_backend",

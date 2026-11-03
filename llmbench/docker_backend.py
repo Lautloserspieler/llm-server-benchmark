@@ -373,6 +373,51 @@ def stop_container(name_or_id: str, log: LogFn | None = None) -> None:
     _run_tolerant(["rm", "-f", name_or_id], log=log)
 
 
+def verify_container_removed(name: str) -> None:
+    """Verify cleanup, including daemon errors which tolerant stop ignores."""
+    proc = _run(
+        ["container", "ls", "--all", "--quiet", "--filter", f"name=^/{name}$"],
+        timeout=INSPECT_TIMEOUT_SECONDS,
+    )
+    if (proc.stdout or "").strip():
+        raise RuntimeError(f"Container wurde nicht entfernt: {name}")
+
+
+def check_container_alive(name: str) -> None:
+    """Fail startup promptly when Docker reports an exited or missing container."""
+    proc = _run(
+        ["container", "inspect", "--format", "{{json .State}}", name],
+        timeout=5,
+    )
+    try:
+        import json
+
+        state = json.loads(proc.stdout)
+        if not isinstance(state, dict):
+            raise ValueError("kein Statusobjekt")
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Containerstatus nicht lesbar: {name}") from exc
+    status = state.get("Status")
+    if state.get("Running") and not state.get("Paused"):
+        return
+    if status in {"created", "restarting"}:
+        return
+    detail = f"Container {name} wurde nicht bereit: Status={status}, Exitcode={state.get('ExitCode')}"
+    if state.get("OOMKilled"):
+        detail += ", OOMKilled=true"
+    if state.get("Error"):
+        detail += f"\nDocker: {state['Error']}"
+    logs = container_logs(name, tail=120)
+    if logs:
+        # Keep the primary memory error visible ahead of long follow-up traces.
+        cause = next((line for line in logs.splitlines()
+                      if "Free memory on device" in line or "CUDA out of memory" in line), None)
+        if cause:
+            detail += "\n" + cause
+        detail += "\nContainer-Log (Ende):\n" + logs[-6000:]
+    raise RuntimeError(detail)
+
+
 def container_exists(name_or_id: str) -> bool:
     if not docker_exe():
         return False

@@ -497,3 +497,11 @@ def test_get_telemetry_provider_wraps_amd_and_intel_in_composite(monkeypatch):
     provider = get_telemetry_provider()
     assert isinstance(provider, CompositeProvider)
     assert [s.index for s in provider.sample_gpus()] == [0, 1]
+
+
+@pytest.mark.parametrize("payload", [[], [1], None, 7, "invalid"])
+def test_amd_provider_ignores_non_object_json(monkeypatch, payload):
+    monkeypatch.setattr("llmbench.telemetry.run_capture", lambda *_args, **_kwargs: _cp(stdout=json.dumps(payload)))
+    provider = AmdProvider()
+    provider.initialized = True
+    assert provider.sample_gpus() == []

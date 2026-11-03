@@ -168,7 +168,8 @@ class OllamaBackend(BenchmarkBackend):
         # Das Modell muss vor dem ersten Benchmark-Request wirklich verfügbar sein.
         # Lokale GGUFs werden über Ollamas aktuelle Blob/Create-API importiert;
         # Registry-Modelle werden bei Bedarf in das persistente Volume gezogen.
-        wait_health(self.base_url, 60.0, self._headers(), path="/api/tags")
+        wait_health(self.base_url, 60.0, self._headers(), path="/api/tags",
+                    check_alive=lambda: docker_backend.check_container_alive(self.container_name))
         if _looks_like_gguf(model_path):
             self._created_model = _model_name_for(model_path)
             self._create_model(model_path)
@@ -427,11 +428,16 @@ class OllamaBackend(BenchmarkBackend):
         base_url: str,
         timeout_s: float,
         headers: dict[str, str] | None = None,
-        proc: Any = None,  # noqa: ARG002
+        proc: Any = None,
     ) -> float:
         # Ollama hat keine dedizierte /health-Route; /api/tags ist ein
         # einfacher Liveness-Check, der erreichbar sein muss.
-        return wait_health(base_url, timeout_s, headers, path="/api/tags")
+        handle_name = getattr(proc, "name", None)
+        name = handle_name or self.container_name
+        # Externally managed HTTP endpoints have no local Docker lifecycle.
+        check_alive = (lambda: docker_backend.check_container_alive(name)) if handle_name or self.container_id else None
+        return wait_health(base_url, timeout_s, headers, path="/api/tags",
+                           check_alive=check_alive)
 
 
 class _ContainerHandle:

@@ -349,3 +349,26 @@ def test_get_backend_returns_tgi_for_configured_backend(tmp_path: Path):
     assert isinstance(backend, TgiBackend)
     assert backend.image == IMAGE
     assert backend.root == tmp_path
+
+
+def test_smoke_resource_limits_reach_docker(docker, tmp_path):
+    backend = _backend()
+    backend.start_server("Qwen/Qwen2.5-0.5B-Instruct", {
+        "container_memory_gib": 12, "compilation_jobs": 1, "tgi_attention": "torch",
+    }, {}, {}, tmp_path / "tgi.log")
+    call = docker.runs[0]
+    assert call["extra_args"][-4:] == ["--memory", "12g", "--memory-swap", "12g"]
+    assert call["env"]["MAX_JOBS"] == "1"
+    assert call["env"]["ATTENTION"] == "paged"
+    assert call["env"]["PREFIX_CACHING"] == "0"
+    assert call["env"]["PREFILL_CHUNKING"] == "0"
+    assert call["env"]["USE_FLASH_ATTENTION"] == "false"
+
+
+@pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
+def test_invalid_container_memory_is_rejected(docker, tmp_path, value):
+    backend = _backend()
+    with pytest.raises(ValueError, match="container_memory_gib"):
+        backend.start_server("model", {"container_memory_gib": value}, {}, {}, tmp_path / "tgi.log")
+    assert not docker.runs
+    assert not docker.stopped

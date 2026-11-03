@@ -114,6 +114,8 @@ def _build_request(
             # Erst dadurch traegt der letzte SSE-Chunk exakte Tokenzahlen.
             "stream_options": {"include_usage": True},
         }
+        if cfg.get("model"):
+            payload["model"] = str(cfg["model"])
         if cfg.get("min_tokens") is not None:
             payload["min_tokens"] = int(cfg["min_tokens"])
         if "top_p" in cfg:

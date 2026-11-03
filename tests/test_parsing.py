@@ -2,6 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from llmbench.telemetry import DefaultProvider
+
 from llmbench.llama_bench import (
     _base_args,
     _benchmark_timeout_seconds,
@@ -11,6 +15,13 @@ from llmbench.llama_bench import (
     flatten_bench_rows,
     run_llama_bench,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_gpu_telemetry(monkeypatch):
+    # Parser tests intercept subprocess.Popen globally. Hardware probes must not
+    # run through that fake executable or add calls to the benchmark assertions.
+    monkeypatch.setattr("llmbench.monitor.get_telemetry_provider", DefaultProvider)
 
 BENCH_CFG = {
     "repetitions": 3, "delay_seconds": 0, "batch_size": 2048, "ubatch_size": 512,

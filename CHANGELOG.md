@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Automatischer GPU-Smoke-Test fuer alle Backends
+
+- Der Starter installiert fehlende Backends, bevorzugt verfuegbare GPUs und zeigt Fortschritt, Phasenlaufzeiten sowie eine kompakte Ergebnisuebersicht. CPU-Modus, strenge Auswertung und Installation lassen sich explizit steuern.
+- Isolierte Smoke-Container, automatische Portauswahl, sofortige Absturzerkennung, gesicherte Logs und atomare Teilberichte verbessern Fehlerbehandlung und Abbruch/Cleanup.
+- Kleine vLLM-/TGI-Profile begrenzen Speicher und Warmup; TGI nutzt fuer den Smoke-Test den allgemeinen Transformers-GPU-Pfad ohne FlashAttention/FlashInfer. Normale Benchmarkprofile bleiben unveraendert. OpenAI-Requests uebertragen den konfigurierten Modellnamen.
+- Praxistest auf einer RTX 5070: llama.cpp, Ollama, vLLM und TGI haben gemeinsam Start, Health-Check, Generierung und Cleanup bestanden. Regressionstests und deutsche/englische Dokumentation erweitert.
+- AMD-Telemetrie ignoriert gueltiges JSON ohne Objektstruktur, statt beim Einlesen fehlerhafter CLI-Ausgaben abzustuerzen.
+
+
 - Ollama-Kontextprobe: `truncate: false` und `shift: false` verhindern stille Prompt-Kuerzung auf aktuellen Servern. Im GPU-Praxistest mit Ollama 0.40.9 wurden sonst 4.173 Eingabe-Tokens bei `num_ctx=1024` auf 514 gekuerzt und faelschlich als bestanden gemeldet.
 
 ### Review-Korrekturen (Stress, Probe, Telemetrie, Datasets)

@@ -212,6 +212,33 @@ Apple Silicon acceleration is provided by the platform llama.cpp build.
 
 ---
 
+## Quick backend check
+
+Run `SMOKE_ALL_BACKENDS.bat` on Windows or `bash SMOKE_ALL_BACKENDS.sh` on Linux. The launcher creates `.venv` and installs the project's Python dependencies if needed. The test checks llama.cpp, Ollama, vLLM and TGI sequentially. Terminal progress bars show completed backends and test phases; an elapsed timer keeps updating during model preparation and server startup. Redirected output and `--no-progress` use plain phase messages.
+
+Each backend goes through prerequisites, automatic installation/preparation, model preparation, server startup, health checking, short streaming text generation and cleanup. By default, llama.cpp and Ollama use an available GPU and fall back to CPU when no suitable GPU is detected. vLLM and TGI require NVIDIA GPU support in Docker. `--device gpu` requires GPU execution; `--device cpu` selects CPU for llama.cpp/Ollama and skips vLLM/TGI. The results table shows the selected device. This is a functional check, not a comparable performance benchmark. It uses fixed small context/batch settings and does not inherit chat formatting or additional server arguments from benchmark settings. `benchmark.yaml` stays unchanged.
+
+For llama.cpp, Gemma 3 1B Q4_K_M (about 0.8 GB) is downloaded to `models/` when needed. Ollama uses `gemma3:1b`; vLLM/TGI use `Qwen/Qwen2.5-0.5B-Instruct`. Models remain cached. Missing backends are prepared automatically: llama.cpp uses the existing installer, and configured Docker images are pulled when needed. Setup messages and download progress appear during the setup phase. Network access and, where applicable, build tools are required. Installation failures are reported as `failed`, and testing continues with the other backends. `--no-install` disables preparation and skips missing installations. Missing Docker or GPU support is still reported as `skipped`. Existing benchmark containers remain untouched; smoke containers use unique names and are removed after testing. The local HTTP address in `endpoint.base_url` defaults to port 8080. If it is occupied, a free port is chosen automatically and recorded in the report. An explicit `--base-url` requires the specified port.
+
+```bash
+# Select backends and use a different port
+bash SMOKE_ALL_BACKENDS.sh --backends ollama vllm --base-url http://127.0.0.1:18080
+
+# Use an existing GGUF and adjust timeouts
+python scripts/smoke_all_backends.py --backends llama_cpp --gguf /path/model.gguf --startup-timeout 900 --request-timeout 180
+
+# CI: flag skipped backends as well
+python scripts/smoke_all_backends.py --no-install --strict --no-progress --output results/my-smoke
+```
+
+`--startup-timeout` controls server readiness and, for Ollama, each model pull request (default: 600 seconds). It is not an overall deadline for downloads or the entire run. `--request-timeout` limits the entire text generation request (default: 120 seconds). For vLLM, the smoke test sets `--gpu-memory-utilization 0.5`, `--enforce-eager` and at most one concurrent sequence. The small test therefore reserves 50% of total GPU memory by default. Override this with, for example, `--gpu-memory-utilization 0.35`; the fraction refers to total VRAM, not free VRAM. Even this reduced allocation must be free at startup. Readiness checks also monitor container state: an exited container is immediately reported with its exit code and log excerpt. Startup prints the unique container name and the matching `docker logs -f` command.
+
+TGI uses a bounded smoke profile: one request/batch, 128 input tokens, 256 total tokens, disabled CUDA graphs and the generic Transformers path on the GPU without FlashAttention/FlashInfer or prefix caching. The GPU memory fraction is 0.5; the container is limited to 12 GiB RAM without additional swap. These settings apply only to the smoke test and avoid the unbounded default warmup.
+
+A results table summarizes status, duration and failure phase. `results/backend-smoke/report.json` is updated atomically after every backend and includes phase timings, log path, container name and separate cleanup errors. Server logs are stored alongside it, including logs captured before removing containers whose startup failed. Reusing an output directory replaces its report and logs for tested backends. Use separate `--output` directories for separate runs. Ctrl+C cleans up the active backend, saves an `aborted` result and ends the run.
+
+Exit codes: `0` = at least one backend passed and none failed, `1` = failure (also partial skips with `--strict`), `2` = all backends skipped or invalid CLI arguments, `130` = user interruption.
+
 ## Manual Python installation
 
 For development or manual CLI usage:

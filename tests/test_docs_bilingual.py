@@ -90,7 +90,10 @@ def test_every_markdown_file_is_covered_by_bilingual_policy() -> None:
     markdown_files = {
         path.relative_to(ROOT).as_posix()
         for path in ROOT.rglob("*.md")
-        if ".git" not in path.parts and ".pytest_cache" not in path.parts
+        if not {
+            ".git", ".venv", "venv", ".pytest_cache",
+            ".mypy_cache", ".ruff_cache", ".tox", ".nox"
+        }.intersection(path.relative_to(ROOT).parts)
     }
 
     assert markdown_files == covered, (

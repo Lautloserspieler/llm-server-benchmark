@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Security hardening for v1.7.0
+
+- TAR/ZIP archives are validated before extraction; staging protects existing installations when archives are rejected.
+- Credentials are redacted from public configuration, JSON persistence, command lines and exported logs, including argument arrays and quoted Authorization headers. Configuration writes are atomic.
+- Release-watch jobs separate read and write permissions; actions and default images are pinned to commit SHAs or digests. Wiki publishing retains its temporary authentication until push.
+- Local Docker builds use a separate build tag and persist the selected image for subsequent starts. Installer downloads and security regression tests have been extended.
+- Hardening documentation records manual repository rules and outstanding hardware/runner acceptance checks.
+
+
 ### Automatic GPU smoke test for all backends
 
 - The launcher installs missing backends, prefers available GPUs and displays progress, phase timings and a compact results table. Explicit controls cover CPU mode, strict evaluation and installation.

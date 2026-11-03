@@ -223,4 +223,3 @@ def test_prepare_llama_source_rejects_zip_slip(tmp_path: Path):
 
     assert marker.read_text(encoding="utf-8") == "keep"
     assert not (tmp_path.parent / "escape").exists()
-

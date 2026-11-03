@@ -197,6 +197,28 @@ def test_download_file_rejects_non_https_url(tmp_path: Path):
         lcs._download_file("http://example.invalid/file.tar.gz", tmp_path / "file.tar.gz")
 
 
+def test_checked_command_masks_credentials_in_log_and_failure(monkeypatch):
+    from types import SimpleNamespace
+
+    cmd = ["git", "clone", "https://user:synthetic-password@example.invalid/repo", "--api-key", "synthetic-key"]
+    logs = []
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(lcs.subprocess, "run", run)
+    with pytest.raises(RuntimeError) as error:
+        lcs._run_checked(cmd, None, logs.append)
+    output = "\n".join(logs) + str(error.value)
+    assert "synthetic-password" not in output
+    assert "synthetic-key" not in output
+    assert "--api-key ***" in output
+    assert "Befehl fehlgeschlagen (1)" in output
+    assert calls[0][0] == cmd
+
+
 def test_extract_rejects_symlink_members(tmp_path: Path):
     archive = tmp_path / "links.tar.gz"
     with tarfile.open(archive, "w:gz") as tf:

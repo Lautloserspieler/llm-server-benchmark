@@ -149,8 +149,15 @@ _SECRET_FLAG_TEXT_RE = re.compile(
 def _redact_string(value: str) -> str:
     def mask(match: re.Match[str], separator: str = "") -> str:
         secret = match.group(2)
-        quote = secret[0] if secret.startswith(('"', "'")) else ""
-        return f"{match.group(1)}{separator}{quote}***{quote}"
+        # Emit fixed delimiters; never copy even a delimiter byte from a secret
+        # into diagnostic output. This also makes the data-flow boundary explicit.
+        if secret.startswith('"'):
+            replacement = '"***"'
+        elif secret.startswith("'"):
+            replacement = "'***'"
+        else:
+            replacement = "***"
+        return f"{match.group(1)}{separator}{replacement}"
 
     value = _SECRET_FLAG_TEXT_EQ_RE.sub(lambda m: mask(m, "="), value)
     value = _SECRET_FLAG_TEXT_RE.sub(lambda m: mask(m, " "), value)

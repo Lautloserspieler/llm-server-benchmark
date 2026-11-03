@@ -425,10 +425,11 @@ def _missing_build_tools() -> list[str]:
 
 
 def _run_checked(cmd: list[str], cwd: Path | None, log: LogFn, env: dict[str, str] | None = None) -> None:
-    log("$ " + redact_command(cmd))
+    printable = redact_command(cmd)
+    log("$ " + printable)
     proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, text=True, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"Befehl fehlgeschlagen ({proc.returncode}): {' '.join(cmd)}")
+        raise RuntimeError(f"Befehl fehlgeschlagen ({proc.returncode}): {printable}")
 
 
 def _apt_prefix() -> list[str]:

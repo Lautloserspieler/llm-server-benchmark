@@ -184,8 +184,7 @@ def markdown(result: dict) -> str:
     rows.extend(["### Before merging", "", "- [ ] Read the upstream release and verify image/binary provenance.",
                  "- [ ] Run representative model start, API, context and error tests on CPU/GPU as applicable.",
                  "- [ ] Compare measurements against the pinned baseline and record image digest/build tag.",
-                 "- [ ] Resolve the new image digest (`docker buildx imagetools inspect <ref>`) and "
-                 "commit it to the default image constant before merging.", "",
+                 "- [ ] Resolve the new image digest (`docker buildx imagetools inspect <ref>`) and commit it to the default image constant before merging.", "",
                  "Keyword triage is incomplete. No automatic merge is configured."])
     return "\n".join(rows) + "\n"
 

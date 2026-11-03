@@ -12,9 +12,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates cmake git ninja-build pkg-config \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/ggml-org/llama.cpp.git /src/llama.cpp \
+RUN git init /src/llama.cpp \
     && cd /src/llama.cpp \
-    && git checkout --detach "${LLAMA_CPP_COMMIT}" \
+    && git remote add origin https://github.com/ggml-org/llama.cpp.git \
+    && git fetch --depth 1 origin "${LLAMA_CPP_COMMIT}" \
+    && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "${LLAMA_CPP_COMMIT}"
 RUN cmake -S /src/llama.cpp -B /src/llama.cpp/build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \

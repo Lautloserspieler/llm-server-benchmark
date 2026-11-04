@@ -374,7 +374,7 @@ llmbench run --hardware both
 Es kann auch ein einzelnes Modell ausgewählt werden:
 
 ```bash
-llmbench run --config benchmark.yaml --model "Qwen3.5-9B"
+llmbench run --config benchmark.yaml --model "Gemma 3 1B"
 ```
 
 Und ein Dauer-Preset:
@@ -537,22 +537,26 @@ Ein vLLM-Profil kann anschließend Optionen wie Tensor Parallelism und GPU Memor
 
 ## Standard-Modellsuite
 
-Die Referenzsuite 2026 deckt Dense- und MoE-Architekturen in mehreren Größenklassen ab:
+**Auf allen Backends gibt es dieselben Modelle** (llama.cpp, Ollama, vLLM, TGI). Ergebnisse verschiedener Backends sind nur vergleichbar, wenn dasselbe Modell gemessen wurde; deshalb gibt es einen gemeinsamen Katalog. Jedes Modell hat die zum Backend passende Referenz:
 
-| Suite | Modell | Referenz-GGUF |
-| --- | --- | --- |
-| small | Qwen3.5-9B | Q4_K_M |
-| mid | Gemma-4-12B-IT | Q4_K_M |
-| mid | Qwen3.8-27B | Q4_K_M |
-| mid | GLM-4.7-Flash | Q4_K_M |
-| heavy | Qwen3.5-122B-A10B | Q4_K_M |
-| heavy | Mistral-Small-4-119B-2603 | UD-Q4_K_M |
-| extreme | DeepSeek-V4-Flash-0731 | UD-Q4_K_XL |
+| Klasse | Modell | Ollama | llama.cpp (GGUF) | vLLM / TGI (Hugging Face) |
+| --- | --- | --- | --- | --- |
+| small | Gemma 3 1B | `gemma3:1b` · Q4_K_M | `ggml-org/gemma-3-1b-it-GGUF` · Q4_K_M | `google/gemma-3-1b-it` · bf16 |
+| small | Granite 4.2 3B | `granite4.2:3b` · Q4_K_M | `ibm-granite/granite-4.2-3b-GGUF` · Q4_K_M | `ibm-granite/granite-4.2-3b` · bf16 |
+| small | Qwen3 8B | `qwen3:8b` · Q4_K_M | `Qwen/Qwen3-8B-GGUF` · Q4_K_M | `Qwen/Qwen3-8B` · bf16 |
+| mid | DeepSeek-R1 14B | `deepseek-r1:14b` · Q4_K_M | `bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF` · Q4_K_M | `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` · bf16 |
+| mid | GPT-OSS 20B | `gpt-oss:20b` · MXFP4 | `ggml-org/gpt-oss-20b-GGUF` · MXFP4 | `openai/gpt-oss-20b` · MXFP4 |
+| mid | Mistral Small 3.2 24B | `mistral-small3.2:24b` · Q4_K_M | `bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF` · Q4_K_M | `mistralai/Mistral-Small-3.2-24B-Instruct-2506` · bf16 |
+| heavy | Qwen3.8 27B | `qwen3.8:27b` · Q4_K_M | `bartowski/Qwen3.8-27B-GGUF` · Q4_K_M | `Qwen/Qwen3.8-27B` · bf16 |
+| heavy | DeepSeek-R1 70B | `deepseek-r1:70b` · Q4_K_M | `bartowski/DeepSeek-R1-Distill-Llama-70B-GGUF` · Q4_K_M | `deepseek-ai/DeepSeek-R1-Distill-Llama-70B` · bf16 |
+| heavy | GPT-OSS 120B | `gpt-oss:120b` · MXFP4 | `ggml-org/gpt-oss-120b-GGUF` · MXFP4 | `openai/gpt-oss-120b` · MXFP4 |
+| extreme | Qwen3 235B | `qwen3:235b` · Q4_K_M | `unsloth/Qwen3-235B-A22B-GGUF` · Q4_K_M | `Qwen/Qwen3-235B-A22B` · bf16 |
 
-Normale Nutzer wählen Modelle während `setup.bat` / `setup.sh` in der Terminal-UI aus.
-Alle sieben Einträge sind dort sichtbar; DeepSeek V4 ist deutlich mit `[EXTREME]` markiert.
+Das Modell trägt auf **jedem Backend denselben Anzeigenamen**, damit `llmbench compare` die Läufe zuordnen kann. Die Gewichte sind zwischen den Backends nicht byte-identisch (GGUF und Ollama sind quantisiert, vLLM lädt die Originalgewichte); `doctor` und `compare` warnen davor. Modelle außerhalb des Katalogs funktionieren weiter, mit dem Hinweis, dass sie sich nicht backendübergreifend vergleichen lassen. Die älteren reinen llama.cpp-Modelle (Qwen3.5-9B, Gemma-4-12B-IT, GLM-4.7-Flash, Qwen3.5-122B-A10B, Mistral-Small-4-119B-2603, DeepSeek-V4-Flash-0731) bleiben als „legacy“ wählbar, gehören aber nicht zur Standardauswahl.
 
-**A / Alle Standardmodelle** wählt absichtlich nur die sechs normalen Referenzmodelle aus `small + mid + heavy`. Extreme muss ausdrücklich über seine Modellnummer ausgewählt werden, damit niemals versehentlich ein sehr großer Download startet.
+Die Hugging-Face-Repositories und GGUF-Dateinamen wurden gegen den Hub geprüft (04.11.2026). Eine ungeprüfte Referenz erscheint in den Menüs als „(ungeprüft)“. Alles lässt sich mit `python scripts/verify_model_catalog.py` erneut prüfen (braucht Netzwerkzugriff).
+
+Normale Nutzer wählen Modelle während `setup.bat` / `setup.sh` in der Terminal-UI aus. **A / Alle Standardmodelle** wählt alles außer Extreme. Extreme muss ausdrücklich gewählt werden, damit niemals versehentlich ein sehr großer Download startet.
 
 Die zugrunde liegende CLI `llmbench download --suite ...` bleibt für Automatisierung und fortgeschrittene/manuelle Nutzung verfügbar, ist aber nicht der normale Setup-Weg.
 

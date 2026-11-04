@@ -40,6 +40,16 @@ def _model_hashes(summary: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _model_precisions(summary: dict[str, Any]) -> dict[str, str]:
+    """Precision/quantization recorded per model (from the shared catalog), if known."""
+    out: dict[str, str] = {}
+    for m in summary.get("models", []):
+        model = m.get("model") or {}
+        if model.get("name") and model.get("precision"):
+            out[str(model["name"])] = str(model["precision"])
+    return out
+
+
 def _profile_settings(summary: dict[str, Any]) -> dict[str, Any]:
     out = {}
     for m in summary.get("models", []):
@@ -107,9 +117,10 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
     _mismatch(
         "Backend",
         _collect(summaries, lambda s: s.get("backend")),
-        "error",
+        "warning",
         "Die Laeufe wurden mit unterschiedlichen Inferenz-Backends gemessen. "
-        "Tokens/s aus verschiedenen Backends sind nicht direkt vergleichbar",
+        "Batching, Prefill und Sampling unterscheiden sich; Tokens/s aus verschiedenen Backends "
+        "sind nur mit Vorsicht vergleichbar",
     )
     _mismatch(
         "llama.cpp-Build",
@@ -161,6 +172,21 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
                 "message": (
                     "Fuer mindestens einen Server fehlt der SHA256. Mit "
                     "project.hash_models: true laesst sich die Dateigleichheit belegen."
+                ),
+            })
+
+    # Same model, different precision (e.g. Q4_K_M on Ollama, bf16 on vLLM): a warning, not a block.
+    precisions = {_server(s): _model_precisions(s) for s in summaries}
+    for name in sorted({n for per in precisions.values() for n in per}):
+        values = {srv: per[name] for srv, per in precisions.items() if per.get(name)}
+        if len(set(values.values())) > 1:
+            detail = "; ".join(f"{srv}: {value}" for srv, value in values.items())
+            issues.append({
+                "level": "warning",
+                "topic": f"Modell {name}",
+                "message": (
+                    "Gleiches Modell, aber unterschiedliche Quantisierung/Praezision - die Gewichte sind "
+                    f"nicht identisch, Tokens/s und Speicherbedarf nur eingeschraenkt vergleichbar ({detail})"
                 ),
             })
 

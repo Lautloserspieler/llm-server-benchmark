@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Gleiche Modelle auf allen Backends
+
+- Neuer gemeinsamer Modellkatalog (`llmbench/model_catalog.py`): llama.cpp, Ollama, vLLM und TGI bieten jetzt dieselben zehn Modelle an (Gemma 3 1B, Granite 4.2 3B, Qwen3 8B, DeepSeek-R1 14B, GPT-OSS 20B, Mistral Small 3.2 24B, Qwen3.8 27B, DeepSeek-R1 70B, GPT-OSS 120B und das Extreme-Modell Qwen3 235B), jeweils mit der zum Backend passenden Referenz und überall gleichem Anzeigenamen. Ergebnisse verschiedener Backends lassen sich in `compare` endlich zuordnen.
+- Die Präzision (Q4_K_M, MXFP4, bf16) wird je Modell gespeichert und im Bericht angezeigt. Unterschiede bei Backend oder Präzision sind in `compare` jetzt eine Warnung statt eines Fehlers.
+- `doctor` erkennt Unstimmigkeiten zwischen Backend und Modellreferenz (z. B. ein Ollama-Tag mit llama.cpp) und nennt, was stattdessen zu verwenden ist; Modelle außerhalb des Katalogs bekommen den Hinweis „nicht backendübergreifend vergleichbar“.
+- Die älteren reinen llama.cpp-Modelle bleiben als „legacy“ wählbar. Die Hugging-Face-Repositories und GGUF-Dateinamen wurden gegen den Hub geprüft; Ungeprüftes erscheint als „(ungeprüft)“. `scripts/verify_model_catalog.py` wiederholt die Prüfung.
+
 ### Kein stilles Vulkan statt CUDA
 
 - Der Block „Nachweis der Testbedingungen“ zeigt die GPU-API (`cuda`, `vulkan`, ...), die llama.cpp laut `--list-devices` wirklich nutzt. Bei einer NVIDIA-GPU mit Vulkan-/CPU-Build warnt der Lauf (Vulkan ist dort erfahrungsgemaess deutlich langsamer) und speichert die Warnung im Ergebnis.

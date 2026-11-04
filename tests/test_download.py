@@ -78,39 +78,37 @@ def test_completed_model_is_recovered_after_progress_callback_error(
     def _download_then_fail(**kwargs):
         local_dir = Path(kwargs["local_dir"])
         local_dir.mkdir(parents=True, exist_ok=True)
-        (local_dir / "Qwen3.5-9B-Q4_K_M.gguf").write_bytes(b"GGUF")
+        (local_dir / "Qwen3-8B-Q4_K_M.gguf").write_bytes(b"GGUF")
         raise AttributeError("'RichTqdm' object has no attribute 'set_description_str'")
 
     monkeypatch.setattr("llmbench.download.snapshot_download", _download_then_fail)
 
-    download_models(tmp_path, "small")
+    download_models(tmp_path, "small", model_names=["Qwen3 8B"])
 
-    found = find_downloaded_model(tmp_path, MODELS["small"]["Qwen3.5-9B"])
+    found = find_downloaded_model(tmp_path, MODELS["small"]["Qwen3 8B"])
     assert found is not None
-    assert found.name == "Qwen3.5-9B-Q4_K_M.gguf"
+    assert found.name == "Qwen3-8B-Q4_K_M.gguf"
 
 
-def test_2026_model_manifest_uses_verified_repositories_and_quants() -> None:
-    assert MODELS["small"]["Qwen3.5-9B"]["repo_id"] == "unsloth/Qwen3.5-9B-GGUF"
-    assert MODELS["mid"]["Gemma-4-12B-IT"]["repo_id"] == "unsloth/gemma-4-12b-it-GGUF"
-    assert MODELS["mid"]["Qwen3.8-27B"]["repo_id"] == "bartowski/Qwen3.8-27B-GGUF"
-    assert MODELS["mid"]["GLM-4.7-Flash"]["repo_id"] == "lmstudio-community/GLM-4.7-Flash-GGUF"
-    assert MODELS["heavy"]["Qwen3.5-122B-A10B"]["repo_id"] == (
-        "unsloth/Qwen3.5-122B-A10B-GGUF"
-    )
-    assert MODELS["heavy"]["Mistral-Small-4-119B-2603"]["repo_id"] == (
+def test_shared_catalog_models_and_legacy_llama_only_models_are_separated() -> None:
+    # The shared catalog is the same list that Ollama and vLLM offer.
+    assert MODELS["small"]["Gemma 3 1B"]["repo_id"] == "ggml-org/gemma-3-1b-it-GGUF"
+    assert MODELS["heavy"]["Qwen3.8 27B"]["repo_id"] == "bartowski/Qwen3.8-27B-GGUF"
+    assert MODELS["extreme"]["Qwen3 235B"]["estimated_gib"] == 142.0
+    assert MODELS["small"]["Granite 4.2 3B"]["repo_id"] == "ibm-granite/granite-4.2-3b-GGUF"
+
+    # Models that only existed for llama.cpp stay selectable but are not part of the standard suite.
+    assert MODELS["legacy"]["Qwen3.5-9B"]["repo_id"] == "unsloth/Qwen3.5-9B-GGUF"
+    assert MODELS["legacy"]["Gemma-4-12B-IT"]["repo_id"] == "unsloth/gemma-4-12b-it-GGUF"
+    assert MODELS["legacy"]["GLM-4.7-Flash"]["repo_id"] == "lmstudio-community/GLM-4.7-Flash-GGUF"
+    assert MODELS["legacy"]["Qwen3.5-122B-A10B"]["repo_id"] == "unsloth/Qwen3.5-122B-A10B-GGUF"
+    assert MODELS["legacy"]["Mistral-Small-4-119B-2603"]["repo_id"] == (
         "unsloth/Mistral-Small-4-119B-2603-GGUF"
     )
-    assert MODELS["extreme"]["DeepSeek-V4-Flash-0731"]["repo_id"] == (
-        "unsloth/DeepSeek-V4-Flash-0731-GGUF"
-    )
+    assert MODELS["legacy"]["DeepSeek-V4-Flash-0731"]["repo_id"] == "unsloth/DeepSeek-V4-Flash-0731-GGUF"
+    assert any("UD-Q4_K_M" in pattern for pattern in MODELS["legacy"]["Mistral-Small-4-119B-2603"]["pattern"])
+    assert any("UD-Q4_K_XL" in pattern for pattern in MODELS["legacy"]["DeepSeek-V4-Flash-0731"]["pattern"])
 
-    assert any(
-        "UD-Q4_K_M" in pattern
-        for pattern in MODELS["heavy"]["Mistral-Small-4-119B-2603"]["pattern"]
-    )
-    assert any(
-        "UD-Q4_K_XL" in pattern
-        for pattern in MODELS["extreme"]["DeepSeek-V4-Flash-0731"]["pattern"]
-    )
-    assert len(get_suite_models("all")) == 6
+    standard = get_suite_models("all")
+    assert "Qwen3.5-9B" not in standard and "Gemma 3 1B" in standard
+    assert "Qwen3 235B" not in standard  # extreme is only downloaded when chosen explicitly

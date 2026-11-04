@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Sicherheits-Hardening fuer v1.7.0
+
+- TAR-/ZIP-Archive werden vor dem Entpacken validiert; Staging schuetzt bestehende Installationen bei abgelehnten Archiven.
+- Zugangsdaten werden in oeffentlichen Konfigurationen, JSON-Dateien, Kommandozeilen und exportierten Logs maskiert, auch in Argumentlisten und zitierten Authorization-Headern. Konfigurationen werden atomar geschrieben.
+- Release-Watch-Jobs trennen Lese- und Schreibrechte; Actions und Standard-Images sind auf Commit-SHAs bzw. Digests gepinnt. Wiki-Publishing behaelt seine temporaere Authentifizierung bis zum Push.
+- Lokale Docker-Builds verwenden einen separaten Build-Tag und speichern das ausgewaehlte Image fuer spaetere Starts. Installer-Downloads und Sicherheitsregressionstests wurden erweitert.
+- Hardening-Dokumentation beschreibt manuelle Repository-Regeln und noch erforderliche Hardware-/Runner-Abnahmen.
+
+
 ### Automatischer GPU-Smoke-Test fuer alle Backends
 
 - Der Starter installiert fehlende Backends, bevorzugt verfuegbare GPUs und zeigt Fortschritt, Phasenlaufzeiten sowie eine kompakte Ergebnisuebersicht. CPU-Modus, strenge Auswertung und Installation lassen sich explizit steuern.

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13.2.1-devel-ubuntu24.04
-ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:13.2.1-runtime-ubuntu24.04
+ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13.2.1-devel-ubuntu24.04@sha256:44a9504c6dfb50b1241464241b02a93871928f373de6f5a644cf5fe9f080aa63
+ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:13.2.1-runtime-ubuntu24.04@sha256:4c17c2e7474ca1d470428b25e87e95756f51e7da3b663859894a03bc5a7ebdae
 ARG LLAMA_CPP_COMMIT=64a155d242cb427766055ea9caea6f34df1ca94b
 ARG LLMBENCH_CUDA_ARCHITECTURES=89;120
 
@@ -12,9 +12,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates cmake git ninja-build pkg-config \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/ggml-org/llama.cpp.git /src/llama.cpp \
+RUN git init /src/llama.cpp \
     && cd /src/llama.cpp \
-    && git checkout --detach "${LLAMA_CPP_COMMIT}" \
+    && git remote add origin https://github.com/ggml-org/llama.cpp.git \
+    && git fetch --depth 1 origin "${LLAMA_CPP_COMMIT}" \
+    && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "${LLAMA_CPP_COMMIT}"
 RUN cmake -S /src/llama.cpp -B /src/llama.cpp/build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \

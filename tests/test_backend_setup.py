@@ -7,6 +7,9 @@ import pytest
 
 from llmbench import backend_setup
 
+VLLM_IMAGE = backend_setup.DEFAULT_VLLM_IMAGE
+OLLAMA_IMAGE = backend_setup.DEFAULT_OLLAMA_IMAGE
+
 
 @pytest.fixture
 def docker(monkeypatch):
@@ -25,7 +28,7 @@ def docker(monkeypatch):
             return image in self.images
 
         def image_digest(self, image):
-            return f"{image}@sha256:deadbeef"
+            return f"{image.split('@', 1)[0]}@sha256:deadbeef"
 
         def pull_image(self, image, log=None):  # noqa: ARG002
             self.calls.append(("pull", image))
@@ -67,20 +70,26 @@ def test_state_file_path_follows_runtime_convention(tmp_path: Path):
     assert path == tmp_path / ".runtime" / "vllm" / ".install-state.json"
 
 
+def test_image_tag_is_extracted_from_tag_and_digest_references():
+    assert backend_setup.image_tag("vllm/vllm-openai:v0.32.0@sha256:abc") == "v0.32.0"
+    assert backend_setup.image_tag("ollama/ollama:0.40.13") == "0.40.13"
+    assert backend_setup.image_tag("registry.example:5000/name@sha256:abc") == "latest"
+
+
 # ------------------------------------------------------------ ensure_backend
 
 
 def test_ensure_backend_pulls_and_writes_state(docker, tmp_path: Path):
     state = backend_setup.ensure_backend("vllm", tmp_path)
 
-    assert ("pull", "vllm/vllm-openai:v0.32.0") in docker.calls
+    assert ("pull", VLLM_IMAGE) in docker.calls
     path = backend_setup.state_file("vllm", tmp_path)
     assert path.exists()
 
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written == state
     assert written["backend"] == "vllm"
-    assert written["image"] == "vllm/vllm-openai:v0.32.0"
+    assert written["image"] == VLLM_IMAGE
     assert written["tag"] == "v0.32.0"
     assert written["digest"] == "vllm/vllm-openai:v0.32.0@sha256:deadbeef"
     assert written["container"] == "llmbench-vllm"
@@ -97,13 +106,13 @@ def test_ensure_backend_honours_image_override(docker, tmp_path: Path):
 
 def test_ensure_backend_ollama_pulls_and_writes_state(docker, tmp_path: Path):
     state = backend_setup.ensure_backend("ollama", tmp_path)
-    assert ("pull", "ollama/ollama:0.40.13") in docker.calls
+    assert ("pull", OLLAMA_IMAGE) in docker.calls
     path = backend_setup.state_file("ollama", tmp_path)
     assert path.exists()
     written = json.loads(path.read_text(encoding="utf-8"))
     assert written == state
     assert written["backend"] == "ollama"
-    assert written["image"] == "ollama/ollama:0.40.13"
+    assert written["image"] == OLLAMA_IMAGE
     assert written["container"] == "llmbench-ollama"
     assert written["volume"] == "llmbench-ollama-cache"
 
@@ -128,7 +137,7 @@ def test_ensure_backend_repulls_when_image_changed(docker, tmp_path: Path):
     backend_setup.ensure_backend("vllm", tmp_path)
     backend_setup.ensure_backend("vllm", tmp_path, image="vllm/vllm-openai:v0.6.0")
     pulls = [c[1] for c in docker.calls if c[0] == "pull"]
-    assert pulls == ["vllm/vllm-openai:v0.32.0", "vllm/vllm-openai:v0.6.0"]
+    assert pulls == [VLLM_IMAGE, "vllm/vllm-openai:v0.6.0"]
 
 
 def test_ensure_backend_repulls_when_image_vanished_locally(docker, tmp_path: Path):
@@ -153,7 +162,7 @@ def test_remove_backend_removes_container_image_and_state(docker, tmp_path: Path
     backend_setup.remove_backend("vllm", tmp_path)
 
     assert ("stop", "llmbench-vllm") in docker.calls
-    assert ("rmi", "vllm/vllm-openai:v0.32.0") in docker.calls
+    assert ("rmi", VLLM_IMAGE) in docker.calls
     assert not backend_setup.state_file("vllm", tmp_path).exists()
     assert not backend_setup.is_installed("vllm", tmp_path)
 
@@ -203,7 +212,7 @@ def test_remove_backend_ollama_removes_container_image_and_state(docker, tmp_pat
     backend_setup.ensure_backend("ollama", tmp_path)
     backend_setup.remove_backend("ollama", tmp_path)
     assert ("stop", "llmbench-ollama") in docker.calls
-    assert ("rmi", "ollama/ollama:0.40.13") in docker.calls
+    assert ("rmi", OLLAMA_IMAGE) in docker.calls
     assert not backend_setup.state_file("ollama", tmp_path).exists()
     assert not backend_setup.is_installed("ollama", tmp_path)
 

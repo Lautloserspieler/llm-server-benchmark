@@ -90,13 +90,15 @@ reproduzierbaren Benchmarkvertrag anbietet.
 ### Versionsüberwachung
 
 `backend-release-watch.yml` prüft wöchentlich nummerierte llama.cpp-Builds sowie
-stabile vLLM- und TGI-Releases. llama.cpp ist über `llama-cpp-version.txt` bereits
+stabile vLLM-Releases. llama.cpp ist über `llama-cpp-version.txt` bereits
 festgelegt. GitHub kennzeichnet auch reguläre llama.cpp-`b`-Builds als Prereleases;
 für dieses Backend gilt daher das `b<Nummer>`-Tag statt GitHubs Stable-Markierung.
-Bei vLLM und TGI schlägt der erste Draft-PR vor, die beweglichen Standard-Images
-mit `:latest` auf eine konkrete Version umzustellen. Danach prüft der Bot neuere
-Releases gegen diese Referenz. Dokumentationsänderungen allein lösen keinen
-Versionswechsel aus; unklare Release-Notizen werden zur manuellen Prüfung vorgeschlagen.
+vLLM und die übrigen Container-Images sind auf Version und `sha256`-Digest gepinnt;
+der Draft-PR des Bots entfernt den alten Digest bewusst und verlangt vor dem Merge
+einen frisch aufgelösten Digest. TGI bleibt als Backend unterstützt, wird aber nicht
+mehr automatisch überwacht; TGI-Image-Updates erfolgen manuell. Dokumentations-
+änderungen allein lösen keinen Versionswechsel aus; unklare Release-Notizen werden
+zur manuellen Prüfung vorgeschlagen.
 Der Bot führt Code-Tests aus, aber keine Hardware-Benchmarks. Vor einem Merge müssen
 Image/Binary, API-Start und repräsentative CPU/GPU-Messungen geprüft werden.
 Bestehende persönliche `benchmark.yaml`-Dateien ändert er nicht.

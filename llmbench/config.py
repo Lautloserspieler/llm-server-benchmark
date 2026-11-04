@@ -33,9 +33,9 @@ VALID_FLASH_ATTENTION = {"auto", "on", "off", "0", "1"}
 # Unterstuetzte Mess-Backends. Ein Tippfehler soll sofort bei validate_config()
 # auffallen und nicht erst mitten im Lauf.
 VALID_BACKENDS = ("llama_cpp", "vllm", "tgi", "ollama")
-DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0"
-DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
-DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13"
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
+DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:3.3.6@sha256:07de704f7b26353a008416e78f3d2a575a3e81ce88882263c565c066b446ca73"
+DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429"
 
 class ProjectConfig(BaseModel):
     name: str = "LLM Server Benchmark"
@@ -414,11 +414,10 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
 def public_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Konfiguration ohne interne Felder und ohne Geheimnisse, fuer Ergebnisdateien."""
+    from .utils import redact_secrets
+
     out = {k: copy.deepcopy(v) for k, v in cfg.items() if not k.startswith("_")}
-    endpoint = out.get("endpoint")
-    if isinstance(endpoint, dict) and endpoint.get("api_key"):
-        endpoint["api_key"] = "***"
-    return out
+    return redact_secrets(out)
 
 # Zeit-Presets für die Benchmark-Dauer
 DURATION_PRESETS = {
@@ -487,11 +486,12 @@ def config_fingerprint(bench_cfg: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 def save_example(path: str | Path) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
+    from .utils import write_text_atomic
+
+    write_text_atomic(
+        path,
         yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
+        mode=0o600,
     )
 
 def resolve_path(value: str, cfg: dict[str, Any]) -> str:

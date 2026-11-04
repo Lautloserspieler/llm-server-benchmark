@@ -15,7 +15,7 @@ from .bootstrap import discover_models
 from .i18n import _
 from .download import find_downloaded_model, get_catalog_models
 from .model_select import ensure_model_selection
-from .utils import console
+from .utils import console, write_text_atomic
 
 
 # Kuratierte, lokale Ollama-Library-Modelle fuer den Text-Benchmark.
@@ -45,7 +45,11 @@ def _load_config(path: Path) -> dict[str, Any]:
 
 
 def _save_config(path: Path, cfg: dict[str, Any]) -> None:
-    path.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120), encoding="utf-8")
+    write_text_atomic(
+        path,
+        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True, width=120),
+        mode=0o600,
+    )
 
 
 def _backend(cfg: dict[str, Any]) -> str:

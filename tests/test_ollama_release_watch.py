@@ -54,6 +54,34 @@ def test_missing_baseline_fails_closed():
         watch.review([release("v0.40.13", "- Improve API")], "0.40.9")
 
 
+def test_current_version_reads_digest_pinned_default(tmp_path: Path):
+    config = tmp_path / "llmbench" / "config.py"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        'DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13@sha256:'
+        + "a" * 64
+        + '"\n',
+        encoding="utf-8",
+    )
+
+    assert watch.current_version(tmp_path) == "0.40.13"
+
+
+def test_bump_drops_stale_digest_so_the_pr_can_add_a_fresh_one(tmp_path: Path):
+    digest = "a" * 64
+    for name in watch.FILES:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"ollama/ollama:0.40.9@sha256:{digest}\n", encoding="utf-8")
+
+    watch.bump(tmp_path, "0.40.9", "0.40.13")
+
+    for name in watch.FILES:
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        assert "ollama/ollama:0.40.13" in text
+        assert "sha256:" not in text
+
+
 def test_bump_updates_only_reference_files(tmp_path: Path):
     for name in watch.FILES:
         path = tmp_path / name

@@ -6,6 +6,7 @@ import pytest
 from llmbench.backends import DEFAULT_BACKEND, backend_name, get_backend
 from llmbench.backends.base import BenchmarkBackend
 from llmbench.backends.llama_cpp import LlamaCppBackend
+from llmbench.config import DEFAULT_OLLAMA_IMAGE, DEFAULT_TGI_IMAGE, DEFAULT_VLLM_IMAGE
 from llmbench.runner import BENCH_KINDS, SOAK_LABELS, _resolve_endpoint_profile, _tool_info, count_tests, filter_profiles_by_hardware, run_suite
 from llmbench.tuner import TuneSelection, tune_gpu_layers, tune_gpu_layers_selection
 
@@ -151,7 +152,7 @@ def test_get_backend_dispatches_to_vllm():
 
     backend = get_backend({"tools": _tools(backend="vllm"), "endpoint": {}})
     assert isinstance(backend, VllmBackend)
-    assert backend.image == "vllm/vllm-openai:v0.32.0"
+    assert backend.image == DEFAULT_VLLM_IMAGE
 
 
 def test_get_backend_dispatches_to_tgi():
@@ -159,7 +160,7 @@ def test_get_backend_dispatches_to_tgi():
 
     backend = get_backend({"tools": _tools(backend="tgi"), "endpoint": {}})
     assert isinstance(backend, TgiBackend)
-    assert backend.image == "ghcr.io/huggingface/text-generation-inference:latest"
+    assert backend.image == DEFAULT_TGI_IMAGE
 
 
 def test_get_backend_dispatches_to_ollama():
@@ -167,7 +168,7 @@ def test_get_backend_dispatches_to_ollama():
 
     backend = get_backend({"tools": _tools(backend="ollama"), "endpoint": {}})
     assert isinstance(backend, OllamaBackend)
-    assert backend.image == "ollama/ollama:0.40.13"
+    assert backend.image == DEFAULT_OLLAMA_IMAGE
     assert backend.base_url == DEFAULT_BASE_URL
 
 

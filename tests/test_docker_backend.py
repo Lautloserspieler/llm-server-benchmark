@@ -65,6 +65,39 @@ def test_missing_docker_raises_helpful_error(monkeypatch):
         docker_backend.pull_image("vllm/vllm-openai:latest")
 
 
+def test_run_redacts_api_key_from_log(monkeypatch):
+    logs: list[str] = []
+    monkeypatch.setattr(docker_backend.shutil, "which", lambda _name: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_backend.subprocess, "run", lambda *_a, **_k: _FakeCompleted(0, "", "")
+    )
+
+    docker_backend._run(
+        ["run", "--api-key", "sk-secret", "vllm/vllm-openai:v0.32.0"],
+        log=logs.append,
+    )
+
+    joined = "\n".join(logs)
+    assert "sk-secret" not in joined
+    assert "--api-key ***" in joined
+
+
+def test_run_redacts_api_key_from_failure_message(monkeypatch):
+    monkeypatch.setattr(docker_backend.shutil, "which", lambda _name: "/usr/bin/docker")
+    monkeypatch.setattr(
+        docker_backend.subprocess,
+        "run",
+        lambda *_a, **_k: _FakeCompleted(1, "", "startup failed"),
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        docker_backend._run(["run", "--api-key", "sk-secret", "image"])
+
+    message = str(excinfo.value)
+    assert "sk-secret" not in message
+    assert "--api-key ***" in message
+
+
 # --------------------------------------------------------------------- Images
 
 

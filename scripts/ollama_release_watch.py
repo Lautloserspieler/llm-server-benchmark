@@ -35,7 +35,11 @@ def version_key(tag: str) -> tuple[int, int, int] | None:
 
 def current_version(root: Path = ROOT) -> str:
     cfg = (root / "llmbench/config.py").read_text(encoding="utf-8")
-    match = re.search(r'^DEFAULT_OLLAMA_IMAGE = "ollama/ollama:(\d+\.\d+\.\d+)"$', cfg, re.MULTILINE)
+    match = re.search(
+        r'^DEFAULT_OLLAMA_IMAGE = "ollama/ollama:(\d+\.\d+\.\d+)(?:@sha256:[0-9a-f]{64})?"$',
+        cfg,
+        re.MULTILINE,
+    )
     if not match:
         raise ValueError("Ollama default must be a concrete version")
     return match.group(1)
@@ -83,13 +87,15 @@ def review(releases: list[dict], baseline: str) -> dict:
 
 
 def bump(root: Path, old: str, new: str) -> None:
-    before, after = f"ollama/ollama:{old}", f"ollama/ollama:{new}"
+    before = re.compile(rf"ollama/ollama:{re.escape(old)}(?:@sha256:[0-9a-f]{{64}})?")
+    after = f"ollama/ollama:{new}"
     for name in FILES:
         path = root / name
         content = path.read_text(encoding="utf-8")
-        if before not in content:
+        updated, replacements = before.subn(after, content)
+        if replacements == 0:
             raise ValueError(f"Expected pinned reference absent in {name}")
-        path.write_text(content.replace(before, after), encoding="utf-8")
+        path.write_text(updated, encoding="utf-8")
 
 
 def markdown(result: dict) -> str:
@@ -111,6 +117,7 @@ def markdown(result: dict) -> str:
         rows.append("")
     rows.extend(["### Before merging", "", "- [ ] Read the linked release notes and confirm relevance.",
                  "- [ ] Run the pinned context and error tests on CPU and NVIDIA hardware.",
+                 "- [ ] Resolve the new image digest (`docker buildx imagetools inspect <ref>`) and commit it to the default image constant before merging.",
                  "- [ ] Verify the pulled image digest and check report provenance.", "",
                  "Keyword triage may be incomplete. No automatic merge is configured."])
     return "\n".join(rows) + "\n"

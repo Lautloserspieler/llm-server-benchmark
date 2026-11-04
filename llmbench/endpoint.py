@@ -31,6 +31,7 @@ from .utils import (
     format_exit_code,
     kill_process_tree,
     log_tail,
+    redact_command,
     resolve_executable,
     utc_now_iso,
     write_json,
@@ -308,10 +309,7 @@ def start_llama_server(
         raise
     proc._llmbench_log_file = log_f  # type: ignore[attr-defined]
     proc._llmbench_log_path = str(log_path)  # type: ignore[attr-defined]
-    printable = list(cmd)
-    if "--api-key" in printable:
-        printable[printable.index("--api-key") + 1] = "***"
-    return proc, " ".join(printable)
+    return proc, redact_command(cmd)
 
 
 def stop_llama_server(proc: subprocess.Popen[Any]) -> None:

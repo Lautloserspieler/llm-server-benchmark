@@ -22,7 +22,7 @@ from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
 from ..http_bench import API_STYLE_OPENAI_COMPLETIONS, run_http_bench
 from ..kv_cache import KvCacheObservation
-from ..utils import auth_headers
+from ..utils import auth_headers, redact_command
 
 # Innerhalb des Containers lauscht vLLM immer auf diesem Port; nach aussen wird
 # der Port aus endpoint.base_url veroeffentlicht.
@@ -238,10 +238,7 @@ class VllmBackend(BenchmarkBackend):
         return args
 
     def _printable(self, args: list[str]) -> str:
-        out = list(args)
-        if "--api-key" in out:
-            out[out.index("--api-key") + 1] = "***"
-        return f"docker run {self.image} " + " ".join(out)
+        return f"docker run {self.image} {redact_command(args)}"
 
     def _start(
         self,

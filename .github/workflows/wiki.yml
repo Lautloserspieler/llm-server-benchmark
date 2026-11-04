@@ -8,8 +8,7 @@ on:
       - ".github/workflows/wiki.yml"
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: wiki-publish
@@ -20,9 +19,13 @@ jobs:
     name: Sync wiki/
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Publish Markdown pages to GitHub Wiki
         shell: bash
@@ -34,11 +37,25 @@ jobs:
           WORK_DIR="$(mktemp -d)"
           trap 'rm -rf "$WORK_DIR"' EXIT
 
-          cd "$WORK_DIR"
+          mkdir "$WORK_DIR/wiki"
+          cd "$WORK_DIR/wiki"
           git init -q
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+
+          ASKPASS="$WORK_DIR/askpass.sh"
+          cat > "$ASKPASS" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' "x-access-token" ;;
+            *) printf '%s\n' "${GH_TOKEN:-}" ;;
+          esac
+          EOF
+          chmod 0700 "$ASKPASS"
+          export GIT_ASKPASS="$ASKPASS"
+          export GIT_TERMINAL_PROMPT=0
+
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.wiki.git"
 
           if git fetch --depth=1 origin master; then
             git checkout -q -B master FETCH_HEAD

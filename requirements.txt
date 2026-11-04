@@ -1,3 +1,6 @@
+# Diese Datei spiegelt die Laufzeitabhaengigkeiten aus pyproject.toml.
+# pyproject.toml ist die massgebliche Quelle; requirements.txt dient nur
+# Werkzeugen, die keine Projektmetadaten lesen.
 PyYAML>=6.0.1
 psutil>=5.9.8
 httpx>=0.27.0
@@ -5,3 +8,6 @@ nvidia-ml-py>=12.560.30
 pydantic>=2.0
 # PDF-Bericht
 reportlab>=4.0
+# CLI-Ausgabe und Modell-Download
+rich>=13.0.0
+huggingface-hub>=0.23.0

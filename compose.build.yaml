@@ -1,0 +1,11 @@
+services:
+  llmbench:
+    image: ${LLMBENCH_DOCKER_BUILD_IMAGE:-llmbench-local:dev}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CUDA_DEVEL_IMAGE: ${LLMBENCH_CUDA_DEVEL_IMAGE:-nvidia/cuda:13.2.1-devel-ubuntu24.04@sha256:44a9504c6dfb50b1241464241b02a93871928f373de6f5a644cf5fe9f080aa63}
+        CUDA_RUNTIME_IMAGE: ${LLMBENCH_CUDA_RUNTIME_IMAGE:-nvidia/cuda:13.2.1-runtime-ubuntu24.04@sha256:4c17c2e7474ca1d470428b25e87e95756f51e7da3b663859894a03bc5a7ebdae}
+        LLAMA_CPP_COMMIT: ${LLMBENCH_LLAMA_CPP_COMMIT:-64a155d242cb427766055ea9caea6f34df1ca94b}
+        LLMBENCH_CUDA_ARCHITECTURES: ${LLMBENCH_CUDA_ARCHITECTURES:-89;120}

@@ -21,9 +21,9 @@ from .i18n import _
 
 LogFn = Callable[[str], None]
 
-DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0"
-DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:latest"
-DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13"
+DEFAULT_VLLM_IMAGE = "vllm/vllm-openai:v0.32.0@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
+DEFAULT_TGI_IMAGE = "ghcr.io/huggingface/text-generation-inference:3.3.6@sha256:07de704f7b26353a008416e78f3d2a575a3e81ce88882263c565c066b446ca73"
+DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429"
 
 # Standard-Image je Backend. Ueber ToolsConfig bzw. --image uebersteuerbar.
 BACKEND_IMAGES: dict[str, str] = {
@@ -68,6 +68,13 @@ def _check_name(name: str) -> str:
 
 def default_image(name: str) -> str:
     return BACKEND_IMAGES[_check_name(name)]
+
+
+def image_tag(image: str) -> str:
+    """Tag aus einer Image-Referenz, auch wenn ein Digest angehaengt ist."""
+    reference = image.split("@", 1)[0]
+    last = reference.rsplit("/", 1)[-1]
+    return last.rsplit(":", 1)[-1] if ":" in last else "latest"
 
 
 def container_name(name: str) -> str:
@@ -137,7 +144,7 @@ def ensure_backend(
     state: dict[str, Any] = {
         "backend": name,
         "image": image,
-        "tag": image.rsplit(":", 1)[-1] if ":" in image else "latest",
+        "tag": image_tag(image),
         "digest": docker_backend.image_digest(image),
         "container": container_name(name),
         "volume": volume_name(name),

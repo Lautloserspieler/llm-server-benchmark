@@ -29,7 +29,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+from .archive import safe_extract_tar
+from .utils import redact_command
 
 GITHUB_API = "https://api.github.com/repos/ggml-org/llama.cpp"
 SOURCE_REPO = "https://github.com/ggml-org/llama.cpp.git"
@@ -218,41 +222,62 @@ def _backends_to_try(os_key: str, arch: str) -> list[str]:
     return backends
 
 
-def _download_file(url: str, dest: Path) -> None:
+MAX_DOWNLOAD_BYTES = 2 * 1024**3
+
+
+def _download_file(url: str, dest: Path, *, max_bytes: int = MAX_DOWNLOAD_BYTES) -> None:
+    if urlparse(url).scheme != "https":
+        raise RuntimeError(f"Downloads sind nur ueber HTTPS erlaubt: {url}")
     req = Request(url, headers={"User-Agent": "llm-server-benchmark-installer"})
-    with urlopen(req, timeout=120) as resp, open(dest, "wb") as f:  # noqa: S310 - Asset-URL kommt von GitHub-API
-        shutil.copyfileobj(resp, f)
+    total = 0
+    try:
+        with urlopen(req, timeout=120) as resp, open(dest, "wb") as f:  # noqa: S310 - Asset-URL kommt von GitHub-API
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise RuntimeError(f"Download ist zu gross (mehr als {max_bytes} Bytes)")
+                f.write(chunk)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            Path(dest).unlink()
+        raise
 
 
 def _safe_extractall(tf: tarfile.TarFile, dest: Path) -> None:
-    dest_resolved = dest.resolve()
-    for member in tf.getmembers():
-        target = (dest / member.name).resolve()
-        if target != dest_resolved and dest_resolved not in target.parents:
-            raise RuntimeError(f"Unsicherer Pfad im llama.cpp-Archiv: {member.name}")
-    tf.extractall(dest)  # noqa: S202 - Mitglieder wurden oben geprueft
+    safe_extract_tar(tf, dest)
 
 
 def _extract(archive: Path, dest: Path) -> None:
-    if dest.exists():
-        shutil.rmtree(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive) as tf:
-        _safe_extractall(tf, dest)
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="llmbench-extract-", dir=dest.parent))
+    try:
+        with tarfile.open(archive) as tf:
+            _safe_extractall(tf, staging)
 
-    if not (dest / "llama-bench").exists():
-        found = next(dest.rglob("llama-bench"), None)
-        if found:
-            src_dir = found.parent
-            for item in src_dir.iterdir():
-                target = dest / item.name
-                if not target.exists():
-                    shutil.move(str(item), str(target))
+        if not (staging / "llama-bench").exists():
+            found = next(staging.rglob("llama-bench"), None)
+            if found:
+                src_dir = found.parent
+                for item in src_dir.iterdir():
+                    target = staging / item.name
+                    if not target.exists():
+                        shutil.move(str(item), str(target))
 
-    for name in ("llama-bench", "llama-server"):
-        p = dest / name
-        if p.exists():
-            p.chmod(p.stat().st_mode | 0o111)
+        for name in ("llama-bench", "llama-server"):
+            p = staging / name
+            if p.exists():
+                p.chmod(p.stat().st_mode | 0o111)
+
+        if dest.exists():
+            shutil.rmtree(dest)
+        staging.replace(dest)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def probe(bench_path: Path) -> tuple[bool, str]:
@@ -400,10 +425,11 @@ def _missing_build_tools() -> list[str]:
 
 
 def _run_checked(cmd: list[str], cwd: Path | None, log: LogFn, env: dict[str, str] | None = None) -> None:
-    log("$ " + " ".join(cmd))
+    printable = redact_command(cmd)
+    log("$ " + printable)
     proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, text=True, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"Befehl fehlgeschlagen ({proc.returncode}): {' '.join(cmd)}")
+        raise RuntimeError(f"Befehl fehlgeschlagen ({proc.returncode}): {printable}")
 
 
 def _apt_prefix() -> list[str]:

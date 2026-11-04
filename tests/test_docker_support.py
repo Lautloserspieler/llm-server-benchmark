@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -55,16 +56,33 @@ def test_compose_requests_nvidia_gpu_persists_data_and_defaults_to_ghcr():
     assert {"/workspace/models", "/workspace/results", "/workspace/benchmark.yaml"} <= targets
     assert service["environment"]["LLMBENCH_EXECUTION_ENV"] == "docker"
     assert GHCR_IMAGE in service["image"]
-    assert service["image"].endswith(":latest}")
+    assert re.search(r"@sha256:[0-9a-f]{64}\}$", service["image"])
 
 
 def test_dockerfile_is_cuda_and_llama_cpp_pinned():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "nvidia/cuda:13.2.1-devel-ubuntu24.04" in dockerfile
-    assert "nvidia/cuda:13.2.1-runtime-ubuntu24.04" in dockerfile
+    assert re.search(
+        r"ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13\.2\.1-devel-ubuntu24\.04@sha256:[0-9a-f]{64}",
+        dockerfile,
+    )
+    assert re.search(
+        r"ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:13\.2\.1-runtime-ubuntu24\.04@sha256:[0-9a-f]{64}",
+        dockerfile,
+    )
     assert "64a155d242cb427766055ea9caea6f34df1ca94b" in dockerfile
     assert "-DGGML_CUDA=ON" in dockerfile
     assert "git checkout --detach" in dockerfile
+
+
+def test_local_build_configuration_has_independent_writable_tag():
+    runtime = yaml.safe_load((ROOT / "compose.yaml").read_text())["services"]["llmbench"]
+    local = yaml.safe_load((ROOT / "compose.build.yaml").read_text())["services"]["llmbench"]
+    assert "build" not in runtime
+    assert local["image"] == "${LLMBENCH_DOCKER_BUILD_IMAGE:-llmbench-local:dev}"
+    assert "@" not in local["image"]
+    assert local["build"]["dockerfile"] == "Dockerfile"
+    for name in ("CUDA_DEVEL_IMAGE", "CUDA_RUNTIME_IMAGE"):
+        assert "@sha256:" in local["build"]["args"][name]
 
 
 def test_user_facing_launchers_keep_auto_native_docker_modes():
@@ -117,9 +135,9 @@ def test_linux_and_windows_runtime_pull_ghcr_before_local_build():
         assert GHCR_IMAGE in content
         assert "LLMBENCH_DOCKER_BUILD_LOCAL" in content
     assert 'pull "$LLMBENCH_DOCKER_IMAGE"' in linux
-    assert "_llmbench_compose build llmbench" in linux
+    assert 'compose.build.yaml" build llmbench' in linux
     assert "docker pull $Image" in windows
-    assert "Invoke-Compose build llmbench" in windows
+    assert "compose.build.yaml') build llmbench" in windows
 
 
 def test_docker_image_workflow_builds_scans_and_publishes_to_ghcr():

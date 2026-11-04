@@ -67,7 +67,7 @@ if ! python_ok; then
     if command -v apt-get >/dev/null 2>&1 && ui_confirm_install "Python 3 (python3, python3-venv, python3-pip)"; then
         if [ "$(id -u)" -eq 0 ]; then SUDO=(); else SUDO=(sudo); fi
         ${SUDO[@]+"${SUDO[@]}"} apt-get update
-        ${SUDO[@]+"${SUDO[@]}"} apt-get install -y python3 python3-venv python3-pip
+        ${SUDO[@]+"${SUDO[@]}"} apt-get install -y --no-install-recommends python3 python3-venv python3-pip
     fi
     if ! python_ok; then
         ui_fail setup.python_manual

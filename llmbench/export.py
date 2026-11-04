@@ -9,6 +9,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from .utils import redact_secrets
+
 
 def export_run(run_dir: str | Path, output: str | Path | None = None) -> Path:
     """Packt einen Benchmark-Lauf in eine ZIP-Datei.
@@ -55,7 +57,17 @@ def export_run(run_dir: str | Path, output: str | Path | None = None) -> Path:
                 if p.is_file():
                     arcname = f"{run_dir.name}/{p.relative_to(run_dir)}"
                     # Vermeide doppelte Eintraege
-                    if arcname not in {info.filename for info in zf.infolist()}:
+                    if arcname in {info.filename for info in zf.infolist()}:
+                        continue
+                    if p.suffix == ".log":
+                        # Logs koennen Kommandozeilen mit Zugangsdaten enthalten.
+                        with (
+                            zf.open(arcname, "w") as out,
+                            p.open(encoding="utf-8", errors="replace") as source,
+                        ):
+                            for line in source:
+                                out.write(redact_secrets(line).encode("utf-8"))
+                    else:
                         zf.write(p, arcname=arcname)
 
     return output_path

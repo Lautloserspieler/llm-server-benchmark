@@ -8,10 +8,15 @@ import re
 import shutil
 import ssl
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.request
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from llmbench.archive import safe_extract_zip  # noqa: E402
 
 REPO = "ggml-org/llama.cpp"
 USER_AGENT = "llm-server-benchmark-source-preparer"
@@ -202,16 +207,16 @@ def safe_rmtree(path: Path) -> None:
 
 def extract_source(zip_path: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    safe_rmtree(destination)
     with tempfile.TemporaryDirectory(prefix="x-", dir=str(destination.parent)) as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
         with zipfile.ZipFile(zip_path, "r") as archive:
-            archive.extractall(tmp_dir)
+            safe_extract_zip(archive, tmp_dir)
         candidates = [p for p in tmp_dir.iterdir() if p.is_dir() and (p / "CMakeLists.txt").is_file()]
         if not candidates:
             candidates = [p.parent for p in tmp_dir.rglob("CMakeLists.txt") if p.parent.is_dir()]
         if not candidates:
             raise RuntimeError("CMakeLists.txt wurde im llama.cpp-Quellarchiv nicht gefunden.")
+        safe_rmtree(destination)
         shutil.move(str(candidates[0]), str(destination))
     if not (destination / "CMakeLists.txt").is_file():
         raise RuntimeError("llama.cpp wurde entpackt, aber CMakeLists.txt fehlt im Zielordner.")

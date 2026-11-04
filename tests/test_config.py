@@ -131,6 +131,31 @@ def test_public_config_redacts_api_key_and_internals():
     assert cfg["endpoint"]["api_key"] == "geheim"
 
 
+def test_public_config_redacts_nested_model_credentials_without_touching_metrics():
+    cfg = deep_merge(
+        DEFAULT_CONFIG,
+        {
+            "endpoint": {"api_key": "top"},
+            "models": [
+                {
+                    "name": "model",
+                    "endpoint": {
+                        "api_key": "nested",
+                        "base_url": "https://user:pass@example.test/v1",
+                    },
+                }
+            ],
+        },
+    )
+
+    out = public_config(cfg)
+
+    assert out["endpoint"]["api_key"] == "***"
+    assert out["models"][0]["endpoint"]["api_key"] == "***"
+    assert out["models"][0]["endpoint"]["base_url"] == "https://***@example.test/v1"
+    assert out["benchmark"] == cfg["benchmark"]
+
+
 # --------------------------------------------------------------- tools.backend
 
 def test_tools_backend_defaults_to_llama_cpp():
@@ -141,18 +166,33 @@ def test_tools_backend_defaults_to_llama_cpp():
 
 
 def test_tools_vllm_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["vllm_image"] == "vllm/vllm-openai:v0.32.0"
+    from llmbench.backend_setup import DEFAULT_VLLM_IMAGE
+
+    assert DEFAULT_CONFIG["tools"]["vllm_image"] == DEFAULT_VLLM_IMAGE
 
 
 def test_tools_tgi_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["tgi_image"] == "ghcr.io/huggingface/text-generation-inference:latest"
+    from llmbench.backend_setup import DEFAULT_TGI_IMAGE
+
+    assert DEFAULT_CONFIG["tools"]["tgi_image"] == DEFAULT_TGI_IMAGE
 
 
 def test_tools_ollama_image_has_default():
-    assert DEFAULT_CONFIG["tools"]["ollama_image"] == "ollama/ollama:0.40.13"
     from llmbench.backend_setup import DEFAULT_OLLAMA_IMAGE
 
     assert DEFAULT_CONFIG["tools"]["ollama_image"] == DEFAULT_OLLAMA_IMAGE
+
+
+def test_backend_image_defaults_are_digest_pinned():
+    images = (
+        DEFAULT_CONFIG["tools"]["vllm_image"],
+        DEFAULT_CONFIG["tools"]["tgi_image"],
+        DEFAULT_CONFIG["tools"]["ollama_image"],
+    )
+
+    for image in images:
+        assert "@sha256:" in image
+        assert not image.endswith(":latest")
 
 
 def test_validation_accepts_known_backends():

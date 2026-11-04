@@ -38,6 +38,13 @@ jobs:
           results_file: scorecard-results.sarif
           results_format: sarif
           publish_results: true
+      - name: Explain Scorecard findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/scorecard_report.py scorecard-results.sarif --output scorecard-report.md
+          cat scorecard-report.md >> "$GITHUB_STEP_SUMMARY"
+          cat scorecard-report.md
       - uses: github/codeql-action/upload-sarif@dfbc6164313353db46c80e2fcfd38820bd2c3c46 # v3.37.4
         with:
           sarif_file: scorecard-results.sarif

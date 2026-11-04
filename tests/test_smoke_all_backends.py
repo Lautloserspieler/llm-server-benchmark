@@ -666,3 +666,58 @@ def test_fallback_port_binds_only_explicit_loopback(monkeypatch, url, expected_h
     assert bound == [(expected_host, 0)]
     assert script.urlparse(selected).hostname == expected_host
     assert script.urlparse(selected).port == 12345
+
+
+# --------------------------------------------- Start/Stopp-Zyklen (Issue #124)
+
+
+def _cycle_run(statuses_by_call, calls):
+    def run(_cfg, name, _out, on_progress, on_message):  # noqa: ARG001
+        on_progress(name, "prerequisites")
+        status = statuses_by_call[len(calls)]
+        calls.append(name)
+        return {"backend": name, "status": status, "detail": "t", "phase": "done", "seconds": 0.1}
+
+    return run
+
+
+def test_cycles_repeat_each_backend_and_number_the_rows(tmp_path, monkeypatch):
+    script = _script()
+    calls: list[str] = []
+    monkeypatch.setattr(script, "load_config", lambda _path: {"endpoint": {}})
+    monkeypatch.setattr(script, "run_one", _cycle_run(["passed"] * 6, calls))
+
+    rc = script.main(["--output", str(tmp_path), "--backends", "ollama", "vllm", "--cycles", "3", "--no-progress"])
+
+    rows = json.loads((tmp_path / "report.json").read_text())
+    assert rc == 0 and calls == ["ollama"] * 3 + ["vllm"] * 3
+    assert [row["cycle"] for row in rows] == [1, 2, 3, 1, 2, 3]
+
+
+def test_cycles_stop_a_backend_at_its_first_failure_but_continue_with_the_next(tmp_path, monkeypatch):
+    script = _script()
+    calls: list[str] = []
+    monkeypatch.setattr(script, "load_config", lambda _path: {"endpoint": {}})
+    # ollama: pass, fail (stop) -> vllm: pass, pass
+    monkeypatch.setattr(script, "run_one", _cycle_run(["passed", "failed", "passed", "passed"], calls))
+
+    rc = script.main(["--output", str(tmp_path), "--backends", "ollama", "vllm", "--cycles", "2", "--no-progress"])
+
+    assert rc == 1 and calls == ["ollama", "ollama", "vllm", "vllm"]
+
+
+def test_abort_during_cycles_stops_everything(tmp_path, monkeypatch):
+    script = _script()
+    calls: list[str] = []
+    monkeypatch.setattr(script, "load_config", lambda _path: {"endpoint": {}})
+    monkeypatch.setattr(script, "run_one", _cycle_run(["passed", "aborted", "passed"], calls))
+
+    rc = script.main(["--output", str(tmp_path), "--backends", "ollama", "vllm", "--cycles", "3", "--no-progress"])
+
+    assert rc == 130 and calls == ["ollama", "ollama"]
+
+
+@pytest.mark.parametrize("value", ["0", "-2", "x", "1.5"])
+def test_cycles_must_be_a_positive_integer(value):
+    with pytest.raises(SystemExit):
+        _script().main(["--cycles", value])

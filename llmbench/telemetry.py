@@ -264,13 +264,14 @@ class AmdProvider(TelemetryProvider):
             except ValueError:
                 continue
 
-            util_gpu = self._first_float(info, self._UTIL_KEYS) or 0.0
-            util_mem = self._first_float(info, self._MEM_UTIL_KEYS) or 0.0
+            # Unavailable sensors stay None; a missing value is never invented as 0.
+            util_gpu = self._first_float(info, self._UTIL_KEYS)
+            util_mem = self._first_float(info, self._MEM_UTIL_KEYS)
             mem_used = self._memory_bytes(info, self._MEM_USED_BYTES_KEYS, self._MEM_USED_MB_KEYS)
             mem_total = self._memory_bytes(
                 info, self._MEM_TOTAL_BYTES_KEYS, self._MEM_TOTAL_MB_KEYS
             )
-            temp = self._first_float(info, self._TEMP_KEYS) or 0.0
+            temp = self._first_float(info, self._TEMP_KEYS)
             power = self._first_float(info, self._POWER_KEYS)
 
             out.append(
@@ -278,8 +279,8 @@ class AmdProvider(TelemetryProvider):
                     index=index,
                     util_gpu_percent=util_gpu,
                     util_memory_percent=util_mem,
-                    memory_used_bytes=mem_used or 0,
-                    memory_total_bytes=mem_total or 0,
+                    memory_used_bytes=mem_used,
+                    memory_total_bytes=mem_total,
                     temperature_c=temp,
                     power_w=power,
                     # rocm-smi's per-process GPU usage needs a separate call
@@ -451,6 +452,11 @@ class CompositeProvider(TelemetryProvider):
         super().__init__()
         self._providers = providers
         self.initialized = bool(providers)
+        # Highest device count each sub-provider has reported so far. If a
+        # provider later returns fewer devices (CLI crash, one GPU dropping
+        # off the bus), the missing slots are padded with all-None samples so
+        # the devices of the following providers keep their position.
+        self._known_counts: list[int] = [0] * len(providers)
 
     def initialize(self) -> bool:
         # Sub-providers are expected to already be initialized by the
@@ -461,10 +467,18 @@ class CompositeProvider(TelemetryProvider):
     def sample_gpus(self) -> list[GpuSample]:
         out: list[GpuSample] = []
         next_index = 0
-        for provider in self._providers:
-            for sample in provider.sample_gpus():
+        for slot, provider in enumerate(self._providers):
+            try:
+                samples = provider.sample_gpus()
+            except Exception:
+                samples = []
+            self._known_counts[slot] = max(self._known_counts[slot], len(samples))
+            for sample in samples:
                 sample.index = next_index
                 out.append(sample)
+                next_index += 1
+            for _missing in range(self._known_counts[slot] - len(samples)):
+                out.append(_empty_sample(next_index))
                 next_index += 1
         return out
 

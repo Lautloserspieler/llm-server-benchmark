@@ -81,6 +81,8 @@ def profile_vram_issue(
         return None
 
     model_size = model_meta.get("size_bytes")
+    if model_size is None:
+        return None
     try:
         model_size_bytes = int(model_size)
     except (TypeError, ValueError):

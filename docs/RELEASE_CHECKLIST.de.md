@@ -93,6 +93,7 @@ Vor einem Release oder einer öffentlichen Demo:
 - [ ] Release Notes nennen externe Contributors bei ihren Änderungen und schreiben die Autorenschaft nicht dem Maintainer zu
 - [ ] Wenn mehrere Personen substanziell gemeinsam gearbeitet haben, werden alle Contributors genannt
 - [ ] Deutsche und englische Markdown-Dokumentation ist synchron
+- [ ] Nur v1.7.0: Die Nachweisliste in [`docs/validation/v1.7.0-qualification.md`](validation/v1.7.0-qualification.md) ist mit echten Messprotokollen ausgefüllt (kein Abhaken ohne Hardware-Nachweis)
 
 ## Vorschlag für einen Projekt-Post
 

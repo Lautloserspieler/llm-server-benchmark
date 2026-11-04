@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 from llmbench.backends import backend_name, get_backend
 from llmbench.bootstrap import discover_models, shard_info
@@ -49,7 +50,10 @@ def discover_quant_groups(root: Path, models_dir: Path) -> dict[str, dict[str, P
         if len(variants) < 2:
             continue
         first_path = next(iter(variants.values()))
-        base = split_quant_name(first_path)[0]
+        split = split_quant_name(first_path)
+        if split is None:
+            continue
+        base = split[0]
         label = base
         if label in out:
             label = f"{base}-{first_path.parent.name}"
@@ -105,7 +109,7 @@ async def run_quant_stress(config_path: str = "benchmark.yaml", output_dir: str 
     any_success = False
     for base_name, variants in groups.items():
         print_section(_("Quantisierungsvergleich: {name}").format(name=base_name))
-        group_result = {"base_model": base_name, "variants": []}
+        group_result: dict[str, Any] = {"base_model": base_name, "variants": []}
         for quant, model_path in variants.items():
             print_msg(_("Teste {quant}: {file}").format(quant=quant, file=model_path.name))
             variant_dir = ensure_dir(out_dir / safe_name(base_name) / safe_name(quant))

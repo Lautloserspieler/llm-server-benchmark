@@ -240,6 +240,13 @@ def _download_file(url: str, dest: Path, *, max_bytes: int = MAX_DOWNLOAD_BYTES)
                 if total > max_bytes:
                     raise RuntimeError(f"Download ist zu gross (mehr als {max_bytes} Bytes)")
                 f.write(chunk)
+    except URLError as exc:
+        with contextlib.suppress(OSError):
+            Path(dest).unlink()
+        raise RuntimeError(
+            f"Download fehlgeschlagen ({url}): {exc.reason}. "
+            "Netzwerk- und Proxy-Einstellungen pruefen (HTTPS_PROXY/NO_PROXY) und erneut starten."
+        ) from exc
     except BaseException:
         with contextlib.suppress(OSError):
             Path(dest).unlink()

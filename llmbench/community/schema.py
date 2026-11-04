@@ -50,7 +50,10 @@ def _check_envelope(name: str, item: Provenance, spec: tuple[str, str | None] | 
 
 
 def _safe_errors(exc: ValidationError) -> SafeError:
-    known = {name for cls in globals().values() if isinstance(cls, type) and issubclass(cls, BaseModel) for name in cls.model_fields}
+    models: list[type[BaseModel]] = [
+        cls for cls in globals().values() if isinstance(cls, type) and issubclass(cls, BaseModel)
+    ]
+    known = {name for cls in models for name in cls.model_fields}
     paths = []
     for error in exc.errors(include_input=False, include_context=False, include_url=False)[:8]:
         location = []

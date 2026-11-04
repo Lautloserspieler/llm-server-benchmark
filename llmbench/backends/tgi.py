@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from .base import BenchmarkBackend
 from .capabilities import BackendCapabilities
-from .http_probe import probe_context_http
+from .http_probe import BackendStartupError, classify_startup_failure, probe_context_http
 from .. import backend_setup, docker_backend
 from ..endpoint import wait_health
 from ..http_bench import API_STYLE_OPENAI_COMPLETIONS, run_http_bench
@@ -257,15 +257,25 @@ class TgiBackend(BenchmarkBackend):
             self._start(model_path, profile, self.endpoint_cfg)
             timeout = float(self.endpoint_cfg.get("startup_timeout_seconds") or STARTUP_TIMEOUT_SECONDS)
             self.wait_health(self.base_url, timeout, self._headers())
-        except Exception as exc:
-            logs = docker_backend.container_logs(self.container_name, tail=80)
+        except BaseException as exc:
+            # BaseException on purpose: Ctrl+C / SIGINT during the health wait
+            # must not leave the owned container running.
+            logs = ""
+            with contextlib.suppress(Exception):
+                logs = docker_backend.container_logs(self.container_name, tail=80)
             self._capture_logs()
-            docker_backend.stop_container(self.container_name)
-            self.container_id = None
+            try:
+                docker_backend.stop_container(self.container_name)
+            finally:
+                self.container_id = None
+                self.target_pid = None
+            if not isinstance(exc, Exception):
+                raise
+            category = classify_startup_failure(exc, logs)
             msg = _("TGI-Container wurde nicht bereit: {error}").format(error=exc)
             if logs:
                 msg += "\n" + _("Container-Log (Ende):") + "\n" + logs[-2000:]
-            raise RuntimeError(msg) from exc
+            raise BackendStartupError(msg, category) from exc
 
     def end_profile(self) -> None:
         self._stop()

@@ -721,7 +721,7 @@ def _compute_scores(records: list[dict[str, Any]], endpoint_records: list[dict[s
     metrics = ["tg", "pp", "ep_tps", "eff"]
     max_per_metric: dict[str, float | None] = {}
     for metric in metrics:
-        vals = [averages[s][metric] for s in servers if averages[s][metric] is not None]
+        vals = [value for s in servers if (value := averages[s][metric]) is not None]
         max_per_metric[metric] = max(vals) if vals else None
 
     scores: dict[str, dict[str, Any]] = {}

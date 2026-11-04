@@ -87,6 +87,7 @@ Before publishing a release or public demo:
 - [ ] Release notes credit external contributors for their changes and do not reassign authorship to the maintainer
 - [ ] Where multiple people substantially co-authored work, all contributors are credited
 - [ ] German and English Markdown documentation is synchronized
+- [ ] v1.7.0 only: the evidence list in [`docs/validation/v1.7.0-qualification.md`](validation/v1.7.0-qualification.md) is filled in with real measurement records (no ticks without hardware evidence)
 
 ## Suggested project announcement copy
 

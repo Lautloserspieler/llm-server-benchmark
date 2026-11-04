@@ -520,6 +520,16 @@ def _positive_seconds(value: str) -> float:
     return number
 
 
+def _positive_count(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Anzahl muss eine ganze Zahl sein") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("Anzahl muss mindestens 1 sein")
+    return number
+
+
 def _memory_fraction(value: str) -> float:
     number = _positive_seconds(value)
     if number > 1:
@@ -543,6 +553,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", choices=("auto", "gpu", "cpu"), default="auto",
                         help="Standard: GPU verwenden, wenn verfuegbar; CPU mit --device cpu erzwingen")
     parser.add_argument("--no-install", action="store_true", help="Fehlende Backends ueberspringen statt installieren")
+    parser.add_argument("--cycles", type=_positive_count, default=1,
+                        help="Start/Stopp-Zyklen je Backend (Release-Qualifikation: 10); stoppt beim ersten Fehlschlag")
     args = parser.parse_args(argv)
     console = Console(highlight=False)
     rows = []
@@ -565,14 +577,23 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"Funktionscheck: Geraet={args.device} (auto bevorzugt GPU). Keine vergleichbaren Performancewerte.")
         console.print("Fehlende Backends werden automatisch installiert." if not args.no_install else "Automatische Installation deaktiviert.")
         console.print("Modelle werden beim ersten Lauf heruntergeladen und im Cache behalten. Strg+C bricht nach Aufraeumen ab.")
-        with SmokeProgress(console, len(names), enabled=not args.no_progress) as progress:
+        with SmokeProgress(console, len(names) * args.cycles, enabled=not args.no_progress) as progress:
             for name in names:
-                progress.begin(name)
-                row = run_one(cfg, name, out, on_progress=progress.phase, on_message=progress.message)
-                rows.append(row)
-                _write_report(report, rows)
-                progress.finish(row)
-                if row["status"] == "aborted":
+                stop = False
+                for cycle in range(1, args.cycles + 1):
+                    progress.begin(name if args.cycles == 1 else f"{name} ({cycle}/{args.cycles})")
+                    row = run_one(cfg, name, out, on_progress=progress.phase, on_message=progress.message)
+                    row["cycle"] = cycle
+                    rows.append(row)
+                    _write_report(report, rows)
+                    progress.finish(row)
+                    if row["status"] == "aborted":
+                        stop = True
+                    if row["status"] != "passed":
+                        # One failed cycle decides the backend; further cycles
+                        # would only repeat the same failure (or skip).
+                        break
+                if stop:
                     break
         _summary(console, rows)
         console.print(f"Bericht: {report}", markup=False)

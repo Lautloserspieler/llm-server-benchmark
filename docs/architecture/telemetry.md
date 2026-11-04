@@ -9,8 +9,9 @@ und darf daher von Text-, Speech-, Image- und Enterprise-Workloads gemeinsam gen
 
 ## Aktueller Stand
 
-Heute existiert `TelemetryProvider` mit NVIDIA-, AMD- und Fallback-Pfaden sowie
-`CompositeProvider` für mehrere Quellen. Bestehende Felder und Provider bleiben
+Heute existiert `TelemetryProvider` mit NVIDIA-, AMD-, Intel- und Fallback-Pfaden sowie
+`CompositeProvider` für mehrere Quellen. Fällt ein Gerät oder Hersteller in einer Runde aus,
+bleiben die Positionen der übrigen Geräte stabil (leere Werte statt verschobener Indizes). Bestehende Felder und Provider bleiben
 kompatibel.
 
 ## Grundregeln

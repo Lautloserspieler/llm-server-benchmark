@@ -920,3 +920,128 @@ def test_ollama_oom_stress_does_not_verify_count_at_context_limit(monkeypatch, s
     assert doc["levels"][0]["failure_category"] == CATEGORY_TRUNCATED
     assert doc["max_stable_prompt_tokens"] == 0
     assert rc == 1
+
+
+# ------------------------------- Haertung v1.7 (Issue #121): Kontext 1024/4096/8192
+
+CONTEXT_STAGES = (1024, 4096, 8192)
+# The OOM stress driver ignores stages below 2048 tokens by design.
+STRESS_STAGES = (4096, 8192)
+
+
+@pytest.mark.parametrize("context", CONTEXT_STAGES)
+def test_ollama_probe_exact_consumption_is_verified_for_each_context_stage(server, context):
+    """Der Server verbraucht genau den Fuelltext: die Stufe ist verifiziert."""
+    calls: list[dict] = []
+    server.routes[("POST", "/api/generate")] = _ollama_handler(calls=calls)
+
+    result = asyncio.run(
+        probe_context_http(
+            server.url, context, {"model": "m", "context_size": context + 512}, api_style=API_STYLE_OLLAMA_NATIVE
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["actual_prompt_tokens"] == _fake_tokens(calls[0]["prompt"])
+    assert result["actual_prompt_tokens"] < calls[0]["options"]["num_ctx"]
+    assert "actual_unverified" not in result
+
+
+@pytest.mark.parametrize("context", CONTEXT_STAGES)
+def test_ollama_probe_silent_truncation_is_never_verified_for_each_context_stage(server, context):
+    """num_ctx knapp unter dem Fuelltext: Ollama kuerzt still, der Probe muss das ablehnen."""
+    server.routes[("POST", "/api/generate")] = _ollama_handler()
+
+    result = asyncio.run(
+        probe_context_http(
+            server.url, context, {"model": "m", "context_size": context // 2}, api_style=API_STYLE_OLLAMA_NATIVE
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["failure_category"] == CATEGORY_TRUNCATED
+    assert result["actual_prompt_tokens"] == context // 2
+
+
+@pytest.mark.usefixtures("docker")
+@pytest.mark.parametrize("context", STRESS_STAGES)
+def test_oom_stress_insufficient_consumption_reports_measured_not_target(
+    monkeypatch, server, tmp_path: Path, context
+):
+    """Verbraucht der Server weniger als das Ziel, zaehlt die gemessene Zahl - nie das Ziel."""
+    consumed = context // 2
+    server.routes[("GET", "/api/tags")] = (200, {"models": []})
+    server.routes[("POST", "/api/generate")] = (
+        200, {"response": "ok", "done": True, "prompt_eval_count": consumed}
+    )
+    cfg = _oom_config(server.url, "llama3.2:3b", [context])
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    _run_oom(monkeypatch, cfg, backend, "ollama", tmp_path)
+
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["max_stable_prompt_tokens"] == consumed
+    assert doc["max_stable_prompt_tokens"] < context
+
+
+@pytest.mark.usefixtures("docker")
+@pytest.mark.parametrize("context", STRESS_STAGES)
+def test_oom_stress_records_cold_start_separately_from_request_duration(
+    monkeypatch, server, tmp_path: Path, context
+):
+    """Die Server-Ladezeit je Stufe ist ein eigenes Feld und nicht Teil der Request-Dauer."""
+    server.routes[("GET", "/api/tags")] = (200, {"models": []})
+    server.routes[("POST", "/api/generate")] = _ollama_handler()
+    cfg = _oom_config(server.url, "llama3.2:3b", [context])
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    _run_oom(monkeypatch, cfg, backend, "ollama", tmp_path)
+
+    level = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))["levels"][0]
+    assert "cold_start_seconds" in level
+    assert "duration_seconds" in level["probe"]
+    assert level["probe"]["duration_seconds"] != level["cold_start_seconds"]
+
+
+def test_failure_taxonomy_names_are_distinct_and_stable():
+    from llmbench.backends import http_probe
+
+    names = {
+        "context_exceeded": http_probe.CATEGORY_CONTEXT,
+        "context_truncated": http_probe.CATEGORY_TRUNCATED,
+        "out_of_memory": http_probe.CATEGORY_OOM,
+        "startup_failed": http_probe.CATEGORY_STARTUP_FAILED,
+        "timeout": http_probe.CATEGORY_TIMEOUT,
+        "invalid_response": http_probe.CATEGORY_INVALID,
+        "connection_error": http_probe.CATEGORY_CONNECTION,
+    }
+    assert all(key == value for key, value in names.items())
+    assert len(set(names.values())) == len(names)
+
+
+def test_incomplete_gguf_shard_set_is_not_masked(tmp_path: Path):
+    """Ein unvollstaendiger Shard-Satz bricht mit klarer Meldung ab statt still einen Teil zu importieren."""
+    first = tmp_path / "model-00001-of-00003.gguf"
+    first.write_bytes(b"GGUF")
+    (tmp_path / "model-00003-of-00003.gguf").write_bytes(b"GGUF")
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg={"base_url": "http://127.0.0.1:1"}, root=tmp_path)
+
+    with pytest.raises(RuntimeError, match="unvollstaendig"):
+        backend._create_model(str(first))
+
+
+def test_probe_error_category_is_recorded_when_probe_raises(monkeypatch, server, docker, tmp_path: Path):
+    server.routes[("GET", "/api/tags")] = (200, {"models": []})
+    cfg = _oom_config(server.url, "llama3.2:3b", [2048])
+    backend = OllamaBackend(OLLAMA_IMAGE, endpoint_cfg=cfg["endpoint"], root=tmp_path)
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("probe exploded")
+
+    monkeypatch.setattr(backend, "probe_context", boom)
+    _run_oom(monkeypatch, cfg, backend, "ollama", tmp_path)
+
+    doc = json.loads((tmp_path / "oom.json").read_text(encoding="utf-8"))
+    assert doc["levels"][0]["failure_category"] == "probe_error"
+    assert doc["max_stable_prompt_tokens"] == 0
+    assert docker.stopped, "owned container must be stopped after a probe error"

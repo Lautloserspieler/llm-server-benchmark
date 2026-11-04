@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import yaml
 
 from llmbench import backend_select, backend_setup
@@ -133,3 +135,54 @@ def test_nvidia_runtime_detection(monkeypatch):
 
 def test_ollama_download_size_matches_current_docker_image():
     assert backend_select.BACKEND_DOWNLOAD_GIB["ollama"] == 3.5
+
+
+# --------------------------------------------- Setup-Abbruch / Neustart (Issue #123)
+
+
+def _config_backend(tmp_path):
+    cfg = yaml.safe_load((tmp_path / "benchmark.yaml").read_text(encoding="utf-8"))
+    return (cfg.get("tools") or {}).get("backend")
+
+
+def test_failed_install_keeps_the_previous_backend_selection(monkeypatch, tmp_path):
+    _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
+    (tmp_path / "benchmark.yaml").write_text("tools:\n  backend: llama_cpp\n", encoding="utf-8")
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "4")
+
+    def failing(*_a, **_k):
+        raise RuntimeError("pull failed: connection reset")
+
+    monkeypatch.setattr(backend_select.backend_setup, "ensure_backend", failing)
+    assert backend_select.select_backends(tmp_path, "benchmark.yaml") == 1
+    assert _config_backend(tmp_path) == "llama_cpp"
+
+
+def test_interrupted_install_keeps_selection_and_a_restart_completes_it(monkeypatch, tmp_path):
+    installed = _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
+    (tmp_path / "benchmark.yaml").write_text("tools:\n  backend: llama_cpp\n", encoding="utf-8")
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "2")
+    working_install = backend_select.backend_setup.ensure_backend
+
+    def interrupted(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(backend_select.backend_setup, "ensure_backend", interrupted)
+    with contextlib.suppress(KeyboardInterrupt):
+        backend_select.select_backends(tmp_path, "benchmark.yaml")
+    assert _config_backend(tmp_path) == "llama_cpp"
+    assert not backend_setup.is_installed("ollama", tmp_path)
+
+    # Restart: the installer works now; the selection is saved only after success.
+    monkeypatch.setattr(backend_select.backend_setup, "ensure_backend", working_install)
+    assert backend_select.select_backends(tmp_path, "benchmark.yaml") == 0
+    assert installed == ["ollama"] and _config_backend(tmp_path) == "ollama"
+
+
+def test_selection_is_kept_across_restarts_when_nothing_changes(monkeypatch, tmp_path):
+    _fake_env(monkeypatch, tmp_path, docker=True, tty=True, answer=True)
+    (tmp_path / "benchmark.yaml").write_text("tools:\n  backend: llama_cpp\n", encoding="utf-8")
+    monkeypatch.setattr(backend_select.console, "input", lambda *_args: "")  # Enter = keep
+    for _restart in range(3):
+        assert backend_select.select_backends(tmp_path, "benchmark.yaml") == 0
+    assert _config_backend(tmp_path) == "llama_cpp"

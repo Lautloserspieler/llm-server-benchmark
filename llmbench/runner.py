@@ -419,6 +419,7 @@ def _run_suite(
             try:
                 for kind in BENCH_KINDS:
                     reporter.test_started(model["name"], profile["name"], kind)
+                    result: dict[str, Any]
                     if begin_error:
                         result = {
                             "kind": kind,
@@ -682,8 +683,8 @@ def print_summary_table(summary: dict[str, Any]) -> None:
     print("Ergebnisse")
     print(line(headers))
     print("-" * (sum(widths) + len(widths) - 1))
-    for row in rows:
-        print(line(row))
+    for table_row in rows:
+        print(line(table_row))
     warnings = summary.get("warnings") or []
     if warnings:
         print()

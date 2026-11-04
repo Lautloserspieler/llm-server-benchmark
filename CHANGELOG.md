@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### v1.7.0-Qualitaetsgates (Issues #120 bis #123)
+
+- Typpruefung: die mypy-Ausnahmeliste ist vollstaendig entfernt (alle 71 Module werden geprueft), ebenso die Ruff-Ausnahmen je Datei. Der Coverage-Gate steigt von 45 % auf 75 % (gemessen: 81 %, mit Branch-Coverage); kritische Rechen-/Probe-Module muessen mindestens 85 % Branch-Coverage erreichen (`scripts/check_module_coverage.py`). Neuer Windows-CLI-Smoke mit sauberer Wheel-Installation.
+- Backend-Installationszustand wird atomar geschrieben; ein unterbrochener Pull hinterlaesst keinen halben Zustand. Fehlgeschlagene Asset-Downloads (Netzwerk/Proxy) melden jetzt einen verstaendlichen Fehler mit Proxy-Hinweis und entfernen Teildateien.
+- TGI: Startfehler tragen eine stabile Kategorie (`model_not_found`, `invalid_configuration`, `out_of_memory`, `startup_timeout`, `container_exited`, `startup_failed`). Ctrl+C waehrend des Health-Wartens stoppt den eigenen Container jetzt zuverlaessig.
+- Telemetrie: der AMD-Provider erfindet keine Nullwerte mehr fuer fehlende Sensoren. Faellt ein Hersteller-Provider in einer Messrunde aus, behalten die Geraete der anderen Hersteller ihre Position. Ergebnisse enthalten `units`, `sampling` (Intervall, Jitter, Sampler-Overhead) und `sample_completeness` je GPU. Leistungsintegration ueberbrueckt keine Luecken von mehr als zehn Messintervallen (mindestens 10 s).
+- Smoke-Test: `--cycles N` wiederholt Start/Stopp je Backend. Neues Qualifikationsprotokoll `docs/validation/v1.7.0-qualification.md`: es trennt, was die Testsuite belegt, von den Nachweisen, die echte Hardware brauchen (noch offen).
+- Tests: Ollama-Kontextstufen 1024/4096/8192 (exakter, unzureichender und gekuerzter Verbrauch), Fehlerpfade fuer fehlendes Docker, fehlende NVIDIA-Runtime, CPU-only Ollama, Proxy-/Download-Fehler und unterbrochenes Setup.
+
 ### Sicherheits-Hardening fuer v1.7.0
 
 - TAR-/ZIP-Archive werden vor dem Entpacken validiert; Staging schuetzt bestehende Installationen bei abgelehnten Archiven.

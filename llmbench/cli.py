@@ -816,13 +816,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "compare":
         report, issues = compare_summaries(args.inputs, args.out)
         print(f"Vergleich erstellt: {report}")
-        errors = [issue for issue in issues if issue["level"] == "error"]
+        compare_errors = [issue for issue in issues if issue["level"] == "error"]
         for issue in issues:
             marker = "FEHLER " if issue["level"] == "error" else "Hinweis"
             print(f"[{marker}] {issue['topic']}: {issue['message']}")
         if not issues:
             print("Vergleichbarkeit geprueft: Konfiguration, Build, Modelle und Profile stimmen ueberein.")
-        if errors and args.strict:
+        if compare_errors and args.strict:
             return 1
         return 0
 

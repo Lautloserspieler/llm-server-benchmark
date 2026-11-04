@@ -38,6 +38,7 @@ BILINGUAL_SINGLE_FILES = {
     "wiki/_Footer.md",
     "wiki/_Sidebar.md",
     "docs/validation/2026-10-23-gpu.md",
+    "docs/validation/v1.7.0-qualification.md",
 }
 
 

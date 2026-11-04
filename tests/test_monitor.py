@@ -136,12 +136,12 @@ def test_start_and_stop_collect_samples_via_the_telemetry_provider(monkeypatch):
 
     monitor = ResourceMonitor(interval=0.02, idle_wait_seconds=0)
     monitor.start()
-    
+
     # Wait for at least one sample instead of a fixed sleep to prevent flakiness
     start_time = time.time()
     while len(monitor._samples) == 0 and time.time() - start_time < 2.0:
         time.sleep(0.01)
-        
+
     summary = monitor.stop()
 
     assert summary["sample_count"] >= 1

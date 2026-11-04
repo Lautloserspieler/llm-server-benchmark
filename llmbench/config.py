@@ -65,7 +65,7 @@ class ToolsConfig(BaseModel):
         return v
 
 class BenchmarkConfig(BaseModel):
-    repetitions: int = Field(5, ge=1)
+    repetitions: int = Field(default=5, ge=1)
     delay_seconds: float = 1.0
     batch_size: int = 2048
     ubatch_size: int = 512
@@ -75,9 +75,9 @@ class BenchmarkConfig(BaseModel):
     resource_sample_interval: float = 0.5
     # Prozessnamen, die nicht als GPU-Fremdlast gemeldet werden ("*" = nie melden).
     ignore_gpu_processes: list[str] = Field(default_factory=list)
-    timeout_seconds: float = Field(3600.0, gt=0)
-    cpu_timeout_seconds: float = Field(7200.0, gt=0)
-    gpu_timeout_seconds: float = Field(3600.0, gt=0)
+    timeout_seconds: float = Field(default=3600.0, gt=0)
+    cpu_timeout_seconds: float = Field(default=7200.0, gt=0)
+    gpu_timeout_seconds: float = Field(default=3600.0, gt=0)
     auto_tune: bool = False
     prompt_tokens: list[int] = Field(default_factory=lambda: [512, 4096, 8192])
     generation_tokens: list[int] = Field(default_factory=lambda: [128, 512])
@@ -153,17 +153,17 @@ class SoakConfig(BaseModel):
     host: str = "127.0.0.1"
     cpu_port: int = 8090
     gpu_port: int = 8091
-    duration_short_seconds: int = Field(300, gt=0)
-    duration_long_seconds: int = Field(1800, gt=0)
+    duration_short_seconds: int = Field(default=300, gt=0)
+    duration_long_seconds: int = Field(default=1800, gt=0)
     sample_interval_seconds: float = 2.0
-    concurrency: int = Field(2, ge=1)
-    cpu_concurrency: int = Field(1, ge=1)
+    concurrency: int = Field(default=2, ge=1)
+    cpu_concurrency: int = Field(default=1, ge=1)
     gpu_concurrency: int | None = Field(default=None, ge=1)
-    request_timeout_seconds: float = Field(300.0, gt=0)
+    request_timeout_seconds: float = Field(default=300.0, gt=0)
     cpu_request_timeout_seconds: float | None = Field(default=None, gt=0)
     gpu_request_timeout_seconds: float | None = Field(default=None, gt=0)
     thread_partition_enabled: bool = True
-    cpu_thread_fraction: float = Field(0.75, gt=0.0, lt=1.0)
+    cpu_thread_fraction: float = Field(default=0.75, gt=0.0, lt=1.0)
     cpu_threads: int | None = Field(default=None, ge=1)
     gpu_threads: int | None = Field(default=None, ge=1)
     max_tokens: int = 256
@@ -173,7 +173,7 @@ class SoakConfig(BaseModel):
     startup_timeout_seconds: int = 300
     # Ab diesem Rueckgang der Tokens/s zwischen erstem und letztem Fuenftel
     # der Laufzeit gilt Throttling als wahrscheinlich.
-    throttle_tps_drop_fraction: float = Field(0.15, gt=0, lt=1)
+    throttle_tps_drop_fraction: float = Field(default=0.15, gt=0, lt=1)
     prompt: str = (
         "Beschreibe in mehreren Absaetzen, wie moderne GPUs und CPUs bei "
         "Dauerlast thermisch geregelt werden."

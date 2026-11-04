@@ -107,3 +107,61 @@ def test_exact_backend_workload_tokens_override_configured_token_count():
 
     assert result["efficiency"]["workload_tokens"] == 1605
     assert result["efficiency"]["tokens_per_joule"] == 5.0
+
+
+# --------------------------------------------- Branch-Haertung (Issue #123)
+
+
+def _ok_result(kind="generation", energy_j=100.0, rows=None, **extra):
+    return {
+        "status": "ok",
+        "kind": kind,
+        "telemetry": {"power": {"component_energy_j": energy_j, "coverage": ["gpu:0"]}},
+        "rows": rows if rows is not None else [{"n_gen": 10}],
+        **extra,
+    }
+
+
+def test_efficiency_uses_sample_count_then_explicit_repetitions_then_default():
+    by_samples = _ok_result(rows=[{"n_gen": 10, "samples_ts": [1, 2, 3]}])
+    by_rep = _ok_result(rows=[{"n_gen": 10, "repetitions": 4}])
+    by_default = _ok_result(rows=[{"n_gen": 10}])
+    for result in (by_samples, by_rep, by_default):
+        apply_energy_efficiency(result, default_repetitions=2)
+    assert by_samples["efficiency"]["workload_tokens"] == 30
+    assert by_rep["efficiency"]["workload_tokens"] == 40
+    assert by_default["efficiency"]["workload_tokens"] == 20
+
+
+def test_efficiency_ignores_invalid_repetition_hints():
+    result = _ok_result(rows=[{"n_gen": 10, "repetitions": True}, {"n_gen": 5, "repetitions": 0}])
+    apply_energy_efficiency(result, default_repetitions=3)
+    assert result["efficiency"]["workload_tokens"] == 45
+
+
+def test_efficiency_skipped_without_any_repetition_information():
+    result = _ok_result(rows=[{"n_gen": 10}])
+    apply_energy_efficiency(result, default_repetitions=0)
+    assert "efficiency" not in result
+
+
+def test_efficiency_prefers_exact_workload_tokens_and_skips_invalid_rows():
+    result = _ok_result(rows=["junk", {"workload_tokens": 50}, {"workload_tokens": True, "n_gen": 4}, {"n_gen": -1}])
+    apply_energy_efficiency(result)
+    assert result["efficiency"]["workload_tokens"] == 54
+
+
+def test_efficiency_not_claimed_without_valid_energy_or_work():
+    cases = [
+        _ok_result(energy_j=0.0),
+        _ok_result(energy_j=-5.0),
+        _ok_result(energy_j=True),
+        _ok_result(energy_j=None),
+        _ok_result(rows=[]),
+        _ok_result(rows=[{"n_gen": 0}]),
+        _ok_result(kind="long_context"),
+        {**_ok_result(), "status": "partial"},
+    ]
+    for result in cases:
+        apply_energy_efficiency(result)
+        assert "efficiency" not in result, result

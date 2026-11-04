@@ -374,3 +374,71 @@ def test_get_backend_returns_vllm_for_configured_backend(tmp_path: Path):
     assert isinstance(backend, VllmBackend)
     assert backend.image == "vllm/vllm-openai:v0.6.0"
     assert backend.root == tmp_path
+
+
+# --------------------------------------------- Branch-Haertung (Issue #123)
+
+from llmbench.backends.vllm import parse_vllm_cache_metrics  # noqa: E402
+
+
+def _metric(labels: str) -> str:
+    return f"vllm:cache_config_info{{{labels}}} 1.0"
+
+
+def test_metrics_parser_ignores_comments_blank_lines_and_other_series():
+    text = "\n# HELP x\n\nvllm:other{a=\"b\"} 1\n" + _metric('cache_dtype="fp8"')
+    assert [(o.field, o.value) for o in parse_vllm_cache_metrics(text)] == [("kv_dtype", "fp8")]
+
+
+@pytest.mark.parametrize(
+    "labels",
+    ["garbage", 'cache_dtype="unterminated', 'cache_dtype=fp8', '="x"', 'cache_dtype="fp8" junk'],
+)
+def test_metrics_parser_skips_malformed_label_sets(labels):
+    assert parse_vllm_cache_metrics(_metric(labels)) == []
+
+
+def test_metrics_parser_unescapes_label_values_and_separators():
+    observations = parse_vllm_cache_metrics(_metric('cache_dtype="a\\"b", enable_prefix_caching="TRUE"'))
+    values = {o.field: o.value for o in observations}
+    assert values["prefix_caching"] is True
+    assert values["kv_dtype"] == 'a"b'
+
+
+def test_metrics_parser_ignores_auto_dtype_invalid_prefix_flag_and_bad_budget():
+    labels = 'cache_dtype="AUTO",enable_prefix_caching="maybe",gpu_memory_utilization="abc"'
+    assert parse_vllm_cache_metrics(_metric(labels)) == []
+
+
+def test_metrics_parser_reports_executor_budget_as_backend_detail():
+    (observation,) = parse_vllm_cache_metrics(_metric('gpu_memory_utilization="0.9"'))
+    assert observation.backend_detail_key == "executor_gpu_memory_budget_fraction"
+    assert observation.value == 0.9 and observation.unit == "fraction"
+
+
+@pytest.mark.usefixtures("docker")
+def test_kv_collection_is_empty_without_a_running_container(tmp_path: Path):
+    assert _backend().collect_kv_cache_observations("M", {}, {}, tmp_path, "startup") == []
+
+
+def test_kv_collection_is_empty_when_the_container_vanished(docker, tmp_path: Path):
+    backend = _backend()
+    backend.container_id = "CONTAINERID"
+    docker.existing = False
+    assert backend.collect_kv_cache_observations("M", {}, {}, tmp_path, "startup") == []
+
+
+def test_kv_collection_skips_non_200_metrics(docker, tmp_path: Path, monkeypatch):
+    docker.existing = True
+    backend = _backend()
+    backend.container_id = "CONTAINERID"
+    monkeypatch.setattr("httpx.get", lambda *_a, **_k: SimpleNamespace(status_code=503, text="down"))
+    monkeypatch.setattr("llmbench.backends.vllm.docker_backend.container_logs", lambda *_a, **_k: "")
+    assert backend.collect_kv_cache_observations("M", {}, {}, tmp_path, "benchmark") == []
+
+
+def test_stop_server_without_log_path_just_removes_the_container(docker):
+    backend = _backend()
+    backend.container_id = "CID"
+    backend.stop_server(SimpleNamespace(name="llmbench-vllm"))
+    assert backend.container_id is None and "llmbench-vllm" in docker.stopped

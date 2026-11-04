@@ -24,6 +24,32 @@ def backend_name(cfg: dict[str, Any]) -> str:
     return (cfg.get("tools") or {}).get("backend") or DEFAULT_BACKEND
 
 
+def get_backend_capabilities(cfg: dict[str, Any]) -> BackendCapabilities:
+    """Capabilities des konfigurierten Backends, ohne es zu instanziieren.
+
+    Liest das Klassenattribut; so braucht z. B. die Testzaehlung weder
+    Werkzeugpfade noch einen Docker-Zugriff.
+    """
+    name = backend_name(cfg)
+    if name == "llama_cpp":
+        from .llama_cpp import LlamaCppBackend
+
+        return LlamaCppBackend.capabilities
+    if name == "vllm":
+        from .vllm import VllmBackend
+
+        return VllmBackend.capabilities
+    if name == "tgi":
+        from .tgi import TgiBackend
+
+        return TgiBackend.capabilities
+    if name == "ollama":
+        from .ollama import OllamaBackend
+
+        return OllamaBackend.capabilities
+    raise ValueError(f"Unbekanntes Backend: {name!r}. Erlaubt: llama_cpp, vllm, tgi, ollama")
+
+
 def get_backend(cfg: dict[str, Any]) -> BenchmarkBackend:
     name = backend_name(cfg)
     tools = cfg.get("tools") or {}
@@ -73,4 +99,5 @@ __all__ = [
     "BenchmarkBackend",
     "backend_name",
     "get_backend",
+    "get_backend_capabilities",
 ]

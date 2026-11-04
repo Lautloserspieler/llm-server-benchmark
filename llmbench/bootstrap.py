@@ -121,7 +121,7 @@ def shard_set_complete(path: str | Path) -> bool:
         return Path(path).exists()
     _prefix, _index, count = info
     shards = model_shards(path)
-    indices = {shard_info(item)[1] for item in shards if shard_info(item)}
+    indices = {entry[1] for entry in map(shard_info, shards) if entry}
     return len(shards) == count and indices == set(range(1, count + 1))
 
 

@@ -310,8 +310,8 @@ def run_container(
     cmd.extend(str(x) for x in args)
 
     proc = _run(cmd, log=log, timeout=DEFAULT_TIMEOUT_SECONDS)
-    container_id = (proc.stdout or "").strip().splitlines()
-    container_id = container_id[-1] if container_id else name
+    output_lines = (proc.stdout or "").strip().splitlines()
+    container_id = output_lines[-1] if output_lines else name
     log(_("Container {name} gestartet ({id}).").format(name=name, id=container_id[:12]))
     return container_id
 

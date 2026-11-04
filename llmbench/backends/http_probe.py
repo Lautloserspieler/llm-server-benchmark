@@ -36,6 +36,11 @@ CATEGORY_INVALID = "invalid_response"
 # Set by the stress driver (llmbench.stress.oom), not by the HTTP probe itself.
 CATEGORY_STARTUP_FAILED = "startup_failed"
 CATEGORY_PROBE_ERROR = "probe_error"
+# Startup-only categories (container start / health wait).
+CATEGORY_STARTUP_TIMEOUT = "startup_timeout"
+CATEGORY_INVALID_CONFIG = "invalid_configuration"
+CATEGORY_CONTAINER_EXITED = "container_exited"
+CATEGORY_INTERRUPTED = "interrupted"
 
 _OOM_MARKERS = (
     "out of memory",
@@ -103,6 +108,63 @@ def classify_failure(status: int | None, text: str = "", exc: BaseException | No
     if status is not None and status >= 400:
         return CATEGORY_CLIENT
     return CATEGORY_INVALID
+
+
+class BackendStartupError(RuntimeError):
+    """Container start/health failure carrying a stable ``failure_category``."""
+
+    def __init__(self, message: str, failure_category: str):
+        super().__init__(message)
+        self.failure_category = failure_category
+
+
+_STARTUP_MODEL_MARKERS = (
+    "repository not found",
+    "not a local folder",
+    "is not a valid model identifier",
+    "model not found",
+    "no such file or directory",
+    "does not appear to have a file named",
+    "404 client error",
+    "existiert nicht",
+    "nicht gefunden",
+)
+_STARTUP_CONFIG_MARKERS = (
+    "invalid value",
+    "unsupported quant",
+    "unknown quant",
+    "quantization method",
+    "possible values",
+    "unexpected argument",
+    "unrecognized arguments",
+    "not supported",
+)
+
+
+def classify_startup_failure(exc: BaseException | None, logs: str = "") -> str:
+    """Ordnet einen fehlgeschlagenen Containerstart einer stabilen Kategorie zu.
+
+    ``exc`` ist die Ausnahme des Starts bzw. der Health-Wartezeit, ``logs`` der
+    Containerlog-Ausschnitt. Heuristik wie ``classify_failure``: unbekannte
+    Ursachen landen in ``startup_failed``.
+    """
+    if isinstance(exc, KeyboardInterrupt):
+        return CATEGORY_INTERRUPTED
+    text = f"{exc or ''}\n{logs or ''}".lower()
+    if "oomkilled=true" in text or any(marker in text for marker in _OOM_MARKERS) or _OOM_RE.search(text):
+        return CATEGORY_OOM
+    if any(marker in text for marker in _STARTUP_MODEL_MARKERS):
+        return CATEGORY_MODEL
+    if any(marker in text for marker in _STARTUP_CONFIG_MARKERS):
+        return CATEGORY_INVALID_CONFIG
+    if isinstance(exc, ValueError):
+        # Rejected configuration values (e.g. unknown attention mode).
+        return CATEGORY_INVALID_CONFIG
+    if isinstance(exc, TimeoutError):
+        return CATEGORY_STARTUP_TIMEOUT
+    if "status=exited" in text or "exitcode=" in text or "wurde nicht bereit: status" in text:
+        return CATEGORY_CONTAINER_EXITED
+    return CATEGORY_STARTUP_FAILED
 
 
 def _error_text(response: httpx.Response) -> str:

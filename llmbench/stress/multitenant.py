@@ -121,7 +121,7 @@ async def run_multitenant(config_path: str = "benchmark.yaml", output_dir: str |
 
     pair, reason = _select_multitenant_pair(cfg)
     if not pair:
-        result = {"status": "skipped", "backend": name, "reason": reason or _("Kein geeignetes Modellpaar gefunden.")}
+        result: dict[str, Any] = {"status": "skipped", "backend": name, "reason": reason or _("Kein geeignetes Modellpaar gefunden.")}
         write_json(out_dir / "multitenant.json", result)
         print_msg(_("Multi-Tenant uebersprungen: {reason}").format(reason=result["reason"]))
         return 2

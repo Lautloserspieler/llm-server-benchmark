@@ -49,17 +49,6 @@ target-version = "py310"
 select = ["E", "F", "W", "B", "ARG", "SIM", "UP"]
 ignore = ["E501"]
 
-# Legacy V2 code still contains a small number of style/dead-code findings.
-# Keep these narrowly scoped until the affected modules are cleaned up.
-# Undefined names and other correctness errors remain CI-fatal.
-[tool.ruff.lint.per-file-ignores]
-"llmbench/cli.py" = ["F541"]
-"llmbench/download.py" = ["F401", "F811", "ARG002", "W293"]
-"llmbench/stress/multitenant.py" = ["F401", "F541", "W293"]
-"llmbench/stress/oom.py" = ["F401", "F541", "W293"]
-"llmbench/stress/quant.py" = ["F401", "F541", "F841", "W293"]
-"tests/test_monitor.py" = ["W293"]
-
 [tool.mypy]
 python_version = "3.10"
 files = ["llmbench"]
@@ -76,22 +65,3 @@ pretty = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:randomly"
-
-# Temporary mypy baseline for legacy modules that already contained typing
-# errors before mypy became a required CI gate. New/other modules remain
-# fully checked. Remove entries as each module is cleaned up.
-[[tool.mypy.overrides]]
-module = [
-  "llmbench.i18n",
-  "llmbench.docker_backend",
-  "llmbench.bootstrap",
-  "llmbench.config",
-  "llmbench.capacity",
-  "llmbench.stress.quant",
-  "llmbench.compare",
-  "llmbench.download",
-  "llmbench.stress.multitenant",
-  "llmbench.runner",
-  "llmbench.cli",
-]
-ignore_errors = true

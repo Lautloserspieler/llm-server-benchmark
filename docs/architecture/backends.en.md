@@ -218,7 +218,9 @@ error-text heuristic may drift with newer upstream versions and then falls back 
   exists.
 - `multi_model`: Backend instances manage exactly one container (fixed container name, one
   host port). Two concurrent servers would stop each other; Ollama's parallel model
-  residency would need its own workload rather than two servers.
+  residency would need its own workload rather than two servers. The long-running soak
+  test also needs a CPU and a GPU server at the same time, so it is skipped with an explicit
+  message for backends without `multi_model` (currently everything except llama.cpp).
 
 ## Install/remove symmetry
 

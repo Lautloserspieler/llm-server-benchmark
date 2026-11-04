@@ -9,8 +9,10 @@ therefore be shared across text, speech, image, and enterprise workloads.
 
 ## Current state
 
-`TelemetryProvider` already exists with NVIDIA, AMD, and fallback paths, plus
+`TelemetryProvider` already exists with NVIDIA, AMD, Intel, and fallback paths, plus
 `CompositeProvider` for multiple sources. Existing fields and providers remain compatible.
+If a device or vendor fails in one round, the positions of the remaining devices stay stable
+(empty values instead of shifted indices).
 
 ## Core rules
 

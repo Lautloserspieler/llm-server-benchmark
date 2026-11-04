@@ -18,6 +18,7 @@ from typing import Any
 
 from . import docker_backend
 from .i18n import _
+from .utils import write_text_atomic
 
 LogFn = Callable[[str], None]
 
@@ -150,9 +151,9 @@ def ensure_backend(
         "volume": volume_name(name),
         "installed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    target = state_file(name, root)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Atomic: an interrupted setup must never leave a half-written state file
+    # that would hide (or fake) an installed backend on the next start.
+    write_text_atomic(state_file(name, root), json.dumps(state, indent=2, ensure_ascii=False))
     log(_("Backend '{name}' wurde installiert: {image}").format(name=name, image=image))
     return state
 

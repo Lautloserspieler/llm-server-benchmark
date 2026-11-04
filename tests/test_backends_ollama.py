@@ -516,3 +516,122 @@ def test_residency_warning_when_gpu_profile_spills_to_cpu(monkeypatch):
     cpu: dict = {"status": "ok"}
     _backend()._attach_residency(cpu, "big:70b", {"gpu_layers": 0})
     assert "partial_errors" not in cpu
+
+
+# --------------------------------------------- Branch-Haertung (Issue #123)
+
+
+def test_raise_with_body_uses_text_when_body_is_not_json():
+    from llmbench.backends.ollama import _raise_with_body
+
+    class _Plain:
+        status_code = 502
+        text = " bad gateway "
+
+        def json(self):
+            raise ValueError("not json")
+
+    with pytest.raises(RuntimeError, match="HTTP 502 bad gateway"):
+        _raise_with_body(_Plain(), "pull")
+
+    class _Fine:
+        status_code = 200
+
+    assert _raise_with_body(_Fine(), "pull") is None
+
+
+def test_raise_with_body_handles_json_that_is_not_an_object():
+    from llmbench.backends.ollama import _raise_with_body
+
+    class _List:
+        status_code = 500
+        text = ""
+
+        def json(self):
+            return ["oops"]
+
+    with pytest.raises(RuntimeError, match="oops"):
+        _raise_with_body(_List(), "pull")
+
+
+def test_create_model_rejects_missing_gguf_file(tmp_path: Path):
+    with pytest.raises(RuntimeError, match="nicht gefunden|unvollstaendig"):
+        _backend()._create_model(str(tmp_path / "absent.gguf"))
+
+
+def test_empty_registry_model_name_is_rejected():
+    with pytest.raises(ValueError, match="leer"):
+        _backend()._ensure_registry_model("")
+
+
+def test_unexpected_show_status_raises_instead_of_pulling(monkeypatch):
+    class Failing:
+        status_code = 500
+
+        def raise_for_status(self):
+            raise RuntimeError("show failed")
+
+    class Client:
+        def __init__(self, *args, **kwargs):  # noqa: ARG002
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def post(self, url, **kwargs):  # noqa: ARG002
+            assert url.endswith("/api/show"), "must not pull after a non-404 error"
+            return Failing()
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.Client", Client)
+    with pytest.raises(RuntimeError, match="show failed"):
+        _backend()._ensure_registry_model("mistral:latest")
+
+
+def test_residency_info_is_ignored_on_ps_failure_or_unknown_model(monkeypatch):
+    def boom(*_a, **_k):
+        raise OSError("ps unreachable")
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.get", boom)
+    result: dict = {"status": "ok"}
+    _backend()._attach_residency(result, "m", {})
+    assert result == {"status": "ok"}
+
+    class _Empty:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"name": "other"}]}
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.get", lambda *_a, **_k: _Empty())
+    _backend()._attach_residency(result, "m", {})
+    assert result == {"status": "ok"}
+
+
+def test_full_vram_residency_adds_no_warning(monkeypatch):
+    class _Full:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"model": "m", "size": 100, "size_vram": 100}]}
+
+    monkeypatch.setattr("llmbench.backends.ollama.httpx.get", lambda *_a, **_k: _Full())
+    result: dict = {"status": "ok"}
+    _backend()._attach_residency(result, "m", {"gpu_layers": -1})
+    assert result["ollama_residency"]["size_vram_bytes"] == 100 and "partial_errors" not in result
+
+
+@pytest.mark.usefixtures("docker")
+def test_stop_server_saves_log_and_clears_state(tmp_path: Path):
+    from types import SimpleNamespace
+
+    backend = _backend()
+    log = tmp_path / "ollama.log"
+    proc, _command = backend.start_server("llama3.2:3b", {}, {"base_url": "http://127.0.0.1:11434"}, {}, log)
+    backend.stop_server(SimpleNamespace(name=proc.name))
+    assert log.read_text(encoding="utf-8") == "server log"
+    assert backend.container_id is None and backend._created_model is None

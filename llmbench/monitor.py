@@ -38,11 +38,13 @@ def _agg(items: list[dict[str, Any]], key: str) -> tuple[float | None, float | N
 def _integrate_power(
     samples: list[dict[str, Any]],
     getter: Callable[[dict[str, Any]], Any],
+    max_gap_seconds: float | None = None,
 ) -> tuple[float | None, float]:
     """Integrate sampled power using real timestamps and trapezoids.
 
     Missing values break an interval instead of being treated as zero or
-    interpolated across an unknown gap.
+    interpolated across an unknown gap. With ``max_gap_seconds`` an interval
+    longer than that (a stalled or stale sampler) is not bridged either.
     """
     energy_j = 0.0
     covered_seconds = 0.0
@@ -71,6 +73,10 @@ def _integrate_power(
             continue
         if previous_ts is not None and previous_power is not None:
             elapsed = current_ts - previous_ts
+            if max_gap_seconds is not None and elapsed > max_gap_seconds:
+                previous_ts = current_ts
+                previous_power = current_power
+                continue
             if elapsed > 0:
                 energy_j += ((previous_power + current_power) / 2.0) * elapsed
                 covered_seconds += elapsed
@@ -88,6 +94,21 @@ def strip_samples(telemetry: dict[str, Any] | None) -> dict[str, Any]:
     out = {k: v for k, v in telemetry.items() if k != "samples"}
     out["samples_stored_in"] = "raw_*.json"
     return out
+
+
+# Units of the fields in a telemetry summary; stored so a result file is
+# self-describing and cannot be misread (e.g. bytes vs. MiB, W vs. Wh).
+TELEMETRY_UNITS: dict[str, str] = {
+    "util_gpu_percent": "percent",
+    "memory_used_bytes": "bytes",
+    "memory_total_bytes": "bytes",
+    "temperature_c": "celsius",
+    "power_w": "watt",
+    "energy_wh": "watt_hour",
+    "energy_j": "joule",
+    "frequency_mhz": "megahertz",
+    "interval": "seconds",
+}
 
 
 @dataclass
@@ -211,6 +232,7 @@ class ResourceMonitor:
         return sample
 
     def _sample(self) -> dict[str, Any]:
+        started = time.monotonic()
         vm = psutil.virtual_memory()
         cpu_percent = psutil.cpu_percent(interval=None)
         cpu_sample = self._cpu_sample(float(cpu_percent))
@@ -228,9 +250,11 @@ class ResourceMonitor:
                 component_power.append(float(gpu_power))
                 coverage.append(f"gpu:{gpu.get('index', 0)}")
 
+        duration = time.monotonic() - started
         return {
             "ts": time.time(),
-            "monotonic_ts": time.monotonic(),
+            "monotonic_ts": started,
+            "sample_duration_seconds": duration,
             # Keep the existing flat fields for backward compatibility.
             "cpu_percent": cpu_percent,
             "ram_used_bytes": vm.used,
@@ -300,6 +324,37 @@ class ResourceMonitor:
             out.append({"pid": pid, "name": name})
         return out
 
+    def _max_integration_gap(self) -> float:
+        """Longest sample spacing still integrated; beyond it the data is stale."""
+        return max(self.interval * 10.0, 10.0)
+
+    def _sampling_summary(self) -> dict[str, Any]:
+        """Sampler timing: observed interval, jitter and the sampler's own cost."""
+        monotonic = [float(s["monotonic_ts"]) for s in self._samples if s.get("monotonic_ts") is not None]
+        deltas = [b - a for a, b in zip(monotonic, monotonic[1:], strict=False)]
+        durations = [
+            float(s["sample_duration_seconds"])
+            for s in self._samples
+            if s.get("sample_duration_seconds") is not None
+        ]
+        mean_interval = statistics.fmean(deltas) if deltas else None
+        mean_duration = statistics.fmean(durations) if durations else None
+        overhead = (
+            mean_duration / mean_interval
+            if mean_duration is not None and mean_interval and mean_interval > 0
+            else None
+        )
+        return {
+            "requested_interval_seconds": self.interval,
+            "sample_count": len(self._samples),
+            "observed_interval_mean_seconds": mean_interval,
+            "observed_interval_max_seconds": max(deltas) if deltas else None,
+            "interval_jitter_seconds": statistics.pstdev(deltas) if len(deltas) > 1 else None,
+            "sampler_duration_mean_seconds": mean_duration,
+            "sampler_duration_max_seconds": max(durations) if durations else None,
+            "sampler_overhead_fraction": overhead,
+        }
+
     def summary(self) -> dict[str, Any]:
         if not self._samples:
             return {"sample_count": 0, "samples": [], "telemetry_source": "none"}
@@ -332,6 +387,7 @@ class ResourceMonitor:
         integrated_cpu_energy, cpu_energy_seconds = _integrate_power(
             self._samples,
             lambda sample: (sample.get("cpu") or {}).get("package_power_w"),
+            self._max_integration_gap(),
         )
         cpu_energy_source: str | None
         if direct_cpu_energy:
@@ -372,7 +428,7 @@ class ResourceMonitor:
 
         gpu_count = max((len(s.get("gpus", [])) for s in self._samples), default=0)
 
-        gpu_summaries = []
+        gpu_summaries: list[dict[str, Any]] = []
         for idx in range(gpu_count):
             items = [s["gpus"][idx] for s in self._samples if len(s.get("gpus", [])) > idx]
             avg_util, max_util = _agg(items, "util_gpu_percent")
@@ -394,10 +450,32 @@ class ResourceMonitor:
             gpu_energy_j, gpu_energy_seconds = _integrate_power(
                 self._samples,
                 gpu_power,
+                self._max_integration_gap(),
             )
+            total_samples = len(self._samples)
+
+            def completeness(
+                key: str, gpu_index: int = idx, total: int = total_samples
+            ) -> float:
+                present = sum(
+                    1
+                    for sample in self._samples
+                    if len(sample.get("gpus", [])) > gpu_index
+                    and sample["gpus"][gpu_index].get(key) is not None
+                )
+                return present / total if total else 0.0
+
             gpu_summaries.append(
                 {
                     "index": idx,
+                    # Share of all samples in which the sensor delivered a value;
+                    # 1.0 = complete, lower = gaps that were never filled with 0.
+                    "sample_completeness": {
+                        "util_gpu_percent": completeness("util_gpu_percent"),
+                        "memory_used_bytes": completeness("memory_used_bytes"),
+                        "temperature_c": completeness("temperature_c"),
+                        "power_w": completeness("power_w"),
+                    },
                     "avg_util_gpu_percent": avg_util,
                     "max_util_gpu_percent": max_util,
                     "avg_memory_used_bytes": avg_mem,
@@ -499,6 +577,8 @@ class ResourceMonitor:
             "gpus": gpu_summaries,
             "power": power_summary,
             "sample_interval_seconds": self.interval,
+            "sampling": self._sampling_summary(),
+            "units": TELEMETRY_UNITS,
             "baseline": self._baseline,
             "foreign_gpu_processes": foreign,
             "warnings": warnings,

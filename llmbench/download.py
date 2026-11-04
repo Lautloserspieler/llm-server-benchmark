@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from rich.filesize import decimal
-from rich.progress import BarColumn, Progress, ProgressColumn, Task, TextColumn
+from rich.progress import BarColumn, Progress, ProgressColumn, Task, TaskID, TextColumn
 from rich.text import Text
 
 from .bootstrap import logical_model_path, shard_info, shard_set_complete
@@ -20,6 +20,7 @@ from .utils import safe_name
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
+snapshot_download: Any
 try:
     from huggingface_hub import snapshot_download
 except ImportError:
@@ -153,7 +154,7 @@ class RichTqdm:
         self.n = float(kwargs.get("initial") or 0)
         self._total = float(kwargs.get("total") or 0)
         self.disable = bool(kwargs.get("disable", False))
-        self.task_id: int | None = None
+        self.task_id: TaskID | None = None
 
         if self.disable:
             return
@@ -175,7 +176,7 @@ class RichTqdm:
             self.task_id = RichTqdm._global_progress.add_task(
                 self.desc,
                 total=self._display_total(self._total),
-                completed=self.n,
+                completed=int(self.n),
                 unit=self.unit,
             )
 

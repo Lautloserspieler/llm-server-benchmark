@@ -505,10 +505,13 @@ def _bench_table_html(records: list[dict[str, Any]], servers: list[str]) -> str:
     rows_html = []
     for key in keys:
         model, profile, kind, _test = key
+        # Build the composite keys first: star-unpacking inside a subscript
+        # needs Python 3.11, the project supports 3.10.
+        composite = {s: (s, *key) for s in servers}
         numeric = [
-            float(lookup[(s, *key)]["avg_ts"])
+            float(lookup[composite[s]]["avg_ts"])
             for s in servers
-            if (s, *key) in lookup and lookup[(s, *key)].get("avg_ts") is not None
+            if composite[s] in lookup and lookup[composite[s]].get("avg_ts") is not None
         ]
         best = max(numeric) if numeric else None
         cells = []

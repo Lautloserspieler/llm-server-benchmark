@@ -5,6 +5,7 @@ import pytest
 
 from llmbench.backends import DEFAULT_BACKEND, backend_name, get_backend
 from llmbench.backends.base import BenchmarkBackend
+from llmbench.backends.capabilities import BackendCapabilities
 from llmbench.backends.llama_cpp import LlamaCppBackend
 from llmbench.config import DEFAULT_OLLAMA_IMAGE, DEFAULT_TGI_IMAGE, DEFAULT_VLLM_IMAGE
 from llmbench.runner import BENCH_KINDS, SOAK_LABELS, _resolve_endpoint_profile, _tool_info, count_tests, filter_profiles_by_hardware, run_suite
@@ -570,3 +571,44 @@ def test_run_suite_persists_verified_context_capability(suite_env, monkeypatch):
     assert maximum["unit"] == "tokens"
     assert capability["first_failed_context"] == 262144
     assert capability["curve"][-1]["result"] == "oom"
+
+
+# ----------------------- Soak nur mit Backends, die zwei Server koennen (multi_model)
+
+
+@pytest.mark.parametrize("name", ["ollama", "vllm", "tgi"])
+def test_count_tests_excludes_soak_for_single_container_backends(name):
+    models = [{
+        "name": "M",
+        "profiles": [{"name": "Full-GPU", "gpu_layers": -1}, {"name": "CPU-Only", "gpu_layers": 0}],
+    }]
+    cfg = {**_cfg(models), "tools": {"backend": name}}
+    assert count_tests(cfg) == 2 * len(BENCH_KINDS)
+
+
+def test_get_backend_capabilities_reads_class_attributes_without_instantiating():
+    from llmbench.backends import get_backend_capabilities
+
+    assert get_backend_capabilities({}).supports("multi_model") is True
+    for name in ("ollama", "vllm", "tgi"):
+        assert get_backend_capabilities({"tools": {"backend": name}}).supports("multi_model") is False
+    with pytest.raises(ValueError, match="Unbekanntes Backend"):
+        get_backend_capabilities({"tools": {"backend": "nope"}})
+
+
+def test_run_suite_skips_soak_with_a_clear_message_for_single_container_backends(suite_env, monkeypatch):
+    class SingleContainerBackend(_RecordingBackend):
+        capabilities = BackendCapabilities(endpoint=True)  # multi_model stays False
+
+    backend = SingleContainerBackend()
+    monkeypatch.setattr("llmbench.runner.get_backend", lambda _cfg: backend)
+    suite_env["soak"] = {"enabled": True}
+    suite_env["models"][0]["profiles"].append({"name": "CPU-Only", "gpu_layers": 0})
+
+    run_dir = run_suite(suite_env, plain=True, hardware_target="both")
+
+    summary = _read_summary(run_dir)
+    message = next(w for w in summary["warnings"] if "Soak-Test uebersprungen" in w)
+    assert "multi_model" in message and "llama.cpp" in message
+    assert not any(e.startswith("soak") for e in backend.events)
+    assert "llama-server wurde nicht bereit" not in "\n".join(summary["warnings"])

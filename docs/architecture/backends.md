@@ -224,6 +224,9 @@ Exitcode 2):
 - `multi_model`: Die Backend-Instanzen verwalten genau einen Container (fester
   Containername, ein Host-Port). Zwei gleichzeitige Server würden sich gegenseitig stoppen;
   Ollamas parallele Modellresidenz bräuchte einen eigenen Workload statt zweier Server.
+  Auch der Dauerlast-Test (Soak) braucht gleichzeitig einen CPU- und einen GPU-Server und
+  wird deshalb für Backends ohne `multi_model` (derzeit alle außer llama.cpp) mit einer
+  eindeutigen Meldung übersprungen.
 
 ## Install/Remove-Symmetrie
 

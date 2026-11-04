@@ -11,6 +11,7 @@
 - TGI: startup failures carry a stable category (`model_not_found`, `invalid_configuration`, `out_of_memory`, `startup_timeout`, `container_exited`, `startup_failed`). Ctrl+C during the health wait now reliably stops the owned container.
 - Telemetry: the AMD provider no longer invents zero values for missing sensors. If one vendor provider fails in a sampling round, the devices of the other vendors keep their position. Results contain `units`, `sampling` (interval, jitter, sampler overhead) and per-GPU `sample_completeness`. Power integration no longer bridges gaps longer than ten sampling intervals (at least 10 s).
 - Smoke test: `--cycles N` repeats start/stop per backend. New qualification protocol `docs/validation/v1.7.0-qualification.md` separates what the test suite proves from the evidence that needs real hardware. On an RTX 5070 under Linux the start/stop cycles (Ollama, vLLM, llama.cpp), NVIDIA telemetry, the Ollama context test and the llama.cpp soak are recorded; TGI, AMD/Intel, Windows, a second Ollama version and CUDA are still open.
+- The soak test is skipped with a clear message for backends without `multi_model` (Ollama, vLLM, TGI) and no longer counted, instead of failing with "llama-server wurde nicht bereit". On an RTX 5070 the soak failed with Ollama and ran with llama.cpp.
 - Tests: Ollama context stages 1024/4096/8192 (exact, insufficient and truncated consumption), error paths for missing Docker, missing NVIDIA runtime, CPU-only Ollama, proxy/download failures and interrupted setup.
 
 ### Security hardening for v1.7.0

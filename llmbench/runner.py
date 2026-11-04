@@ -21,7 +21,7 @@ from .result_schema import encode_v3
 from .soak import find_soak_profiles, run_soak_test
 from .terminal_report import print_run_report
 from .tuner import tune_gpu_layers_selection
-from .backends import backend_name, get_backend
+from .backends import backend_name, get_backend, get_backend_capabilities
 from .i18n import _
 from .utils import console, ensure_dir, file_fingerprint, hostname, safe_name, utc_now_compact, utc_now_iso, write_json
 
@@ -56,7 +56,19 @@ def _soak_profiles_for(model: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
     soak_cfg = cfg.get("soak") or {}
     if not soak_cfg.get("enabled", True):
         return None, None
+    # The soak starts a CPU and a GPU server at the same time. Backends that
+    # manage exactly one container cannot do that (capability multi_model).
+    if not get_backend_capabilities(cfg).supports("multi_model"):
+        return None, None
     return find_soak_profiles(model, soak_cfg)
+
+
+def _soak_unsupported_message(model_name: str, backend: str) -> str:
+    return (
+        f"{model_name}: Soak-Test uebersprungen - das Backend '{backend}' verwaltet nur einen "
+        "Container, der Soak braucht aber einen CPU- und einen GPU-Server gleichzeitig "
+        "(Faehigkeit multi_model). Fuer den Dauerlast-Test llama.cpp als Backend verwenden."
+    )
 
 
 def count_tests(cfg: dict[str, Any], selected_model: str | None = None, hardware_target: str = "both") -> int:
@@ -502,6 +514,10 @@ def _run_suite(
                     f"{model['name']}: Soak-Test uebersprungen - er braucht CPU und GPU gleichzeitig, "
                     f"die Auswahl war aber '{hardware_target}'."
                 )
+        elif soak_cfg.get("enabled", True) and not backend.supports("multi_model"):
+            msg = _soak_unsupported_message(model["name"], backend_name(cfg))
+            summary["warnings"].append(msg)
+            reporter.note(msg)
         elif soak_cfg.get("enabled", True):
             cpu_profile, gpu_profile = find_soak_profiles(model, soak_cfg)
             if not (cpu_profile and gpu_profile):

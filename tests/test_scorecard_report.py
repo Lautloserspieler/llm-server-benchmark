@@ -1,6 +1,9 @@
 """Tests for the human-readable Scorecard SARIF report."""
 
-from scripts.scorecard_report import summary
+from pathlib import Path
+from runpy import run_path
+
+summary = run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "scorecard_report.py"))["summary"]
 
 
 def test_scorecard_summary_distinguishes_governance_from_vulnerabilities():

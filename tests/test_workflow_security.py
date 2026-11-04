@@ -131,3 +131,19 @@ def test_write_jobs_use_gh_auth_setup_git_instead_of_persisted_checkout_credenti
     for name in ("backend-release-watch.yml", "ollama-release-watch.yml"):
         propose = yaml.safe_dump(_load(name)["jobs"]["propose"], sort_keys=False)
         assert "gh auth setup-git" in propose
+
+
+def test_codeql_actions_use_pinned_v4():
+    """CodeQL Action v3 is deprecated in December 2026."""
+    expected = "1fc58d04a4d4374f921bdac573c3811c240f9c26"
+    occurrences = 0
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = _load(path.name)
+        for step in _steps(workflow):
+            action = str(step.get("uses", ""))
+            if action.startswith("github/codeql-action/"):
+                occurrences += 1
+                assert action.endswith("@" + expected), (
+                    f"{path.name}: CodeQL Action must use pinned v4.39.2, got {action}"
+                )
+    assert occurrences == 5

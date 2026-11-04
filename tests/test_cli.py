@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from llmbench.cli import build_parser, main
 
@@ -268,3 +271,26 @@ def test_main_compare_without_strict_returns_zero_even_with_errors(tmp_path: Pat
     )
     rc = main(["compare", "results/A", "results/B"])
     assert rc == 0
+
+
+# ------------------------------- GPU-API: --backend erzwingt den Build-Typ (CUDA nie still Vulkan)
+
+
+@pytest.mark.parametrize("choice", ["auto", "cuda", "vulkan", "cpu"])
+def test_install_llama_cpp_backend_option_sets_the_requested_build_type(tmp_path: Path, monkeypatch, choice):
+    seen = {}
+
+    def _fake(*_a, **_k):
+        seen["requested"] = os.environ.get("LLMBENCH_LLAMACPP_BUILD_BACKEND")
+        return {"tag": "bTEST", "backend": choice}
+
+    monkeypatch.delenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", raising=False)
+    monkeypatch.setattr("llmbench.llama_cpp_setup.ensure_llama_cpp", _fake)
+    assert main(["install-llama-cpp", "--root", str(tmp_path), "--backend", choice]) == 0
+    assert seen["requested"] == choice
+    monkeypatch.delenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", raising=False)
+
+
+def test_install_llama_cpp_rejects_an_unknown_backend():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["install-llama-cpp", "--backend", "metalx"])

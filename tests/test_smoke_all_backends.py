@@ -6,6 +6,7 @@ import io
 import json
 import os
 import socket
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -721,3 +722,19 @@ def test_abort_during_cycles_stops_everything(tmp_path, monkeypatch):
 def test_cycles_must_be_a_positive_integer(value):
     with pytest.raises(SystemExit):
         _script().main(["--cycles", value])
+
+
+# ----------------------------- GPU-API im Smoke-Test sichtbar, CUDA nie still Vulkan
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [("  CUDA0: RTX 5070\n", ["cuda"]), ("  Vulkan0: RTX 5070\n", ["vulkan"]), ("no devices\n", [])],
+)
+def test_llama_gpu_apis_reads_the_device_list(monkeypatch, output, expected):
+    script = _script()
+    monkeypatch.setattr(
+        script.subprocess, "run",
+        lambda *_a, **_k: subprocess.CompletedProcess(args=[], returncode=0, stdout=output, stderr=""),
+    )
+    assert script._llama_gpu_apis(Path("server")) == expected

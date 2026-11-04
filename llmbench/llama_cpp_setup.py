@@ -414,6 +414,7 @@ def _install_asset(
             "platform": f"{os_key}-{arch}",
             "installed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "main_asset": asset.get("name"),
+            "requested_backend": _backend_preference(),
         }
         state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
         log(f"llama.cpp {release.get('tag_name')} ({backend}) wurde installiert: {llama_dir}")
@@ -613,6 +614,7 @@ def build_llama_cpp_from_source(
                 "source_build": True,
                 "platform": f"linux-{arch}",
                 "installed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "requested_backend": _backend_preference(),
                 "source_repo": SOURCE_REPO,
                 "source_dir": str(source_dir),
                 "build_dir": str(build_dir),
@@ -629,6 +631,16 @@ def build_llama_cpp_from_source(
     raise RuntimeError(f"llama.cpp konnte nicht aus Source gebaut werden. Letzter Fehler: {last_error}")
 
 
+def requested_backend() -> str:
+    """Vom Nutzer gewaehlter Build-Typ (auto, cuda, vulkan, cpu)."""
+    return _backend_preference()
+
+
+def nvidia_gpu_present() -> bool:
+    """True, wenn der NVIDIA-Treiber mindestens eine GPU sieht."""
+    return _nvidia_gpu_present()
+
+
 def ensure_llama_cpp(
     root: Path,
     llama_dir: Path | None = None,
@@ -636,12 +648,37 @@ def ensure_llama_cpp(
     force: bool = False,
     log: LogFn | None = None,
 ) -> dict[str, Any]:
+    """Wie ``_ensure_llama_cpp`` und meldet danach deutlich, welcher Build laeuft.
+
+    Ein Vulkan-/CPU-Build auf einem System mit NVIDIA-GPU wird nicht stillschweigend
+    hingenommen: Vulkan ist dort erfahrungsgemaess deutlich langsamer als CUDA.
+    """
+    log = log or _noop
+    state = _ensure_llama_cpp(root, llama_dir, tag, force, log)
+    backend = str(state.get("backend") or "")
+    log(f"Installierter llama.cpp-Build: {backend or 'unbekannt'} (angefordert: {_backend_preference()})")
+    if backend != "cuda" and _backend_preference() in {"auto", "cuda"} and _nvidia_gpu_present():
+        log(
+            "ACHTUNG: Eine NVIDIA-GPU wurde erkannt, llama.cpp laeuft aber nicht mit CUDA "
+            f"({backend or 'unbekannt'}). Vulkan ist auf NVIDIA-Karten erfahrungsgemaess deutlich langsamer. "
+            "Fuer CUDA das CUDA Toolkit (nvcc) installieren und "
+            "`llmbench install-llama-cpp --backend cuda --force` ausfuehren."
+        )
+    return state
+
+
+def _ensure_llama_cpp(
+    root: Path,
+    llama_dir: Path | None,
+    tag: str | None,
+    force: bool,
+    log: LogFn,
+) -> dict[str, Any]:
     """Sorgt fuer einen passenden, startfaehigen llama.cpp-Build.
 
     Auf Linux/NVIDIA wird CUDA automatisch vor Vulkan bevorzugt, sobald sowohl
     der NVIDIA-Treiber als auch nvcc verfuegbar sind.
     """
-    log = log or _noop
     root = Path(root)
     llama_dir = Path(llama_dir) if llama_dir else root / "tools" / "llama.cpp"
     state_file = llama_dir / ".llama-build.json"

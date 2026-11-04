@@ -47,6 +47,22 @@ nvidia-smi
 
 Andere Compute-Prozesse schließen oder die Warnung dokumentieren. Fremdlast kann tok/s und Telemetrie verfälschen.
 
+## Vulkan statt CUDA auf einer NVIDIA-Karte
+
+Auf NVIDIA-Karten ist ein Vulkan-Build von llama.cpp erfahrungsgemäß deutlich langsamer als CUDA. llmbench lässt das deshalb nie unbemerkt zu:
+
+- Der Block „Nachweis der Testbedingungen“ zeigt die **GPU-API**, die die Binärdatei wirklich meldet (`cuda`, `vulkan`, ...), gelesen aus `--list-devices`, nicht nur das Angeforderte.
+- Bei einer NVIDIA-GPU und einem Vulkan-/CPU-Build gibt der Lauf eine Warnung aus und speichert sie im Ergebnis; die Werte sind dann nicht mit CUDA-Messungen vergleichbar.
+- Wenn du **CUDA anforderst**, ist ein Vulkan- oder CPU-Build ein Fehler: Der Lauf stoppt vor der Messung, statt still mit Vulkan zu messen.
+
+Für CUDA das CUDA Toolkit (`nvcc`) installieren und ausdrücklich bauen:
+
+```bash
+llmbench install-llama-cpp --backend cuda --force
+```
+
+`--backend` akzeptiert `auto`, `cuda`, `vulkan` und `cpu`. Dieselbe Wahl geht über `LLMBENCH_LLAMACPP_BUILD_BACKEND`. Der Installer speichert das Angeforderte neben dem Installierten (`.llama-build.json`).
+
 ## llama-server startet nicht
 
 `llmbench doctor` ausführen und das Server-Log prüfen.

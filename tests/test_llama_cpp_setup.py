@@ -385,3 +385,53 @@ def test_ensure_llama_cpp_raises_with_no_matching_asset_when_source_build_is_dis
 
     with pytest.raises(RuntimeError, match="fehlgeschlagen"):
         lcs.ensure_llama_cpp(tmp_path, log=lambda _m: None)
+
+
+# ------------------------------- GPU-API: Hinweis auf Vulkan bei NVIDIA, angeforderter Typ im Zustand
+
+
+def _install_via_release(tmp_path: Path, monkeypatch, *, backend_assets, nvidia: bool):
+    monkeypatch.setattr(lcs, "target_platform", lambda: ("linux", "x64"))
+    monkeypatch.setattr(lcs, "looks_like_gpu_present", lambda: True)
+    monkeypatch.setattr(lcs, "_nvidia_gpu_present", lambda: nvidia)
+    monkeypatch.setattr(lcs, "_which_nvcc", lambda: None)
+    monkeypatch.setattr(lcs, "release_candidates", lambda _r, _t: [_release("b333", backend_assets)])
+
+    def fake_download(_url, dest):
+        dest.write_bytes(_make_archive(tmp_path, "dl.tar.gz").read_bytes())
+
+    monkeypatch.setattr(lcs, "_download_file", fake_download)
+    messages: list[str] = []
+    state = lcs.ensure_llama_cpp(tmp_path, log=messages.append)
+    return state, messages
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Fake-Binaries sind POSIX-Shell-Skripte.")
+def test_vulkan_build_on_an_nvidia_system_is_announced_loudly_not_silently(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", raising=False)
+    state, messages = _install_via_release(
+        tmp_path, monkeypatch, backend_assets=["llama-b333-bin-ubuntu-vulkan-x64.tar.gz"], nvidia=True
+    )
+    assert state["backend"] == "vulkan"
+    text = "\n".join(messages)
+    assert "ACHTUNG" in text and "--backend cuda" in text
+    assert state["requested_backend"] == "auto"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Fake-Binaries sind POSIX-Shell-Skripte.")
+def test_no_vulkan_warning_without_an_nvidia_gpu(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", raising=False)
+    _state, messages = _install_via_release(
+        tmp_path, monkeypatch, backend_assets=["llama-b333-bin-ubuntu-vulkan-x64.tar.gz"], nvidia=False
+    )
+    assert "ACHTUNG" not in "\n".join(messages)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Fake-Binaries sind POSIX-Shell-Skripte.")
+def test_requested_vulkan_is_stored_in_the_install_state(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("LLMBENCH_LLAMACPP_BUILD_BACKEND", "vulkan")
+    state, messages = _install_via_release(
+        tmp_path, monkeypatch, backend_assets=["llama-b333-bin-ubuntu-vulkan-x64.tar.gz"], nvidia=True
+    )
+    assert state["requested_backend"] == "vulkan"
+    assert "ACHTUNG" not in "\n".join(messages)  # explicit choice, no nagging

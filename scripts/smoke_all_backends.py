@@ -148,6 +148,14 @@ def _case(cfg: dict, name: str) -> tuple[str, dict]:
             raise MissingPrerequisite(f"llama-server ist nicht ausfuehrbar: {server}")
         if gpu and not _llama_gpu_available(server):
             raise RuntimeError(f"llama-server stellt kein GPU-Geraet bereit: {server}")
+        if gpu:
+            apis = _llama_gpu_apis(server)
+            cfg["_smoke_gpu_api"] = "+".join(apis)
+            if os.environ.get("LLMBENCH_LLAMACPP_BUILD_BACKEND", "").strip().lower() == "cuda" and "cuda" not in apis:
+                raise RuntimeError(
+                    f"CUDA wurde angefordert, llama-server nutzt aber '{cfg['_smoke_gpu_api'] or 'unbekannt'}'. "
+                    "Kein stilles Vulkan: `llmbench install-llama-cpp --backend cuda --force` ausfuehren."
+                )
         cfg["tools"]["llama_server"] = str(server)
         return _smallest_catalog_gguf(cfg), {"name": "Smoke-GPU" if gpu else "Smoke-CPU",
                                            "gpu_layers": -1 if gpu else 0, "threads": "auto"}
@@ -189,6 +197,15 @@ def _use_gpu(cfg: dict, name: str) -> bool:
     if device == "gpu" and not available:
         raise MissingPrerequisite(f"GPU fuer {name} nicht verfuegbar")
     return available
+
+
+def _llama_gpu_apis(server: Path) -> list[str]:
+    """GPU-APIs, die llama-server meldet (z. B. ["cuda"] oder ["vulkan"])."""
+    from llmbench.gpu_backend import runtime_gpu_apis
+
+    result = subprocess.run([str(server), "--list-devices"], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=30, check=False)
+    return runtime_gpu_apis(result.stdout + result.stderr)
 
 
 def _llama_gpu_available(server: Path) -> bool:
@@ -389,6 +406,8 @@ def run_one(
         row["model"] = model
         row["profile"] = profile
         row["device"] = "CPU" if profile.get("gpu_layers") == 0 else "GPU"
+        if row["device"] == "GPU" and name == "llama_cpp" and cfg.get("_smoke_gpu_api"):
+            row["device"] = f"GPU ({cfg['_smoke_gpu_api']})"
         if on_message:
             on_message(f"[{name}] Testgeraet: {row['device']}")
         endpoint["model"] = model

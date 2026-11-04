@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### TGI wird eingestellt
+
+- Entscheidung in #167: TGI wird aus der Unterstuetzung genommen und durch SGLang ersetzt (geplant fuer 1.8.0). Die TGI-Validierung (#120) entfaellt fuer 1.7.0; Roadmap und Qualifikationsprotokoll sind angepasst. Der TGI-Code bleibt bis zur Entfernung unveraendert.
+
 ### v1.7.0-Qualitaetsgates (Issues #120 bis #123)
 
 - Typpruefung: die mypy-Ausnahmeliste ist vollstaendig entfernt (alle 71 Module werden geprueft), ebenso die Ruff-Ausnahmen je Datei. Der Coverage-Gate steigt von 45 % auf 75 % (gemessen: 81 %, mit Branch-Coverage); kritische Rechen-/Probe-Module muessen mindestens 85 % Branch-Coverage erreichen (`scripts/check_module_coverage.py`). Neuer Windows-CLI-Smoke mit sauberer Wheel-Installation.

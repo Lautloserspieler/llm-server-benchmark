@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### TGI is being discontinued
+
+- Decision in #167: TGI is dropped from the supported backends and replaced by SGLang (planned for 1.8.0). The TGI validation (#120) is dropped for 1.7.0; the roadmap and the qualification protocol are updated. The TGI code stays unchanged until it is removed.
+
 ### v1.7.0 quality gates (issues #120 to #123)
 
 - Type checking: the mypy ignore baseline is gone entirely (all 71 modules are checked), as are the per-file Ruff ignores. The coverage gate rises from 45% to 75% (measured: 81%, with branch coverage); critical calculation/probe modules must reach at least 85% branch coverage (`scripts/check_module_coverage.py`). New Windows CLI smoke test with a clean wheel install.

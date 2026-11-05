@@ -157,3 +157,18 @@ def test_doctor_warns_once_per_model_outside_the_catalog_but_not_for_catalog_mod
     assert catalog_warning("ollama", {"name": "X", "path": "my-own:7b"}) is not None
     assert catalog_warning("ollama", {"name": "Qwen3 8B", "path": "qwen3:8b"}) is None
     assert catalog_warning("vllm", {"name": "custom", "path": "/data/model", "catalog_id": "qwen3-8b"}) is None
+
+
+def test_local_gguf_precision_is_not_assumed_from_catalog(tmp_path):
+    config = tmp_path / "benchmark.yaml"
+    _write_runtime_models(config, "llama_cpp", ["/models/Qwen3-8B-Q8_0.gguf"])
+    (entry,) = yaml.safe_load(config.read_text(encoding="utf-8"))["models"]
+    assert entry["catalog_id"] == "qwen3-8b"
+    assert entry["precision"] == "Q8_0"
+
+
+def test_local_gguf_without_quantization_is_unknown(tmp_path):
+    config = tmp_path / "benchmark.yaml"
+    _write_runtime_models(config, "llama_cpp", ["/models/Qwen3-8B-custom.gguf"])
+    (entry,) = yaml.safe_load(config.read_text(encoding="utf-8"))["models"]
+    assert entry["precision"] == "unknown"

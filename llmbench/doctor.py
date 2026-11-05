@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import model_catalog
 from .config import config_fingerprint, resolve_path
 from .hardware import collect_hardware, linux_power_state
 from .llama_bench import probe_build
@@ -45,6 +46,66 @@ def _check_flags(exe: str) -> dict[str, Any]:
     if "--flash-attn" in text:
         result["flash_attn_values"] = "on|off|auto" if "on|off|auto" in text else "unbekannt"
     return result
+
+
+def _looks_like_ollama_tag(value: str) -> bool:
+    return ":" in value and "/" not in value.split(":", 1)[0] and not value.lower().endswith(".gguf") and "\\" not in value
+
+
+def _looks_like_hf_repo(value: str) -> bool:
+    return value.count("/") == 1 and not value.startswith((".", "~", "/")) and not value.lower().endswith(".gguf")
+
+
+def check_model_reference(backend: str, raw_path: str, exists: bool) -> dict[str, str] | None:
+    """Does the configured model reference fit the configured backend?
+
+    Typical mistake: a backend switched to llama.cpp while the config still holds an
+    Ollama tag (``gemma3:1b``) - llama-server then fails at start with "file not found",
+    although everything looked fine before.
+    """
+    value = raw_path.strip()
+    if backend == "llama_cpp":
+        if not exists and (_looks_like_ollama_tag(value) or _looks_like_hf_repo(value)):
+            kind = "Ollama-Modell-ID" if _looks_like_ollama_tag(value) else "Hugging-Face-Repo-ID"
+            return {
+                "level": "error",
+                "message": (
+                    f"'{value}' ist eine {kind}, llama.cpp braucht aber eine GGUF-Datei. "
+                    "`llmbench setup` waehlt das passende Modell fuer dieses Backend."
+                ),
+            }
+        if exists and not value.lower().endswith(".gguf") and not Path(value).is_dir():
+            return {"level": "warning", "message": f"'{value}' ist keine .gguf-Datei."}
+    elif backend == "ollama":
+        # Ollama also accepts namespaced tags (`user/model:tag`) and `hf.co/...`, so this is only a hint.
+        if _looks_like_hf_repo(value) and ":" not in value and not value.lower().startswith("hf.co/"):
+            return {
+                "level": "warning",
+                "message": (
+                    f"'{value}' sieht wie eine Hugging-Face-Repo-ID aus, Ollama erwartet ein Library-Tag "
+                    "wie `qwen3:8b` oder eine lokale GGUF-Datei. `llmbench setup` waehlt das passende Modell."
+                ),
+            }
+    elif backend in {"vllm", "tgi"} and _looks_like_ollama_tag(value) and not exists:
+        return {
+            "level": "error",
+            "message": (
+                f"'{value}' ist eine Ollama-Modell-ID, {backend} braucht eine Hugging-Face-Repo-ID (org/name) "
+                "oder ein Transformers-Verzeichnis. `llmbench setup` waehlt das passende Modell."
+            ),
+        }
+    return None
+
+
+def catalog_warning(backend: str, model: dict[str, Any]) -> str | None:
+    """Warn when a model is not part of the shared catalog (not comparable across backends)."""
+    reference = str(model.get("path") or "")
+    if model.get("catalog_id") or model_catalog.identify(reference, backend) is not None:
+        return None
+    return (
+        f"Modell '{model.get('name')}' ist nicht im gemeinsamen Modellkatalog. Ergebnisse lassen sich nur mit "
+        "Laeufen vergleichen, die genau dieses Modell nutzen; auf anderen Backends ist es ggf. nicht verfuegbar."
+    )
 
 
 def _vram_total_bytes(hardware: dict[str, Any]) -> int | None:
@@ -173,6 +234,10 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
         if fingerprint.get("error"):
             entry["hint"] = str(fingerprint["error"])
 
+        problem = check_model_reference(backend, raw_path, exists)
+        if problem:
+            entry["problem"] = problem
+            entry["hint"] = problem["message"]
         if size and vram:
             entry["fits_in_vram"] = size * 1.2 <= vram
             if not entry["fits_in_vram"]:
@@ -187,6 +252,10 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
     disk = hardware.get("disk") or {}
     free = disk.get("free_bytes")
     warnings: list[str] = []
+    for model in cfg.get("models", []):
+        warning = catalog_warning(backend, model)
+        if warning:
+            warnings.append(warning)
     if free is not None and free < 2 * 1024**3:
         warnings.append(
             f"Nur noch {free / 1024**3:.1f} GiB frei unter {disk.get('root')}. "

@@ -298,19 +298,18 @@ def test_same_backend_produces_no_issue():
     assert _backend_issues("llama_cpp", "llama_cpp") == []
 
 
-def test_different_backends_are_an_error():
-    """Tokens/s aus llama.cpp und vLLM duerfen nicht wortlos nebeneinanderstehen."""
+def test_different_backends_are_a_warning():
+    """Different backends are compared with a warning, not blocked: batching and prefill differ."""
     issues = _backend_issues("llama_cpp", "vllm")
     assert len(issues) == 1
-    assert issues[0]["level"] == "error"
-    assert "nicht direkt vergleichbar" in issues[0]["message"]
+    assert issues[0]["level"] == "warning"
+    assert "nur mit Vorsicht vergleichbar" in issues[0]["message"]
     # Die konkreten Backends muessen in der Meldung auftauchen.
     assert "llama_cpp" in issues[0]["message"]
     assert "vllm" in issues[0]["message"]
 
 
-def test_backend_mismatch_is_strict_relevant(tmp_path: Path):
-    """--strict muss einen backend-uebergreifenden Vergleich ablehnen."""
+def test_backend_mismatch_does_not_block_strict_mode_but_stays_visible(tmp_path: Path):
     dirs = []
     for name, backend in (("A", "llama_cpp"), ("B", "vllm")):
         d = tmp_path / name
@@ -321,8 +320,34 @@ def test_backend_mismatch_is_strict_relevant(tmp_path: Path):
         dirs.append(d)
 
     _report, issues = compare_summaries(dirs, tmp_path / "out")
-    errors = [i for i in issues if i["level"] == "error"]
-    assert any(i["topic"] == "Backend" for i in errors)
+    backend_issues = [i for i in issues if i["topic"] == "Backend"]
+    assert backend_issues and all(i["level"] == "warning" for i in backend_issues)
+
+
+def _with_precision(summary: dict, precision: str | None) -> dict:
+    for entry in summary["models"]:
+        if precision:
+            entry["model"]["precision"] = precision
+    return summary
+
+
+def test_same_model_with_different_precision_warns():
+    from llmbench.compare import check_consistency
+
+    first = _with_precision(make_summary("A"), "Q4_K_M")
+    second = _with_precision(make_summary("B"), "bf16")
+    issues = [i for i in check_consistency([first, second]) if "Praezision" in i["message"]]
+    assert len(issues) == 1 and issues[0]["level"] == "warning"
+    assert "Q4_K_M" in issues[0]["message"] and "bf16" in issues[0]["message"]
+
+
+def test_same_precision_or_unknown_precision_does_not_warn():
+    from llmbench.compare import check_consistency
+
+    same = [_with_precision(make_summary("A"), "Q4_K_M"), _with_precision(make_summary("B"), "Q4_K_M")]
+    assert not [i for i in check_consistency(same) if "Praezision" in i["message"]]
+    unknown = [_with_precision(make_summary("A"), None), _with_precision(make_summary("B"), "bf16")]
+    assert any("unknown precision" in i["message"] for i in check_consistency(unknown))
 
 
 def test_legacy_summaries_without_backend_are_not_flagged():

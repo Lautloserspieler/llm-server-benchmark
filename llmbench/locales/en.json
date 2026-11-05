@@ -389,5 +389,9 @@
   "Ollama-Download-Container wurde nicht rechtzeitig bereit.": "The Ollama download container did not become ready in time.",
   "Ollama-Modell {index}/{total} herunterladen: {model}": "Downloading Ollama model {index}/{total}: {model}",
   "Ollama-Modell bereit: {model}": "Ollama model ready: {model}",
-  "Ollama-Modell {index}/{total} bereits vorhanden: {model}": "Ollama model {index}/{total} already available: {model}"
+  "Ollama-Modell {index}/{total} bereits vorhanden: {model}": "Ollama model {index}/{total} already available: {model}",
+  "Dieselben Modelle gibt es auf allen Backends, damit Ergebnisse vergleichbar bleiben.": "The same models are offered on every backend so results stay comparable.",
+  "(ungeprueft)": "(unverified)",
+  "{count} Modelle": "{count} models",
+  "Auf diesem Backend noch nicht zugeordnet: {names}": "Not yet mapped on this backend: {names}"
 }

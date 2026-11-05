@@ -15,6 +15,7 @@ from rich.filesize import decimal
 from rich.progress import BarColumn, Progress, ProgressColumn, Task, TaskID, TextColumn
 from rich.text import Text
 
+from . import model_catalog
 from .bootstrap import logical_model_path, shard_info, shard_set_complete
 from .utils import safe_name
 
@@ -34,58 +35,65 @@ class ModelConfig(TypedDict):
     estimated_gib: float
 
 
-MODELS: dict[str, dict[str, ModelConfig]] = {
-    "small": {
-        "Qwen3.5-9B": {
-            "repo_id": "unsloth/Qwen3.5-9B-GGUF",
-            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "qwen3.5-9b",
-            "estimated_gib": 6.0,
-        },
+# Modelle, die es nur fuer llama.cpp gab. Sie bleiben waehlbar, gehoeren aber nicht
+# zur Standardsuite: auf den anderen Backends gibt es sie nicht, Ergebnisse waeren
+# dort nicht vergleichbar.
+_LEGACY_LLAMA_ONLY: dict[str, ModelConfig] = {
+    "Qwen3.5-9B": {
+        "repo_id": "unsloth/Qwen3.5-9B-GGUF",
+        "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+        "filename_hint": "qwen3.5-9b",
+        "estimated_gib": 6.0,
     },
-    "mid": {
-        "Gemma-4-12B-IT": {
-            "repo_id": "unsloth/gemma-4-12b-it-GGUF",
-            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "gemma-4-12b-it",
-            "estimated_gib": 7.0,
-        },
-        "Qwen3.8-27B": {
-            "repo_id": "bartowski/Qwen3.8-27B-GGUF",
-            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "qwen3.8-27b",
-            "estimated_gib": 18.0,
-        },
-        "GLM-4.7-Flash": {
-            "repo_id": "lmstudio-community/GLM-4.7-Flash-GGUF",
-            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "glm-4.7-flash",
-            "estimated_gib": 19.0,
-        },
+    "Gemma-4-12B-IT": {
+        "repo_id": "unsloth/gemma-4-12b-it-GGUF",
+        "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+        "filename_hint": "gemma-4-12b-it",
+        "estimated_gib": 7.0,
     },
-    "heavy": {
-        "Qwen3.5-122B-A10B": {
-            "repo_id": "unsloth/Qwen3.5-122B-A10B-GGUF",
-            "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
-            "filename_hint": "qwen3.5-122b-a10b",
-            "estimated_gib": 72.0,
-        },
-        "Mistral-Small-4-119B-2603": {
-            "repo_id": "unsloth/Mistral-Small-4-119B-2603-GGUF",
-            "pattern": ["*UD-Q4_K_M*.gguf", "*ud-q4_k_m*.gguf"],
-            "filename_hint": "mistral-small-4-119b-2603",
-            "estimated_gib": 69.0,
-        },
+    "GLM-4.7-Flash": {
+        "repo_id": "lmstudio-community/GLM-4.7-Flash-GGUF",
+        "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+        "filename_hint": "glm-4.7-flash",
+        "estimated_gib": 19.0,
     },
-    "extreme": {
-        "DeepSeek-V4-Flash-0731": {
-            "repo_id": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
-            "pattern": ["*UD-Q4_K_XL*.gguf", "*ud-q4_k_xl*.gguf"],
-            "filename_hint": "deepseek-v4-flash-0731",
-            "estimated_gib": 145.0,
-        },
+    "Qwen3.5-122B-A10B": {
+        "repo_id": "unsloth/Qwen3.5-122B-A10B-GGUF",
+        "pattern": ["*Q4_K_M*.gguf", "*q4_k_m*.gguf"],
+        "filename_hint": "qwen3.5-122b-a10b",
+        "estimated_gib": 72.0,
+    },
+    "Mistral-Small-4-119B-2603": {
+        "repo_id": "unsloth/Mistral-Small-4-119B-2603-GGUF",
+        "pattern": ["*UD-Q4_K_M*.gguf", "*ud-q4_k_m*.gguf"],
+        "filename_hint": "mistral-small-4-119b-2603",
+        "estimated_gib": 69.0,
+    },
+    "DeepSeek-V4-Flash-0731": {
+        "repo_id": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+        "pattern": ["*UD-Q4_K_XL*.gguf", "*ud-q4_k_xl*.gguf"],
+        "filename_hint": "deepseek-v4-flash-0731",
+        "estimated_gib": 145.0,
     },
 }
+
+
+def _catalog_suites() -> dict[str, dict[str, ModelConfig]]:
+    """llama.cpp suites from the shared catalog: the same models as on every other backend."""
+    suites: dict[str, dict[str, ModelConfig]] = {"small": {}, "mid": {}, "heavy": {}, "extreme": {}}
+    for model in model_catalog.models_for_backend("llama_cpp"):
+        reference = model.reference("llama_cpp")
+        assert reference is not None
+        suites[model.tier.lower() if model.tier.lower() in suites else "heavy"][model.name] = {
+            "repo_id": reference.ref,
+            "pattern": list(reference.patterns),
+            "filename_hint": reference.filename_hint,
+            "estimated_gib": model.estimated_gib,
+        }
+    return suites
+
+
+MODELS: dict[str, dict[str, ModelConfig]] = {**_catalog_suites(), "legacy": _LEGACY_LLAMA_ONLY}
 
 # "all" bleibt absichtlich die normale Standard-Suite. Das Extreme-Modell wird
 # nur explizit geladen, damit Setup/CI nicht versehentlich >100 GiB nachladen.
@@ -99,6 +107,8 @@ SELECTION_FILENAME = ".llmbench-model-selection.json"
 # verweist ab jetzt auf den architektonisch unabhaengigen GLM-Slot.
 MODEL_SELECTION_ALIASES = {
     "Qwen3.5-35B-A3B": "GLM-4.7-Flash",
+    # Spelling of the shared catalog (same model, same GGUF repository).
+    "Qwen3.8-27B": "Qwen3.8 27B",
 }
 
 

@@ -347,7 +347,7 @@ def test_same_precision_or_unknown_precision_does_not_warn():
     same = [_with_precision(make_summary("A"), "Q4_K_M"), _with_precision(make_summary("B"), "Q4_K_M")]
     assert not [i for i in check_consistency(same) if "Praezision" in i["message"]]
     unknown = [_with_precision(make_summary("A"), None), _with_precision(make_summary("B"), "bf16")]
-    assert not [i for i in check_consistency(unknown) if "Praezision" in i["message"]]
+    assert any("unknown precision" in i["message"] for i in check_consistency(unknown))
 
 
 def test_legacy_summaries_without_backend_are_not_flagged():

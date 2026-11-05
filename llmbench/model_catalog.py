@@ -24,6 +24,7 @@ not verified is shown as "unverified" in the menus.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 BACKENDS = ("llama_cpp", "ollama", "vllm", "tgi")
@@ -203,6 +204,22 @@ def identify(reference: str, backend: str | None = None) -> CatalogModel | None:
     return None
 
 
+def reference_precision(reference: str, backend: str, model: CatalogModel) -> str:
+    """Use the observed GGUF quantization instead of assuming the catalog default.
+
+    A local GGUF path may use Q8_0 or another variant of the same base model.
+    Unknown local precision must never silently become the catalog's Q4_K_M.
+    """
+    declared = model.reference(backend)
+    if declared is None:
+        return "unknown"
+    if backend != "llama_cpp" or not reference.lower().endswith(".gguf"):
+        return declared.precision
+    leaf = reference.replace("\\\\", "/").rsplit("/", 1)[-1]
+    match = re.search(r"(?<![A-Za-z0-9])(Q[2-8]_[A-Z0-9_]+|IQ[1-4]_[A-Z0-9_]+|MXFP4)(?=\\.gguf$|[-_.])", leaf, re.I)
+    return match.group(1).upper() if match else "unknown"
+
+
 def precision_of(model_id: str, backend: str) -> str | None:
     model = get(model_id)
     ref = model.reference(backend) if model else None
@@ -218,5 +235,5 @@ def config_entry(model: CatalogModel, backend: str, reference: str | None = None
         "name": model.name,
         "path": reference or ref.ref,
         "catalog_id": model.id,
-        "precision": ref.precision,
+        "precision": reference_precision(reference or ref.ref, backend, model),
     }

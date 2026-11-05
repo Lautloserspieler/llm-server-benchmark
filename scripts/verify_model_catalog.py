@@ -106,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print(f"\n{len(missing)} reference(s) not found. Fix them in llmbench/model_catalog.py.", file=sys.stderr)
         return 1
+    unreachable = [r for r in results if r["status"] in (UNREACHABLE, "unmapped")]
+    if unreachable:
+        print(f"\n{len(unreachable)} reference(s) could not be verified; result incomplete.", file=sys.stderr)
+        return 2
     return 0
 
 

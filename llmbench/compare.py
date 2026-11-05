@@ -179,6 +179,20 @@ def check_consistency(summaries: list[dict[str, Any]]) -> list[dict[str, str]]:
     precisions = {_server(s): _model_precisions(s) for s in summaries}
     for name in sorted({n for per in precisions.values() for n in per}):
         values = {srv: per[name] for srv, per in precisions.items() if per.get(name)}
+        # Warn if one run has precision metadata but another run of the same
+        # model does not. This matters for older summaries and manual configs.
+        present = {srv: per[name] for srv, per in precisions.items() if name in per}
+        if present and len(present) < len(precisions):
+            missing = sorted(set(precisions) - set(present))
+            issues.append({
+                "level": "warning",
+                "topic": f"Modell {name}",
+                "message": (
+                    "Unbekannte Praezision (unknown precision) in: "
+                    + ", ".join(missing)
+                    + "; der Quantisierungsvergleich ist unvollstaendig."
+                ),
+            })
         if len(set(values.values())) > 1:
             detail = "; ".join(f"{srv}: {value}" for srv, value in values.items())
             issues.append({

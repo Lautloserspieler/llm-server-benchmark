@@ -47,6 +47,22 @@ nvidia-smi
 
 Stop unrelated compute processes or document the warning. Foreign load can distort throughput and telemetry.
 
+## Vulkan instead of CUDA on an NVIDIA card
+
+On NVIDIA cards a Vulkan build of llama.cpp is, in practice, much slower than CUDA, so llmbench never lets it happen unnoticed:
+
+- The "Test conditions" block shows the **GPU API** the binary really reports (`cuda`, `vulkan`, ...), taken from `--list-devices`, not just what was requested.
+- With an NVIDIA GPU and a Vulkan/CPU build, the run prints a warning and stores it in the result; the numbers are then not comparable with CUDA measurements.
+- If you **request CUDA**, a Vulkan or CPU build is an error: the run stops before any measurement instead of silently using Vulkan.
+
+To get CUDA, install the CUDA Toolkit (`nvcc`) and build explicitly:
+
+```bash
+llmbench install-llama-cpp --backend cuda --force
+```
+
+`--backend` accepts `auto`, `cuda`, `vulkan` and `cpu`. The same choice can be set with `LLMBENCH_LLAMACPP_BUILD_BACKEND`. The installer stores what was requested next to what was installed (`.llama-build.json`).
+
 ## llama-server does not start
 
 Run `llmbench doctor` and inspect the server log.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import gpu_backend
 from .i18n import _
 
 CONTAINER_BACKENDS = ("ollama", "vllm", "tgi")
@@ -42,6 +43,7 @@ def condition_rows(summary: dict[str, Any]) -> list[tuple[str, str]]:
         binary = (tools.get("llama_bench") or {}).get("binary") or {}
         rows += [
             (_("llama.cpp-Build"), ", ".join(tools.get("llama_cpp_build_ids") or []) or _("unbekannt")),
+            (_("GPU-API (llama.cpp)"), gpu_backend.label(tools)),
             (_("llama-bench SHA256"), (binary.get("sha256") or _("nicht berechnet"))[:48]),
             (_("Wiederholungen"), cfg.get("repetitions")),
             (_("Batch / UBatch"), f"{cfg.get('batch_size')} / {cfg.get('ubatch_size')}"),

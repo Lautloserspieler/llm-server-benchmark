@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -397,6 +398,12 @@ def build_parser() -> argparse.ArgumentParser:
     install_llama.add_argument(
         "--force", action="store_true", help="Auch neu installieren, wenn bereits ein lauffaehiger Build vorhanden ist"
     )
+    install_llama.add_argument(
+        "--backend",
+        choices=["auto", "cuda", "vulkan", "cpu"],
+        default=None,
+        help="Build-Typ erzwingen. cuda baut aus Source (CUDA Toolkit/nvcc noetig) und faellt nie auf Vulkan zurueck",
+    )
 
     install_backend = sub.add_parser(
         "install-backend",
@@ -740,6 +747,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "install-llama-cpp":
         from llmbench.llama_cpp_setup import ensure_llama_cpp
 
+        if args.backend:
+            os.environ["LLMBENCH_LLAMACPP_BUILD_BACKEND"] = args.backend
         root = Path(args.root).resolve()
         llama_dir = Path(args.llama_dir) if args.llama_dir else None
         try:

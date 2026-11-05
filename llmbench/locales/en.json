@@ -17,6 +17,7 @@
   "Konfigurations-Fingerabdruck": "Configuration Fingerprint",
   "llmbench-Version": "llmbench version",
   "llama.cpp-Build": "llama.cpp build",
+  "GPU-API (llama.cpp)": "GPU API (llama.cpp)",
   "llama-bench SHA256": "llama-bench SHA256",
   "nicht berechnet": "not calculated",
   "Wiederholungen": "Repetitions",

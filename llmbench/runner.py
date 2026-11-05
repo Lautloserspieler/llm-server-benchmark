@@ -181,6 +181,40 @@ def _tool_info(cfg: dict[str, Any]) -> dict[str, Any]:
     return info
 
 
+def _check_gpu_backend(cfg: dict[str, Any], tools: dict[str, Any], hardware_target: str) -> str | None:
+    """Vulkan darf auf NVIDIA nicht unbemerkt statt CUDA laufen (nur llama.cpp).
+
+    Fordert der Nutzer CUDA an und der Build nutzt es nicht, bricht der Lauf ab.
+    Sonst wird nur gewarnt, wenn eine NVIDIA-GPU vorhanden ist und GPU-Profile laufen.
+    """
+    if backend_name(cfg) != "llama_cpp":
+        return None
+    from . import gpu_backend
+    from .llama_cpp_setup import nvidia_gpu_present, requested_backend
+
+    uses_gpu = hardware_target != "cpu" and any(
+        int(profile.get("gpu_layers", -1)) != 0
+        for model in cfg.get("models", [])
+        for profile in (model.get("profiles") or [])
+    )
+    try:
+        requested = requested_backend()
+    except ValueError:
+        requested = None
+    verdict = gpu_backend.check(
+        tools,
+        nvidia_present=nvidia_gpu_present(),
+        uses_gpu=uses_gpu,
+        requested=requested if requested != "auto" else None,
+    )
+    if verdict is None:
+        return None
+    level, message = verdict
+    if level == "error":
+        raise RuntimeError(message)
+    return message
+
+
 def _resolve_endpoint_profile(
     profiles: list[dict[str, Any]], model_name: str, endpoint_cfg: dict[str, Any]
 ) -> tuple[dict[str, Any], str | None]:
@@ -238,6 +272,8 @@ def _run_suite(
 
     hardware = collect_hardware(output_root)
     write_json(run_dir / "hardware.json", hardware)
+    tools = _tool_info(cfg)
+    gpu_backend_warning = _check_gpu_backend(cfg, tools, hardware_target)
     observer = None
     if collect_memory_bandwidth:
         from .memory_bandwidth_observer import MactopObserver
@@ -246,7 +282,6 @@ def _run_suite(
         if observer_holder is not None:
             observer_holder["observer"] = observer
         observer.start()
-    tools = _tool_info(cfg)
 
     backend = get_backend(cfg)
 
@@ -271,6 +306,9 @@ def _run_suite(
         "warnings": [],
         "models": [],
     }
+    if gpu_backend_warning:
+        summary["warnings"].append(gpu_backend_warning)
+        reporter.note(gpu_backend_warning)
 
     if hardware_target == "gpu_overload":
         summary["warnings"].append(

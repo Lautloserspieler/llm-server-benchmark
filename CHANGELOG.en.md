@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### No silent Vulkan instead of CUDA
+
+- The "Test conditions" block shows the GPU API (`cuda`, `vulkan`, ...) that llama.cpp really uses according to `--list-devices`. With an NVIDIA GPU and a Vulkan/CPU build the run warns (Vulkan is much slower there in practice) and stores the warning in the result.
+- Requesting CUDA with a Vulkan/CPU build is now an error before any measurement instead of a Vulkan run. New: `llmbench install-llama-cpp --backend auto|cuda|vulkan|cpu`; the installer stores the requested next to the installed build type and states clearly what is running after the installation.
+- The backend smoke test shows the GPU API (e.g. `GPU (cuda)`) and aborts when CUDA was requested but no CUDA device is present.
+
 ### TGI is being discontinued
 
 - Decision in #167: TGI is dropped from the supported backends and replaced by SGLang (planned for 1.8.0). The TGI validation (#120) is dropped for 1.7.0; the roadmap and the qualification protocol are updated. The TGI code stays unchanged until it is removed.

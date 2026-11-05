@@ -215,8 +215,8 @@ def reference_precision(reference: str, backend: str, model: CatalogModel) -> st
         return "unknown"
     if backend != "llama_cpp" or not reference.lower().endswith(".gguf"):
         return declared.precision
-    leaf = reference.replace("\\\\", "/").rsplit("/", 1)[-1]
-    match = re.search(r"(?<![A-Za-z0-9])(Q[2-8]_[A-Z0-9_]+|IQ[1-4]_[A-Z0-9_]+|MXFP4)(?=\\.gguf$|[-_.])", leaf, re.I)
+    leaf = reference.replace(chr(92), "/").rsplit("/", 1)[-1]
+    match = re.search(r"(?<![A-Za-z0-9])(Q[2-8]_[A-Z0-9_]+|IQ[1-4]_[A-Z0-9_]+|MXFP4)(?=[.]gguf$|[-_.])", leaf, re.I)
     return match.group(1).upper() if match else "unknown"
 
 

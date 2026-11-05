@@ -100,3 +100,14 @@ def test_main_exits_1_when_a_reference_is_missing(script, monkeypatch):
 
     monkeypatch.setattr(httpx.Client, "get", not_found)
     assert script.main(["--backend", "ollama", "--only", "gemma3-1b"]) == 1
+
+
+def test_partial_registry_outage_exits_nonzero(script, monkeypatch, capsys):
+    def partial(_self, url, **_kwargs):
+        if "gemma3" in url:
+            return httpx.Response(200, request=httpx.Request("GET", url))
+        raise httpx.ConnectError("blocked")
+
+    monkeypatch.setattr(httpx.Client, "get", partial)
+    assert script.main(["--backend", "ollama", "--only", "gemma3-1b", "--only", "qwen3-8b"]) == 2
+    assert "incomplete" in capsys.readouterr().err

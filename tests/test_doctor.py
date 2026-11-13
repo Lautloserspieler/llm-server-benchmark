@@ -1,6 +1,9 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from llmbench import i18n
 from llmbench.config import DEFAULT_CONFIG, deep_merge
 from llmbench.doctor import doctor
 
@@ -85,6 +88,42 @@ def test_doctor_warns_about_model_not_fitting_in_vram(tmp_path: Path, monkeypatc
     entry = data["models"][0]
     assert entry["fits_in_vram"] is False
     assert "Full-GPU-Profil" in entry["hint"]
+
+
+@pytest.mark.parametrize("apple", [False, True])
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_doctor_does_not_infer_cpu_execution_from_missing_gpu_discovery(tmp_path, monkeypatch, apple, language):
+    hardware = {"gpus": [], "memory": {"total_bytes": 48 * 1024**3}}
+    if apple:
+        hardware["memory_domains"] = [{
+            "id": "apple:unified:0", "kind": "unified_memory", "vendor": "Apple",
+            "name": "Apple M4 Pro", "identity": {"chip": "Apple M4 Pro", "gpu_cores": 20},
+        }]
+    monkeypatch.setattr("llmbench.doctor.collect_hardware", lambda *_a, **_kw: hardware)
+    monkeypatch.setattr("llmbench.doctor.command_exists", lambda *_a, **_kw: False)
+    i18n.set_language(language)
+    data = doctor(_cfg(tmp_path))
+    warnings = " ".join(data["warnings"])
+    assert "NVIDIA" in warnings and "AMD" in warnings and "Intel" in warnings
+    assert "ausschliesslich auf der CPU" not in warnings and "CPU-only" not in warnings
+    assert ("Apple M4 Pro" in warnings) is apple
+    if apple:
+        assert "system_profiler" in warnings
+        assert "Offloading" in warnings if language == "de" else "offloading" in warnings
+        assert "fits_in_vram" not in data["models"][0]
+        assert data["hardware"]["gpus"] == []
+    if language == "en":
+        assert "No GPU detected" in warnings
+
+
+def test_doctor_keeps_supported_gpu_discovery_separate_from_telemetry(tmp_path, monkeypatch):
+    monkeypatch.setattr("llmbench.doctor.collect_hardware", lambda *_a, **_kw: {
+        "gpus": [{"vendor": "NVIDIA", "name": "RTX", "telemetry": "none"}], "memory": {},
+    })
+    monkeypatch.setattr("llmbench.doctor.command_exists", lambda *_a, **_kw: False)
+    warnings = " ".join(doctor(_cfg(tmp_path))["warnings"])
+    assert "Keine GPU erkannt" not in warnings
+    assert "keine Telemetrie" in warnings
 
 
 def test_doctor_warns_when_gpu_has_no_telemetry(tmp_path: Path, monkeypatch):

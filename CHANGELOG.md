@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### Lokale Stabilisierung: Community-Export, Doctor und Update-Watcher
+
+- Community-Export (#146): llama.cpp-Build-Commits und begrenzte Runtime-Entwicklungsversionen bleiben mit ihrer Provenienz erhalten. Fingerabdruecke werden aus denselben normalisierten Einstellungstypen erzeugt und geprueft; Integer-Werte wie `delay_seconds: 0` blockieren den Export nicht mehr. Bereits gueltige Exporte bleiben kompatibel; zuvor ungueltige muessen aus der Summary neu erzeugt werden.
+- Doctor (#145): Eine leere NVIDIA-/AMD-/Intel-Geraeteliste wird nicht mehr als CPU-only-Ausfuehrung ausgegeben. Erkannte Apple-Silicon-Unified-Memory-Domaenen werden mit Quelle genannt, ohne effektives GPU-Offloading oder dedizierten VRAM zu behaupten. Neue Meldungen sind deutsch/englisch verfuegbar.
+- Ollama-Update-Watcher: Gemeinsame Versionskonstanten in Tests und Dokumentation sind erlaubt; nur die verbindlichen Backend-Defaults muessen die alte Referenz enthalten. Vor dem Schreiben werden alle Pflichtreferenzen geprueft; andere Versionen und laengere Tags bleiben unveraendert.
+
 ### Kein stilles Vulkan statt CUDA
 
 - Der Block „Nachweis der Testbedingungen“ zeigt die GPU-API (`cuda`, `vulkan`, ...), die llama.cpp laut `--list-devices` wirklich nutzt. Bei einer NVIDIA-GPU mit Vulkan-/CPU-Build warnt der Lauf (Vulkan ist dort erfahrungsgemaess deutlich langsamer) und speichert die Warnung im Ergebnis.

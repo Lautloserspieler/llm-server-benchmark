@@ -15,6 +15,20 @@ llmbench community-validate community-exports/community-run-0001.json
 
 ## Eingaben, Dateien und Rueckgabecodes
 
+Runtime-Identitaeten behalten ihre Provenienz: Effektive llama.cpp-KV-Beobachtungen
+duerfen statt einer Release-Version einen hexadezimalen Build-Commit mit 7 bis 64
+Zeichen enthalten. Numerische Runtime-Versionen erlauben auch begrenzte
+Entwicklungsversionen wie `0.10.2.dev1` bei vLLM. Pfade, Logtexte und beliebige
+Freitexte bleiben unzulaessig.
+
+Der Konfigurations-Fingerabdruck verwendet die validierten Datentypen der
+Benchmark-, Profil-, Endpoint- und Soak-Einstellungen. Bei einer
+Gleitkomma-Einstellung erzeugen `0` und `0.0` deshalb denselben Hash. Bereits
+gueltige v1-Exporte bleiben gueltig. Zuvor abgelehnte Exporte mit einem vor der
+Zahlennormalisierung berechneten Hash muessen aus ihrer urspruenglichen Summary
+neu erzeugt werden; die Validierung repariert oder ersetzt keine gelieferten
+Fingerabdruecke.
+
 Explizite Run-Ordner oder Summary-Dateien werden verarbeitet, ohne rekursive
 Suche. `summary.json` hat Vorrang; nur wenn sie fehlt, wird
 `summary.partial.json` verwendet. Eine beschaedigte finale Datei ist ein Fehler,

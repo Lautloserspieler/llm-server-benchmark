@@ -6,6 +6,7 @@ from typing import Any
 
 from .config import config_fingerprint, resolve_path
 from .hardware import collect_hardware, linux_power_state
+from .i18n import _
 from .llama_bench import probe_build
 from .utils import command_exists, file_fingerprint, resolve_executable, run_capture
 
@@ -193,7 +194,12 @@ def doctor(cfg: dict[str, Any]) -> dict[str, Any]:
             "Rohdaten und Telemetrie eines Laufs brauchen mehrere hundert Megabyte."
         )
     if not hardware.get("gpus"):
-        warnings.append("Keine GPU erkannt. Es wird ausschliesslich auf der CPU gemessen.")
+        # Discovery providers do not establish which backend will execute the
+        # model; Apple unified memory is deliberately not represented as VRAM.
+        warnings.append(_("Keine GPU erkannt durch NVIDIA-/AMD-/Intel-Erkennung. Die tatsaechliche GPU-Nutzung ist damit nicht bestimmt."))
+        for domain in hardware.get("memory_domains", []):
+            if domain.get("vendor") == "Apple" and domain.get("kind") == "unified_memory":
+                warnings.append(_("Apple Silicon erkannt: {name} (Quelle: system_profiler; gemeinsamer Arbeitsspeicher). GPU-Backend und effektives Offloading sind separat zu pruefen.").format(name=domain.get("name") or "Apple Silicon"))
     for gpu in hardware.get("gpus", []):
         if gpu.get("telemetry") == "none":
             warnings.append(

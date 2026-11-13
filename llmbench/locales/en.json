@@ -1,4 +1,6 @@
 {
+  "Keine GPU erkannt durch NVIDIA-/AMD-/Intel-Erkennung. Die tatsaechliche GPU-Nutzung ist damit nicht bestimmt.": "No GPU detected through NVIDIA/AMD/Intel discovery. This does not establish actual GPU use.",
+  "Apple Silicon erkannt: {name} (Quelle: system_profiler; gemeinsamer Arbeitsspeicher). GPU-Backend und effektives Offloading sind separat zu pruefen.": "Apple Silicon detected: {name} (source: system_profiler; unified memory). GPU backend and effective offloading need separate verification.",
   "OK": "OK",
   "Zeitüberschreitung": "Timeout",
   "Fehler": "Error",

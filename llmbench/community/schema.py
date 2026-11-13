@@ -16,6 +16,11 @@ from .settings import validate_nickname
 
 Outcome = Literal["ok", "partial", "failed", "skipped_capacity", "skipped_quality_gate", "timeout", "skipped", "unknown", "completed"]
 
+# Runtime adapters emit release/development versions and, for llama.cpp KV
+# observations, a build commit. Keep these bounded identities, never free text.
+RUNTIME_VERSION = re.compile(r"[vV]?\d+(?:\.\d+){0,4}(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?(?:[-+][a-zA-Z0-9.]{1,32})?")
+RUNTIME_COMMIT = re.compile(r"[a-fA-F0-9]{7,64}")
+
 
 class SafeError(ValueError):
     """Only catalog paths/codes may cross the CLI error boundary."""
@@ -42,8 +47,10 @@ def _check_envelope(name: str, item: Provenance, spec: tuple[str, str | None] | 
     elif kind in {"string", "version"}:
         if not isinstance(value, str):
             raise ValueError("invalid_text_value")
-        if name in {"version", "runtime_version"} and not re.fullmatch(r"[vV]?\d+(?:\.\d+){0,4}(?:[-+][a-zA-Z0-9.]{1,32})?", value):
-            raise ValueError("invalid_version")
+        if name in {"version", "runtime_version"}:
+            is_commit = name == "runtime_version" and RUNTIME_COMMIT.fullmatch(value)
+            if len(value) > 128 or not (RUNTIME_VERSION.fullmatch(value) or is_commit):
+                raise ValueError("invalid_version")
         tokens = {"kv_dtype": policy.DTYPES, "k_dtype": policy.DTYPES, "v_dtype": policy.DTYPES, "attention_backend": policy.ATTENTION, "residency": policy.RESIDENCIES}.get(name)
         if tokens is not None and value.lower() not in tokens:
             raise ValueError("unsupported_token")
@@ -741,6 +748,9 @@ class CommunityExport(ClosedModel):
             if not has_outcome and not has_failure:
                 raise ValueError("model lacks a measurement or structured outcome")
             for profile in model.profiles:
+                runtime = profile.effective_kv_cache.runtime_version if profile.effective_kv_cache else None
+                if runtime and runtime.value is not None and self.backend.id != "llama_cpp" and not RUNTIME_VERSION.fullmatch(runtime.value):
+                    raise ValueError("invalid_version")
                 if profile.context_capability is not None:
                     context = profile.context_capability
                     if any(value < 0 for value in context.requested_context_depths + context.completed_context_depths):

@@ -345,7 +345,7 @@ def _benchmark_timeout_seconds(
     aborted while the machine was still making progress.
     """
     profile_timeout = profile.get("timeout_seconds")
-    if profile_timeout not in (None, ""):
+    if profile_timeout is not None and profile_timeout != "":
         return float(profile_timeout)
 
     try:

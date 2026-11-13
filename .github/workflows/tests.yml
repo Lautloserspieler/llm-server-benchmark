@@ -199,10 +199,19 @@ jobs:
       - run: ruff check .
 
   typecheck:
-    name: mypy
+    name: ${{ matrix.name }}
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
+    # Keep the existing Linux check name for branch-protection rules.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: mypy
+          - os: windows-latest
+            name: mypy (Windows)
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

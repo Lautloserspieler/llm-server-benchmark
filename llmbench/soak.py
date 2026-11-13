@@ -80,16 +80,16 @@ def _partition_soak_profiles(
         raw_cpu = soak_cfg.get("cpu_threads")
         raw_gpu = soak_cfg.get("gpu_threads")
 
-        if raw_cpu not in (None, ""):
+        if raw_cpu is not None and raw_cpu != "":
             cpu_threads = int(raw_cpu)
-        elif raw_gpu not in (None, ""):
+        elif raw_gpu is not None and raw_gpu != "":
             cpu_threads = total - int(raw_gpu)
         else:
             cpu_threads = round(total * fraction)
 
         cpu_threads = max(1, min(total - 1, cpu_threads))
 
-        gpu_threads = int(raw_gpu) if raw_gpu not in (None, "") else total - cpu_threads
+        gpu_threads = int(raw_gpu) if raw_gpu is not None and raw_gpu != "" else total - cpu_threads
         gpu_threads = max(1, min(total - cpu_threads, gpu_threads))
 
     cpu_runtime["threads"] = cpu_threads
@@ -295,8 +295,12 @@ def run_soak_test(
     cpu_timeout = _optional_float(soak_cfg.get("cpu_request_timeout_seconds"), default_timeout)
     gpu_timeout = _optional_float(soak_cfg.get("gpu_request_timeout_seconds"), default_timeout)
     gpu_concurrency_raw = soak_cfg.get("gpu_concurrency")
-    gpu_concurrency = int(
-        soak_cfg.get("concurrency", 2) if gpu_concurrency_raw in (None, "") else gpu_concurrency_raw
+    # Explicit None checks also narrow the optional value for type checkers;
+    # absent/empty overrides retain the shared-concurrency fallback.
+    gpu_concurrency = (
+        int(soak_cfg.get("concurrency", 2))
+        if gpu_concurrency_raw is None or gpu_concurrency_raw == ""
+        else int(gpu_concurrency_raw)
     )
     cpu_load_cfg = {
         **common_load_cfg,

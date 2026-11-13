@@ -108,7 +108,8 @@ jobs:
   cli:
     name: cli
     needs: changes
-    runs-on: ubuntu-latest
+    # Trusted jobs use the local Fedora runners; PRs stay on GitHub-hosted runners.
+    runs-on: ${{ fromJSON((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && '["self-hosted","linux","x64"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     steps:
       - name: No CLI-impacting changes
@@ -119,6 +120,18 @@ jobs:
         with:
           persist-credentials: false
         if: needs.changes.outputs.python == 'true' || needs.changes.outputs.platform == 'true'
+
+      - name: Configure shared Fedora pip download cache
+        if: runner.environment == 'self-hosted' && (needs.changes.outputs.python == 'true' || needs.changes.outputs.platform == 'true')
+        shell: bash
+        run: |
+          shared_cache=/home/erik/Schreibtisch/Github-OpenWeb/shared-cache/pip
+          if [[ -d "$shared_cache" && -w "$shared_cache" ]]; then
+            echo "PIP_CACHE_DIR=$shared_cache" >> "$GITHUB_ENV"
+            echo "Using shared pip cache: $shared_cache"
+          else
+            echo "::notice::Shared cache unavailable; using pip's normal user cache."
+          fi
 
       - name: Set up Python 3.12
         if: needs.changes.outputs.python == 'true' || needs.changes.outputs.platform == 'true'

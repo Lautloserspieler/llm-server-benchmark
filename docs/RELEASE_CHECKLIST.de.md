@@ -94,6 +94,19 @@ Vor einem Release oder einer öffentlichen Demo:
 - [ ] Wenn mehrere Personen substanziell gemeinsam gearbeitet haben, werden alle Contributors genannt
 - [ ] Deutsche und englische Markdown-Dokumentation ist synchron
 - [ ] Nur v1.7.0: Die Nachweisliste in [`docs/validation/v1.7.0-qualification.md`](validation/v1.7.0-qualification.md) ist mit echten Messprotokollen ausgefüllt (kein Abhaken ohne Hardware-Nachweis)
+- [ ] v1.7.0 umfasst llama.cpp, vLLM und Ollama; veraltete TGI-Validierungs-/Abhaengigkeitseintraege in #116/#120/#124 sind mit #167 abgeglichen
+- [ ] Geforderte Ollama-Versions-/Kontext-/CPU-/GPU-Kombinationen und fuenf unabhaengige Referenzwiederholungen haben pruefbare Ergebnisse
+- [ ] Zum 8-Stunden-Soak sind Ergebnis-, Telemetrie- und Cleanup-Artefakte beigefuegt; eine Maintainer-Angabe bleibt von pruefbaren Nachweisen unterscheidbar
+- [ ] Nicht verfuegbare AMD-/Intel-Hardware ist ausdruecklich nicht getestet; implementierte Provider und gruene CI werden nicht als Hardwarequalifikation beworben
+
+TGI-Entfernung und SGLang-Beta sind fuer 1.8.0 geplant, vollstaendige
+SGLang-Integration und Stabilitaetsvalidierung fuer 1.9.0. SGLang ist noch nicht
+auswaehlbar und gehoert nicht zur 1.7.0-Abnahmematrix. Der aktuelle Smoke-Standard
+enthaelt weiterhin TGI; aktive Backends deshalb gezielt auswaehlen:
+
+```bash
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --cycles 10 --device gpu --output results/qualification/cycles
+```
 
 ## Vorschlag für einen Projekt-Post
 
@@ -112,6 +125,8 @@ llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml --hardware gpu --duration short
 pytest -q
 ruff check .
+mypy llmbench
+python -m pip check
 ```
 
 Für eine NVIDIA-Linux-Maschine den installierten llama.cpp-Backend-Typ prüfen:
@@ -120,7 +135,8 @@ Für eine NVIDIA-Linux-Maschine den installierten llama.cpp-Backend-Typ prüfen:
 cat tools/llama.cpp/.llama-build.json
 ```
 
-Erwartung für den nativen NVIDIA-Pfad:
+Beispiel fuer eine aus Quellcode gebaute CUDA-Installation (heruntergeladene
+CUDA-Builds koennen `source_build: false` enthalten):
 
 ```json
 {
@@ -128,5 +144,9 @@ Erwartung für den nativen NVIDIA-Pfad:
   "source_build": true
 }
 ```
+
+Zusaetzlich die von llama.cpp und dem Benchmark-Ergebnis tatsaechlich gemeldete
+GPU-API sichern. Ein GPU-/Vulkan-Lauf ist kein CUDA-Nachweis; Installationsmetadaten
+allein belegen nicht, welche Runtime den Workload ausgefuehrt hat.
 
 Die exakte Datei enthält zusätzliche Felder wie den festgeschriebenen llama.cpp-Tag und Build-Pfade.

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Reconciled release and support status
+
+- README, roadmap, architecture documentation and wiki identify Ollama and Intel telemetry as implemented, TGI as discontinued/retained, and SGLang as the planned replacement without an available adapter. Historical phases are labeled accordingly; the CI matrix reflects Python 3.10/3.12/3.14 and mypy on Linux/Windows with Python 3.12.
+- The bilingual 1.7.0 qualification protocol separates current CI/test evidence from historical hardware measurements, reconciles open issues with #167, and identifies remaining Ollama, CUDA/Windows, repeat-run and soak evidence. Release checklists and smoke examples explicitly select the active backends; runtime code and GitHub issue state are unchanged.
+
 ### Portable type checking and isolated development environment
 
 - CI additionally runs mypy on Windows while preserving the existing Linux check name. The dev extra now includes PyYAML type definitions.

@@ -83,8 +83,12 @@ It should also answer:
 | --- | --- | --- | --- |
 | **llama.cpp** | ✅ Supported | Native | Reference backend using `llama-bench` and `llama-server` |
 | **vLLM** | ✅ Supported | Docker | OpenAI-compatible serving backend |
-| **TGI** | 🧪 Beta | Docker | Implemented; extensive real-world testing pending |
+| **TGI** | ⛔ Being discontinued | Docker | Adapter still present; not validated; removal planned for 1.8.0 ([#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167)) |
 | **Ollama** | ✅ Supported | Docker | Native API; CPU and GPU |
+| **SGLang** | 📋 Planned | Docker (planned) | Replacement for TGI; beta planned for 1.8.0; no adapter available yet |
+
+These statuses describe implementation and maintenance scope. Hardware qualification
+for v1.7.0 remains incomplete; see the [evidence and open acceptance items](docs/validation/v1.7.0-qualification.md).
 
 ### GPU telemetry
 
@@ -92,7 +96,7 @@ It should also answer:
 | --- | --- | --- |
 | **NVIDIA** | ✅ Supported | NVML / `nvidia-ml-py`, `nvidia-smi` |
 | **AMD** | ✅ Supported | `rocm-smi --json` |
-| **Intel GPU** | 📋 Planned | `xpu-smi` |
+| **Intel GPU** | ✅ Implemented; hardware qualification pending | `xpu-smi`; no real Intel trace in the qualification record |
 | **Apple Silicon** | ✅ Benchmark execution | Platform llama.cpp build; telemetry is more limited |
 
 See [ROADMAP.en.md](ROADMAP.en.md) for the current development plan.
@@ -216,6 +220,15 @@ Apple Silicon acceleration is provided by the platform llama.cpp build.
 
 Run `SMOKE_ALL_BACKENDS.bat` on Windows or `bash SMOKE_ALL_BACKENDS.sh` on Linux. The launcher creates `.venv` and installs the project's Python dependencies if needed. The test checks llama.cpp, Ollama, vLLM and TGI sequentially. Terminal progress bars show completed backends and test phases; an elapsed timer keeps updating during model preparation and server startup. Redirected output and `--no-progress` use plain phase messages.
 
+The current default still includes the discontinued TGI adapter. Its presence is
+not a support or qualification claim. For the active v1.7.0 backends, select:
+
+```bash
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm
+```
+
+SGLang cannot be selected yet; its adapter is planned in [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167).
+
 Each backend goes through prerequisites, automatic installation/preparation, model preparation, server startup, health checking, short streaming text generation and cleanup. By default, llama.cpp and Ollama use an available GPU and fall back to CPU when no suitable GPU is detected. vLLM and TGI require NVIDIA GPU support in Docker. `--device gpu` requires GPU execution; `--device cpu` selects CPU for llama.cpp/Ollama and skips vLLM/TGI. The results table shows the selected device. This is a functional check, not a comparable performance benchmark. It uses fixed small context/batch settings and does not inherit chat formatting or additional server arguments from benchmark settings. `benchmark.yaml` stays unchanged.
 
 For llama.cpp, Gemma 3 1B Q4_K_M (about 0.8 GB) is downloaded to `models/` when needed. Ollama uses `gemma3:1b`; vLLM/TGI use `Qwen/Qwen2.5-0.5B-Instruct`. Models remain cached. Missing backends are prepared automatically: llama.cpp uses the existing installer, and configured Docker images are pulled when needed. Setup messages and download progress appear during the setup phase. Network access and, where applicable, build tools are required. Installation failures are reported as `failed`, and testing continues with the other backends. `--no-install` disables preparation and skips missing installations. Missing Docker or GPU support is still reported as `skipped`. Existing benchmark containers remain untouched; smoke containers use unique names and are removed after testing. The local HTTP address in `endpoint.base_url` defaults to port 8080. If it is occupied, a free port is chosen automatically and recorded in the report. An explicit `--base-url` requires the specified port.
@@ -228,7 +241,7 @@ bash SMOKE_ALL_BACKENDS.sh --backends ollama vllm --base-url http://127.0.0.1:18
 python scripts/smoke_all_backends.py --backends llama_cpp --gguf /path/model.gguf --startup-timeout 900 --request-timeout 180
 
 # CI: flag skipped backends as well
-python scripts/smoke_all_backends.py --no-install --strict --no-progress --output results/my-smoke
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --no-install --strict --no-progress --output results/my-smoke
 ```
 
 `--startup-timeout` controls server readiness and, for Ollama, each model pull request (default: 600 seconds). It is not an overall deadline for downloads or the entire run. `--request-timeout` limits the entire text generation request (default: 120 seconds). For vLLM, the smoke test sets `--gpu-memory-utilization 0.5`, `--enforce-eager` and at most one concurrent sequence. The small test therefore reserves 50% of total GPU memory by default. Override this with, for example, `--gpu-memory-utilization 0.35`; the fraction refers to total VRAM, not free VRAM. Even this reduced allocation must be free at startup. Readiness checks also monitor container state: an exited container is immediately reported with its exit code and log excerpt. Startup prints the unique container name and the matching `docker logs -f` command.
@@ -789,15 +802,9 @@ Build the Python package:
 python -m build
 ```
 
-The GitHub Actions CI currently validates the project on:
-
-- Ubuntu
-- Windows
-- Python 3.10
-- Python 3.11
-- Python 3.12
-- Python 3.13
-- Python 3.14
+Runtime tests run on Ubuntu and Windows with Python **3.10, 3.12, and 3.14**.
+mypy runs on both systems with Python 3.12. The coverage gates require at least
+75% overall coverage and 85% branch coverage in the selected critical modules.
 
 Additional CI checks include CodeQL, dependency review, `pip-audit`, packaging tests, coverage, Docker smoke tests and container vulnerability scanning.
 

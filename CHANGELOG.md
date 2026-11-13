@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### Portable Typpruefung und isolierte Entwicklungsumgebung
+
+- mypy wird in der CI zusaetzlich unter Windows geprueft; der bestehende Linux-Checkname bleibt erhalten. Das Dev-Extra enthaelt nun PyYAML-Typdefinitionen.
+- Linux-Affinitaets- und Windows-Admin-APIs werden dynamisch aufgeloest. Explizite Pruefungen optionaler Timeout-, Thread- und Concurrency-Werte erhalten die bisherigen Fallbacks ohne Typausnahmen.
+- CONTRIBUTING dokumentiert direkte Aufrufe mit dem isolierten Windows-Interpreter sowie einen Abhaengigkeitscheck. Regressionstests pruefen fehlende Plattform-APIs und leere numerische Overrides.
+
 ### Lokale Stabilisierung: Community-Export, Doctor und Update-Watcher
 
 - Community-Export (#146): llama.cpp-Build-Commits und begrenzte Runtime-Entwicklungsversionen bleiben mit ihrer Provenienz erhalten. Fingerabdruecke werden aus denselben normalisierten Einstellungstypen erzeugt und geprueft; Integer-Werte wie `delay_seconds: 0` blockieren den Export nicht mehr. Bereits gueltige Exporte bleiben kompatibel; zuvor ungueltige muessen aus der Summary neu erzeugt werden.

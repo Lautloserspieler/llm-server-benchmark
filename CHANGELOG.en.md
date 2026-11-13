@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### Portable type checking and isolated development environment
+
+- CI additionally runs mypy on Windows while preserving the existing Linux check name. The dev extra now includes PyYAML type definitions.
+- Linux affinity and Windows administrator APIs are resolved dynamically. Explicit checks of optional timeout, thread, and concurrency values retain existing fallbacks without type suppressions.
+- CONTRIBUTING documents direct calls using the isolated Windows interpreter and a dependency check. Regression tests cover missing platform APIs and empty numeric overrides.
+
 ### Local stabilization: community export, doctor and update watcher
 
 - Community export (#146): llama.cpp build commits and bounded runtime development versions retain their provenance. Fingerprints are produced and checked using the same normalized setting types; integer input such as `delay_seconds: 0` no longer blocks export. Existing valid exports remain compatible; previously invalid exports must be regenerated from the summary.

@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
+from llmbench import bootstrap
 from llmbench.bootstrap import (
     bootstrap_config,
     discover_llama_binaries,
@@ -18,6 +20,26 @@ def _make_project(root: Path) -> None:
     (root / "tools" / "llama.cpp" / "llama-bench.exe").write_bytes(b"")
     (root / "tools" / "llama.cpp" / "llama-server.exe").write_bytes(b"")
     (root / "benchmark.example.yaml").write_text("models: []\n", encoding="utf-8")
+
+
+def test_available_cpu_threads_respects_affinity(monkeypatch):
+    monkeypatch.setattr(bootstrap.os, "sched_getaffinity", lambda _pid: {2, 3}, raising=False)
+    monkeypatch.setattr(bootstrap.os, "cpu_count", lambda: 32)
+    assert bootstrap._available_cpu_threads() == 2
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "denied"])
+@pytest.mark.parametrize("cpu_count,expected", [(16, 16), (None, 1)])
+def test_available_cpu_threads_falls_back_without_usable_affinity(monkeypatch, unavailable, cpu_count, expected):
+    def denied(_pid):
+        raise OSError("affinity unavailable")
+
+    if unavailable == "missing":
+        monkeypatch.delattr(bootstrap.os, "sched_getaffinity", raising=False)
+    else:
+        monkeypatch.setattr(bootstrap.os, "sched_getaffinity", denied, raising=False)
+    monkeypatch.setattr(bootstrap.os, "cpu_count", lambda: cpu_count)
+    assert bootstrap._available_cpu_threads() == expected
 
 
 def test_bootstrap_discovers_gguf_and_preserves_existing(tmp_path: Path):

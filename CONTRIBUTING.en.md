@@ -61,6 +61,23 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
+On Windows, project tools can also be invoked directly without activation or
+changes to the PowerShell execution policy:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy llmbench --cache-dir .venv/.mypy_cache
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+The dev extra includes PyYAML type definitions. Use the same interpreter from
+`.venv` for installation and checks so globally installed applications do not
+affect project dependencies. CI checks mypy on Linux and Windows with Python
+3.12; runtime tests continue to cover Python 3.10, 3.12, and 3.14 on both systems.
+
 Run tests and the linter before every commit/PR:
 
 ```bash

@@ -74,6 +74,13 @@ def test_benchmark_timeout_uses_cpu_and_gpu_specific_limits():
     assert _benchmark_timeout_seconds(cfg, {"gpu_layers": 0, "timeout_seconds": 9}) == 9
 
 
+@pytest.mark.parametrize("override", [None, ""])
+@pytest.mark.parametrize("gpu_layers,expected", [(0, 120), (-1, 15)])
+def test_empty_profile_timeout_keeps_device_specific_limit(override, gpu_layers, expected):
+    cfg = dict(BENCH_CFG, cpu_timeout_seconds=120, gpu_timeout_seconds=15)
+    assert _benchmark_timeout_seconds(cfg, {"gpu_layers": gpu_layers, "timeout_seconds": override}) == expected
+
+
 
 def test_hanging_bench_is_aborted_by_timeout(tmp_path: Path, monkeypatch):
     """Ohne Timeout haengt ein Lauf bei zu grosser Kontexttiefe unbegrenzt."""

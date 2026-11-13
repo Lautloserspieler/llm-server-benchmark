@@ -68,6 +68,24 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
+Unter Windows lassen sich die Projektwerkzeuge auch ohne Aktivierung und ohne
+Aenderung der PowerShell-Ausfuehrungsrichtlinie direkt aufrufen:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy llmbench --cache-dir .venv/.mypy_cache
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Das Dev-Extra enthaelt die PyYAML-Typdefinitionen. Verwende fuer Installation
+und Pruefungen denselben Interpreter aus `.venv`, damit global installierte
+Anwendungen die Projektabhaengigkeiten nicht beeinflussen. Die CI prueft mypy
+unter Linux und Windows mit Python 3.12; die Laufzeittests decken weiterhin
+Python 3.10, 3.12 und 3.14 auf beiden Systemen ab.
+
 Tests und Linter vor jedem Commit/PR:
 
 ```bash

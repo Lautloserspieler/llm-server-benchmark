@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -92,3 +93,60 @@ def test_bump_updates_only_reference_files(tmp_path: Path):
     watch.bump(tmp_path, "0.40.9", "0.40.13")
     assert all("ollama/ollama:0.40.13" in (tmp_path / name).read_text() for name in watch.FILES)
     assert unrelated.read_text() == "ollama/ollama:0.40.9"
+
+
+def test_bump_allows_shared_constants_and_preserves_other_version_fixtures(tmp_path: Path):
+    for name in watch.REQUIRED_FILES:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('DEFAULT_OLLAMA_IMAGE = "ollama/ollama:0.40.9"\n', encoding="utf-8")
+    test_file = tmp_path / "tests/test_config.py"
+    test_file.parent.mkdir()
+    content = 'assert default == DEFAULT_OLLAMA_IMAGE\nold = "ollama/ollama:0.3.0"\nother = "ollama/ollama:0.40.90"\n'
+    test_file.write_text(content, encoding="utf-8")
+    watch.bump(tmp_path, "0.40.9", "0.40.13")
+    assert test_file.read_text(encoding="utf-8") == content
+    assert watch.current_version(tmp_path) == "0.40.13"
+
+
+def test_bump_preflights_required_references_without_partial_changes(tmp_path: Path):
+    originals = {}
+    for name in watch.FILES:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = "shared constant\n" if name == watch.REQUIRED_FILES[1] else "ollama/ollama:0.40.9\n"
+        path.write_text(content, encoding="utf-8")
+        originals[path] = path.read_bytes()
+    with pytest.raises(ValueError, match="Expected pinned reference absent"):
+        watch.bump(tmp_path, "0.40.9", "0.40.13")
+    assert all(path.read_bytes() == content for path, content in originals.items())
+
+
+@pytest.mark.parametrize("new", ["0.40.8", "0.40.9", "latest", "0.40.10\n"])
+def test_bump_refuses_invalid_or_non_increasing_versions(tmp_path, new):
+    with pytest.raises(ValueError, match="increasing concrete"):
+        watch.bump(tmp_path, "0.40.9", new)
+
+
+def test_watcher_main_prepares_proposal_from_current_repository(tmp_path, monkeypatch):
+    # Use the actual reference files: synthetic all-files-have-a-tag fixtures
+    # missed the drift to shared constants that broke the scheduled workflow.
+    root = tmp_path / "checkout"
+    for name in watch.FILES:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((watch.ROOT / name).read_bytes())
+    baseline = watch.current_version(root)
+    major, minor, patch = watch.version_key(baseline)
+    candidate = f"{major}.{minor}.{patch + 1}"
+    releases = tmp_path / "releases.json"
+    releases.write_text(json.dumps([
+        release(f"v{baseline}", ""), release(f"v{candidate}", "- Fix context truncation"),
+    ]), encoding="utf-8")
+    report = tmp_path / "review.json"
+    monkeypatch.setattr("sys.argv", [str(SCRIPT), "--root", str(root), "--releases-json", str(releases), "--report", str(report)])
+    watch.main()
+    assert watch.current_version(root) == candidate
+    assert json.loads(report.read_text(encoding="utf-8"))["update"] is True
+    assert candidate in report.with_suffix(".md").read_text(encoding="utf-8")
+    assert (root / "tests/test_config.py").read_bytes() == (watch.ROOT / "tests/test_config.py").read_bytes()

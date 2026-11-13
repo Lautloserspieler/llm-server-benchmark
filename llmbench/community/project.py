@@ -9,8 +9,9 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from pydantic import ValidationError
 
-from .schema import CommunityExport, SafeError, validate_export
+from .schema import CommunityExport, EndpointSettings, LoadSettings, SafeError, Settings, _safe_errors, validate_export
 from .identity_v1 import resolve_identity
 from . import policy
 from llmbench.result_schema import validate_summary, ResultSchemaError
@@ -416,7 +417,25 @@ def project(summary: Mapping[str, Any], *, nickname: str | None, excluded: set[s
 
 
 def json_bytes_for_configuration(document: Mapping[str, Any]) -> dict[str, Any]:
-    return {"backend": document["backend"]["id"], "benchmark": document["benchmark_configuration"]["values"], "models": [{"profiles": [profile["configured_settings"] for profile in model["profiles"]], "endpoint": _mapping(model.get("endpoint")).get("settings", {}), "stability": [_mapping(soak).get("load_settings", {}) for soak in model.get("stability", [])]} for model in document["models"]]}
+    def normalized(value: Any, model: type[Settings] | type[EndpointSettings]) -> dict[str, Any]:
+        # Hash the same typed representation that export validation will retain.
+        # In particular, integer input for a float setting must hash as a float.
+        try:
+            settings = model.model_validate(value)
+        except ValidationError as exc:
+            raise _safe_errors(exc) from exc
+        from .schema import serialize
+        return json.loads(serialize(settings.model_dump(mode="json")))
+
+    return {
+        "backend": document["backend"]["id"],
+        "benchmark": normalized(document["benchmark_configuration"]["values"], Settings),
+        "models": [{
+            "profiles": [normalized(profile["configured_settings"], Settings) for profile in model["profiles"]],
+            "endpoint": normalized(_mapping(model.get("endpoint")).get("settings", {}), EndpointSettings),
+            "stability": [normalized(_mapping(soak).get("load_settings", {}), LoadSettings) for soak in model.get("stability", [])],
+        } for model in document["models"]],
+    }
 
 
 def _finish_groups(document: dict[str, object], summary: Mapping[str, Any], excluded: set[str]) -> None:

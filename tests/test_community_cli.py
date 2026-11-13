@@ -38,6 +38,27 @@ def test_preview_is_saved_exact_bytes_and_no_preview_writes(tmp_path: Path, caps
     assert saved.read_bytes() == preview
 
 
+def test_complete_commit_identified_result_exports_previews_and_validates(tmp_path, capsys):
+    source = native_source()
+    source["models"][0]["profiles"][0]["kv_cache"]["runtime_version"]["value"] = "8642541b2"
+    source["config"]["benchmark"].update(delay_seconds=0, timeout_seconds=600)
+    path = write_source(tmp_path, source)
+    original = path.read_bytes()
+    flags = ["--no-nickname", "--non-interactive", "--settings-file", str(tmp_path / "settings.json")]
+    assert main(["community-export", str(path), "--preview", *flags]) == 0
+    preview = capsys.readouterr().out.encode()
+    data = json.loads(preview)
+    assert data["omitted_groups"] == []
+    assert data["models"][0]["profiles"][0]["effective_kv_cache"]["runtime_version"]["value"] == "8642541b2"
+    assert SECRET not in preview.decode()
+    output = tmp_path / "exports"
+    assert main(["community-export", str(path), "--out", str(output), *flags]) == 0
+    saved = output / "community-run-0001.json"
+    assert saved.read_bytes() == preview
+    assert main(["community-validate", str(saved)]) == 0
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize("options", [["--preview", "--out", "exports"], ["--nickname", "u", "--no-nickname"], ["--exclude", "future"], ["--model-label", "0=x"], ["--model-label", "2=x"], ["--model-identity", "2=fingerprint"], ["--model-label", "1=x", "--model-identity", "1=fingerprint"], ["--model-label", "1=x", "--model-label", "1=y"], ["--model-label", "1=/secret/path"], ["--model-identity", "1=rehash"], ["--nickname", "\x00"]])
 def test_invalid_invocation_writes_nothing(tmp_path: Path, options: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
     source = write_source(tmp_path)

@@ -83,8 +83,12 @@ Es sollte außerdem beantworten:
 | --- | --- | --- | --- |
 | **llama.cpp** | ✅ Unterstützt | Nativ | Referenz-Backend mit `llama-bench` und `llama-server` |
 | **vLLM** | ✅ Unterstützt | Docker | OpenAI-kompatibles Serving-Backend |
-| **TGI** | 🧪 Beta | Docker | Implementiert; ausführliche Praxistests stehen noch aus |
+| **TGI** | ⛔ Wird eingestellt | Docker | Adapter noch vorhanden; nicht validiert; Entfernung fuer 1.8.0 geplant ([#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167)) |
 | **Ollama** | ✅ Unterstützt | Docker | Native API; CPU und GPU |
+| **SGLang** | 📋 Geplant | Docker (geplant) | Ersatz fuer TGI; Beta fuer 1.8.0 geplant; noch kein Adapter verfuegbar |
+
+Diese Angaben beschreiben Implementierung und Wartungsumfang. Die Hardwarequalifikation
+fuer v1.7.0 ist noch offen; siehe [Nachweise und offene Abnahmen](docs/validation/v1.7.0-qualification.md).
 
 ### GPU-Telemetrie
 
@@ -92,7 +96,7 @@ Es sollte außerdem beantworten:
 | --- | --- | --- |
 | **NVIDIA** | ✅ Unterstützt | NVML / `nvidia-ml-py`, `nvidia-smi` |
 | **AMD** | ✅ Unterstützt | `rocm-smi --json` |
-| **Intel GPU** | 📋 Geplant | `xpu-smi` |
+| **Intel GPU** | ✅ Implementiert; Hardwarequalifikation offen | `xpu-smi`; kein echter Intel-Trace im Qualifikationsprotokoll |
 | **Apple Silicon** | ✅ Benchmark-Ausführung | Plattform-llama.cpp-Build; Telemetrie eingeschränkter |
 
 Siehe [ROADMAP.md](ROADMAP.md) für den aktuellen Entwicklungsplan.
@@ -216,6 +220,16 @@ Apple-Silicon-Beschleunigung wird durch den plattformeigenen llama.cpp-Build ber
 
 `SMOKE_ALL_BACKENDS.bat` unter Windows oder `bash SMOKE_ALL_BACKENDS.sh` unter Linux starten. Der Starter richtet bei Bedarf eine `.venv` mit den Python-Projektabhaengigkeiten ein. Der Test prueft llama.cpp, Ollama, vLLM und TGI nacheinander. Im Terminal zeigen Fortschrittsbalken die abgeschlossenen Backends und Testphasen; ein Timer laeuft auch waehrend Modellvorbereitung und Serverstart weiter. Bei umgeleiteter Ausgabe oder `--no-progress` erscheinen einfache Phasenmeldungen.
 
+Der aktuelle Standard enthaelt weiterhin den eingestellten TGI-Adapter. Seine
+Verfuegbarkeit ist kein Support- oder Qualifikationsnachweis. Fuer die aktiven
+v1.7.0-Backends gezielt auswaehlen:
+
+```bash
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm
+```
+
+SGLang ist noch nicht auswaehlbar; der Adapter ist in [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167) geplant.
+
 Jedes Backend durchlaeuft Voraussetzungen, automatische Installation/Vorbereitung, Modellvorbereitung, Serverstart, Health-Check, kurze gestreamte Textgenerierung und Aufraeumen. Standardmaessig wird fuer llama.cpp und Ollama eine verfuegbare GPU verwendet; nur ohne passende GPU wird die CPU gewaehlt. vLLM und TGI brauchen NVIDIA-GPU-Unterstuetzung in Docker. `--device gpu` verlangt GPU-Ausfuehrung; `--device cpu` waehlt CPU fuer llama.cpp/Ollama und ueberspringt vLLM/TGI. Die Ergebnistabelle zeigt das gewaehlte Geraet. Das ist ein Funktionscheck und liefert keine vergleichbaren Performancewerte. Der Test verwendet feste kleine Kontext-/Batch-Einstellungen; Chatformat und zusaetzliche Serverargumente aus der Benchmark-Konfiguration werden nicht uebernommen. `benchmark.yaml` bleibt unveraendert.
 
 Fuer llama.cpp wird Gemma 3 1B Q4_K_M (ca. 0.8 GB) bei Bedarf nach `models/` geladen. Ollama nutzt `gemma3:1b`, vLLM/TGI nutzen `Qwen/Qwen2.5-0.5B-Instruct`. Modelle bleiben im jeweiligen Cache. Fehlende Backends werden automatisch vorbereitet: llama.cpp wird mit dem vorhandenen Installer installiert, die konfigurierten Docker-Images werden bei Bedarf geladen. Installationsmeldungen und Downloadfortschritt erscheinen waehrend der Setup-Phase. Dafuer sind Netzwerkzugriff und gegebenenfalls Build-Werkzeuge erforderlich. Ein Installationsfehler wird als `failed` gemeldet, die anderen Backends werden weiter getestet. `--no-install` deaktiviert diese Vorbereitung und ueberspringt fehlende Installationen. Fehlendes Docker oder fehlende GPU-Unterstuetzung bleiben als `skipped` sichtbar. Vorhandene Benchmark-Container bleiben unberuehrt; Smoke-Container erhalten eigene eindeutige Namen und werden nach dem Test entfernt. Die lokale HTTP-Adresse aus `endpoint.base_url` verwendet standardmaessig Port 8080. Ist dieser belegt, wird automatisch ein freier Port gewaehlt und im Bericht gespeichert. Nur ein ausdrueckliches `--base-url` verlangt genau den angegebenen Port.
@@ -228,7 +242,7 @@ bash SMOKE_ALL_BACKENDS.sh --backends ollama vllm --base-url http://127.0.0.1:18
 python scripts/smoke_all_backends.py --backends llama_cpp --gguf /pfad/modell.gguf --startup-timeout 900 --request-timeout 180
 
 # Geeignet fuer CI: auch uebersprungene Backends beanstanden
-python scripts/smoke_all_backends.py --no-install --strict --no-progress --output results/mein-smoke
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --no-install --strict --no-progress --output results/mein-smoke
 ```
 
 `--startup-timeout` gilt fuer die Serverbereitschaft und bei Ollama auch pro Modell-Pull-Anfrage (Standard: 600 Sekunden). Es ist kein Gesamtlimit fuer Downloads und den gesamten Lauf. `--request-timeout` begrenzt die gesamte Textgenerierung (Standard: 120 Sekunden). Fuer vLLM setzt der Smoke-Test `--gpu-memory-utilization 0.5`, `--enforce-eager` und maximal eine gleichzeitige Sequenz. Damit reserviert der kleine Test standardmaessig 50 % des gesamten GPU-Speichers. Bei Bedarf laesst sich der Anteil mit `--gpu-memory-utilization 0.35` anpassen; der Anteil bezieht sich auf den gesamten, nicht den freien VRAM. Auch dieser reduzierte Anteil muss beim Start frei sein. Waehrend der Bereitschaftspruefung wird der Containerstatus kontrolliert: Ein beendeter Container wird mit Exitcode und Logauszug sofort als Fehler gemeldet. Der Start zeigt den eindeutigen Containernamen und den passenden `docker logs -f`-Befehl an.
@@ -785,15 +799,10 @@ Python-Paket bauen:
 python -m build
 ```
 
-GitHub Actions validiert das Projekt aktuell unter:
-
-- Ubuntu
-- Windows
-- Python 3.10
-- Python 3.11
-- Python 3.12
-- Python 3.13
-- Python 3.14
+Die Laufzeittests laufen unter Ubuntu und Windows mit Python **3.10, 3.12 und 3.14**.
+mypy laeuft auf beiden Systemen mit Python 3.12. Die Coverage-Gates verlangen
+mindestens 75 % Gesamtabdeckung und 85 % Branch-Coverage in den ausgewaehlten
+kritischen Modulen.
 
 Weitere CI-Prüfungen umfassen CodeQL, Dependency Review, `pip-audit`, Packaging-Tests, Coverage, Docker-Smoke-Tests und Container-Schwachstellen-Scanning.
 

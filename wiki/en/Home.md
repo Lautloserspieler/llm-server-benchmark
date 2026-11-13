@@ -34,14 +34,18 @@ llmbench records more than tokens per second. It stores the surrounding test con
 - Soak, OOM, multi-tenant, and quantization tests
 - CPU, RAM, GPU, VRAM, temperature, and power telemetry
 
-## Supported backends
+## Backend status
 
 | Backend | Status | Execution |
 | --- | --- | --- |
 | llama.cpp | supported | native |
 | vLLM | supported | Docker |
-| TGI | planned | Docker |
-| Ollama | planned | Docker |
+| Ollama | supported (1.6.5) | Docker |
+| TGI | being discontinued; retained adapter, not validated | Docker |
+| SGLang | planned replacement for TGI; no adapter yet | Docker (planned) |
+
+See the [qualification record](https://github.com/Lautloserspieler/llm-server-benchmark/blob/main/docs/validation/v1.7.0-qualification.md)
+for actual hardware evidence and remaining release acceptance items.
 
 ## Core principle
 

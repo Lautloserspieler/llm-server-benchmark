@@ -222,7 +222,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: mypy llmbench
+      - run: mypy llmbench scripts/qualification_preflight.py
 
   test:
     name: Pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})

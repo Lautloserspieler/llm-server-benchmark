@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOC_PAIRS = (
+    ("docs/maintenance/release-automation.md", "docs/maintenance/release-automation.en.md"),
     ("README.md", "README.de.md"),
     ("CHANGELOG.md", "CHANGELOG.en.md"),
     ("CONTRIBUTING.md", "CONTRIBUTING.en.md"),

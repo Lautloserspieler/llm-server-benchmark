@@ -1,6 +1,9 @@
 version: 2
 updates:
   - package-ecosystem: pip
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
     directory: /
     schedule:
       interval: weekly
@@ -12,6 +15,9 @@ updates:
     open-pull-requests-limit: 10
 
   - package-ecosystem: github-actions
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
     directory: /
     schedule:
       interval: weekly

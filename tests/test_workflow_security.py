@@ -65,7 +65,9 @@ def test_release_watch_no_longer_watches_tgi():
 
     for job_name in ("review", "propose"):
         matrix = workflow["jobs"][job_name]["strategy"]["matrix"]["backend"]
-        assert matrix == ["llama_cpp", "vllm"]
+        assert '["llama_cpp","vllm"]' in matrix
+        assert "inputs.backend" in matrix
+        assert "tgi" not in matrix
     assert "tgi)" not in text
 
 
@@ -146,4 +148,4 @@ def test_codeql_actions_use_pinned_v4():
                 assert action.endswith("@" + expected), (
                     f"{path.name}: CodeQL Action must use pinned v4.39.2, got {action}"
                 )
-    assert occurrences == 5
+    assert occurrences == 6

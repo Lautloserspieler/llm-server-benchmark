@@ -52,7 +52,7 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$REF_TYPE" == "tag" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$EVENT_NAME" == "schedule" || "$REF_TYPE" == "tag" ]]; then
             echo "python=true" >> "$GITHUB_OUTPUT"
             echo "dependencies=true" >> "$GITHUB_OUTPUT"
             echo "actions=true" >> "$GITHUB_OUTPUT"
@@ -154,6 +154,18 @@ jobs:
       - uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           category: /language:python
+          output: sarif-python
+      - name: Summarize CodeQL results
+        if: ${{ !cancelled() }}
+        run: python3 scripts/sarif_summary.py sarif-python --title "CodeQL (python)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve CodeQL results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codeql-python
+          path: sarif-python
+          retention-days: 14
+          if-no-files-found: warn
 
   codeql-actions:
     name: CodeQL (actions)
@@ -177,3 +189,15 @@ jobs:
       - uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           category: /language:actions
+          output: sarif-actions
+      - name: Summarize CodeQL results
+        if: ${{ !cancelled() }}
+        run: python3 scripts/sarif_summary.py sarif-actions --title "CodeQL (actions)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve CodeQL results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codeql-actions
+          path: sarif-actions
+          retention-days: 14
+          if-no-files-found: warn

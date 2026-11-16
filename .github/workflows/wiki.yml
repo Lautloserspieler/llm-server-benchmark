@@ -30,7 +30,7 @@ jobs:
       - name: Publish Markdown pages to GitHub Wiki
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 

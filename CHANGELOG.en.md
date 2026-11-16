@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+### CI maintenance and manual releases
+
+- Dependabot groups minor/patch updates. Watchers support backend selection and renewed proposals after closed PRs. Action pins and token spelling are consistent.
+- Coverage, CodeQL, Trivy and Scorecard reports are retained as artifacts; published SBOMs are exported by image digest. Scheduled Security runs check every category.
+- New manual release workflow with dry-run, synchronized version sources, bilingual changelogs, release PRs and explicit Docker/Test dispatches after tagging. See `docs/maintenance/release-automation.en.md`.
+
 ### Qualification preflight for 1.7.0
 
 - New read-only `scripts/qualification_preflight.py` for llama.cpp, Ollama and vLLM: tool/GGUF availability, observed CUDA devices, Docker engine, project installation state, and exact local image digests. No backends are installed, models loaded, or benchmarks started.

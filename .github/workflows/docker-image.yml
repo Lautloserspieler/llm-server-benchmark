@@ -57,6 +57,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -110,15 +111,31 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-          format: table
+          format: sarif
+          output: trivy-results.sarif
           vuln-type: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
 
+      - name: Preserve Trivy results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Upload Trivy to code scanning
+        if: ${{ !cancelled() && hashFiles('trivy-results.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
   release-quality:
     name: Release quality gate
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref_type == 'tag')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -143,7 +160,7 @@ jobs:
 
   publish:
     name: Publish image to GHCR
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref_type == 'tag')
     needs: [validate, release-quality]
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -179,6 +196,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
       - name: Build and publish CUDA image
+        id: publish
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -194,3 +212,16 @@ jobs:
           cache-to: type=gha,mode=max,scope=llmbench-cuda
           provenance: mode=max
           sbom: true
+      - name: Extract published SBOM by immutable digest
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE_NAME@$DIGEST" --format '{{ json .SBOM }}' > sbom.json
+          jq -e 'type == "object" and length > 0' sbom.json >/dev/null
+      - name: Preserve published SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 90
+          if-no-files-found: error

@@ -11,6 +11,7 @@ from rich import box
 from rich.markup import escape
 from rich.table import Table
 
+from . import model_catalog
 from .bootstrap import discover_models
 from .i18n import _
 from .download import find_downloaded_model, get_catalog_models
@@ -23,17 +24,14 @@ from .utils import console, write_text_atomic
 # hunderte lokale Modelle, darunter Embedding-/Decision-/Vision-Spezialmodelle.
 # estimated_gib entspricht der ungefaehren Downloadgroesse des jeweiligen
 # Standard-Tags auf ollama.com (Stand Oktober 2026).
-OLLAMA_MODEL_CATALOG: tuple[dict[str, Any], ...] = (
-    {"name": "Gemma 3 1B", "ref": "gemma3:1b", "estimated_gib": 0.8, "tier": "SMALL"},
-    {"name": "Granite 4.2 3B", "ref": "granite4.2:3b", "estimated_gib": 2.2, "tier": "SMALL"},
-    {"name": "Qwen3 8B", "ref": "qwen3:8b", "estimated_gib": 5.2, "tier": "SMALL"},
-    {"name": "DeepSeek-R1 14B", "ref": "deepseek-r1:14b", "estimated_gib": 9.0, "tier": "MID"},
-    {"name": "GPT-OSS 20B", "ref": "gpt-oss:20b", "estimated_gib": 14.0, "tier": "MID"},
-    {"name": "Mistral Small 3.2 24B", "ref": "mistral-small3.2:24b", "estimated_gib": 15.0, "tier": "MID"},
-    {"name": "Qwen3.8 27B", "ref": "qwen3.8:27b", "estimated_gib": 18.0, "tier": "HEAVY"},
-    {"name": "DeepSeek-R1 70B", "ref": "deepseek-r1:70b", "estimated_gib": 43.0, "tier": "HEAVY"},
-    {"name": "GPT-OSS 120B", "ref": "gpt-oss:120b", "estimated_gib": 65.0, "tier": "HEAVY"},
-    {"name": "Qwen3 235B", "ref": "qwen3:235b", "estimated_gib": 142.0, "tier": "EXTREME"},
+OLLAMA_MODEL_CATALOG: tuple[dict[str, Any], ...] = tuple(
+    {
+        "name": model.name,
+        "ref": model.reference("ollama").ref,  # type: ignore[union-attr]
+        "estimated_gib": model.estimated_gib,
+        "tier": model.tier,
+    }
+    for model in model_catalog.models_for_backend("ollama")
 )
 
 
@@ -110,14 +108,26 @@ def _write_runtime_models(config_path: Path, backend: str, references: list[str]
     models: list[dict[str, Any]] = []
     used: set[str] = set()
     for reference in references:
-        base = _model_name(reference)
+        # Catalog models get the same display name on every backend, so runs of
+        # different backends line up in `compare`.
+        known = model_catalog.identify(reference, backend)
+        entry_extra: dict[str, Any] = {}
+        if known is not None:
+            base = known.name
+            entry_extra = {
+                key: value
+                for key, value in model_catalog.config_entry(known, backend, reference).items()
+                if key in {"catalog_id", "precision"}
+            }
+        else:
+            base = _model_name(reference)
         name = base
         suffix = 2
         while name.lower() in used:
             name = f"{base}-{suffix}"
             suffix += 1
         used.add(name.lower())
-        models.append({"name": name, "path": reference, "profiles": _default_profiles(backend)})
+        models.append({"name": name, "path": reference, **entry_extra, "profiles": _default_profiles(backend)})
     cfg["models"] = models
     _save_config(config_path, cfg)
 
@@ -240,23 +250,58 @@ def _prompt_runtime_models(backend: str, config_path: Path, models_dir: Path) ->
     source_label = _("lokales Transformers-Verzeichnis")
 
     cfg = _load_config(config_path)
-    previous = _existing_remote_refs(cfg, backend)
+    previous_all = _existing_remote_refs(cfg, backend)
 
     console.print()
     console.print(_("Waehle ein Modell passend zum Backend {backend}.").format(backend=backend), style="bold cyan")
+    console.print(
+        _("Dieselben Modelle gibt es auf allen Backends, damit Ergebnisse vergleichbar bleiben."), style="dim"
+    )
     table = Table(box=box.ROUNDED, border_style="cyan", header_style="bold cyan")
     table.add_column("#", justify="right", style="bold")
     table.add_column(_("Modell"))
     table.add_column(_("Quelle"))
-    for index, value in enumerate(local, start=1):
-        table.add_row(str(index), _model_name(value), source_label)
-    for offset, value in enumerate(previous, start=len(local) + 1):
-        table.add_row(str(offset), value, _("bereits konfigurierte Modell-ID"))
+
+    # The shared catalog comes first; every row is the same model as on the other backends.
+    catalog_models = model_catalog.models_for_backend(backend)
+    catalog_refs = [str(model.reference(backend).ref) for model in catalog_models]  # type: ignore[union-attr]
+    previous = [value for value in previous_all if value not in catalog_refs]
+    choices: list[str] = []
+    for model in catalog_models:
+        reference = model.reference(backend)
+        assert reference is not None
+        check = "" if reference.verified else " " + _("(ungeprueft)")
+        extreme = " [EXTREME]" if model.tier == "EXTREME" else ""
+        table.add_row(
+            str(len(choices) + 1),
+            model.name + extreme,
+            f"{reference.ref} ({reference.precision}){check}",
+        )
+        choices.append(reference.ref)
+    missing = model_catalog.unavailable_for_backend(backend)
+    for value in local:
+        table.add_row(str(len(choices) + 1), _model_name(value), source_label)
+        choices.append(value)
+    for value in previous:
+        table.add_row(str(len(choices) + 1), value, _("bereits konfigurierte Modell-ID"))
+        choices.append(value)
+    standard_refs = [
+        str(model.reference(backend).ref)  # type: ignore[union-attr]
+        for model in catalog_models
+        if model.tier != "EXTREME"
+    ]
+    table.add_row("A", _("Alle Standardmodelle (ohne Extreme)"), _("{count} Modelle").format(count=len(standard_refs)))
     table.add_row("R", remote_label, _("Runtime laedt das Modell bei Bedarf"))
     table.add_row("0", _("Keine Modelle konfigurieren"), _("Konfiguration bleibt ohne Modelle"))
     console.print(table)
+    if missing:
+        console.print(
+            _("Auf diesem Backend noch nicht zugeordnet: {names}").format(
+                names=", ".join(model.name for model in missing)
+            ),
+            style="dim",
+        )
 
-    choices = local + previous
     default = "1" if choices else "R"
     while True:
         raw = console.input(
@@ -266,6 +311,9 @@ def _prompt_runtime_models(backend: str, config_path: Path, models_dir: Path) ->
         if raw.lower() == "0":
             _write_runtime_models(config_path, backend, [])
             return []
+        if raw.lower() == "a":
+            _write_runtime_models(config_path, backend, standard_refs)
+            return standard_refs
         if raw.lower() == "r":
             value = console.input("[magenta]\\[?][/magenta] " + escape(remote_label + ": ")).strip()
             if not value:

@@ -15,26 +15,33 @@ from llmbench.download import (
 from llmbench.model_select import parse_selection
 
 
-def test_2026_standard_suite_and_extreme_are_separated() -> None:
+def test_standard_suite_is_the_shared_catalog_and_extreme_is_separated() -> None:
     standard = get_suite_models("all")
     extreme = get_suite_models("extreme")
     catalog = get_catalog_models()
 
+    # Same models as Ollama/vLLM offer, cheapest first.
+    assert list(standard)[0] == "Gemma 3 1B"
     assert list(standard) == [
-        "Qwen3.5-9B",
-        "Gemma-4-12B-IT",
-        "Qwen3.8-27B",
-        "GLM-4.7-Flash",
-        "Qwen3.5-122B-A10B",
-        "Mistral-Small-4-119B-2603",
+        "Gemma 3 1B",
+        "Granite 4.2 3B",
+        "Qwen3 8B",
+        "DeepSeek-R1 14B",
+        "GPT-OSS 20B",
+        "Mistral Small 3.2 24B",
+        "Qwen3.8 27B",
+        "DeepSeek-R1 70B",
+        "GPT-OSS 120B",
     ]
-    assert list(extreme) == ["DeepSeek-V4-Flash-0731"]
-    assert "DeepSeek-V4-Flash-0731" not in standard
-    assert len(catalog) == 7
+    assert list(extreme) == ["Qwen3 235B"]
+    assert "Qwen3 235B" not in standard
+    # catalog = shared models + the llama.cpp-only models
+    assert len(catalog) == len(standard) + len(extreme) + 6
 
 
 def test_extreme_model_can_be_selected_explicitly() -> None:
-    selected = get_models_by_name(["DeepSeek-V4-Flash-0731"])
+    selected = get_models_by_name(["Qwen3 235B", "DeepSeek-V4-Flash-0731"])
+    assert selected["Qwen3 235B"]["repo_id"] == "unsloth/Qwen3-235B-A22B-GGUF"
     assert selected["DeepSeek-V4-Flash-0731"]["repo_id"] == (
         "unsloth/DeepSeek-V4-Flash-0731-GGUF"
     )

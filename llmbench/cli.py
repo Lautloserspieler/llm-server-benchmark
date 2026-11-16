@@ -49,7 +49,7 @@ def _print_doctor(data: dict) -> int:
         print(f"[{mark:5}] {x['name']}: {x['path']}")
         if x.get("hint"):
             print(f"          {x['hint']}")
-        failed = failed or not x["exists"]
+        failed = failed or not x["exists"] or (x.get("problem") or {}).get("level") == "error"
 
     hw = data["hardware"]
     print("\nHardware")

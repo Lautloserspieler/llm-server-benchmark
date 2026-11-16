@@ -28,7 +28,8 @@ dev = [
   "pypdf>=4.0",
   "pytest>=8.0",
   "pytest-cov>=5.0",
-  "ruff>=0.6"
+  "ruff>=0.6",
+  "types-PyYAML>=6.0.12"
 ]
 
 [project.scripts]

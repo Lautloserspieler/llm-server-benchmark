@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+### Qualifikations-Preflight fuer 1.7.0
+
+- Neue lesende Vorpruefung `scripts/qualification_preflight.py` fuer llama.cpp, Ollama und vLLM: Werkzeug-/GGUF-Verfuegbarkeit, beobachtete CUDA-Geraete, Docker-Engine, Projekt-Installationszustand und exakte lokale Image-Digests. Es werden keine Backends installiert, Modelle geladen oder Benchmarks gestartet.
+- Eindeutige, nicht ueberschriebene Berichtsordner speichern Voraussetzungen und Blocker. Auch ein bereiter Preflight meldet Hardwarequalifikation als `not_run`; CPU-vLLM bleibt ausdruecklich nicht anwendbar. Dokumentation, deutsche/englische Meldungen und Regressionstests ergaenzt; mypy prueft das Skript auf beiden CI-Plattformen.
+
+### Release- und Supportstatus abgeglichen
+
+- README, Roadmap, Architektur-Dokumentation und Wiki fuehren Ollama und Intel-Telemetrie als implementiert, TGI als eingestellt/noch enthalten und SGLang als geplanten Ersatz ohne verfuegbaren Adapter. Historische Phasen sind als solche gekennzeichnet; die CI-Matrix entspricht Python 3.10/3.12/3.14 und mypy auf Linux/Windows mit Python 3.12.
+- Das zweisprachige 1.7.0-Qualifikationsprotokoll trennt aktuelle CI-/Testnachweise von historischen Hardwaremessungen, gleicht offene Issues mit #167 ab und benennt die verbleibenden Ollama-, CUDA-/Windows-, Wiederholungs- und Soak-Nachweise. Release-Checklisten und Smoke-Beispiele verwenden ausdruecklich die aktiven Backends; Laufzeitcode und GitHub-Issue-Status bleiben unveraendert.
+
+### Portable Typpruefung und isolierte Entwicklungsumgebung
+
+- mypy wird in der CI zusaetzlich unter Windows geprueft; der bestehende Linux-Checkname bleibt erhalten. Das Dev-Extra enthaelt nun PyYAML-Typdefinitionen.
+- Linux-Affinitaets- und Windows-Admin-APIs werden dynamisch aufgeloest. Explizite Pruefungen optionaler Timeout-, Thread- und Concurrency-Werte erhalten die bisherigen Fallbacks ohne Typausnahmen.
+- CONTRIBUTING dokumentiert direkte Aufrufe mit dem isolierten Windows-Interpreter sowie einen Abhaengigkeitscheck. Regressionstests pruefen fehlende Plattform-APIs und leere numerische Overrides.
+
+### Lokale Stabilisierung: Community-Export, Doctor und Update-Watcher
+
+- Community-Export (#146): llama.cpp-Build-Commits und begrenzte Runtime-Entwicklungsversionen bleiben mit ihrer Provenienz erhalten. Fingerabdruecke werden aus denselben normalisierten Einstellungstypen erzeugt und geprueft; Integer-Werte wie `delay_seconds: 0` blockieren den Export nicht mehr. Bereits gueltige Exporte bleiben kompatibel; zuvor ungueltige muessen aus der Summary neu erzeugt werden.
+- Doctor (#145): Eine leere NVIDIA-/AMD-/Intel-Geraeteliste wird nicht mehr als CPU-only-Ausfuehrung ausgegeben. Erkannte Apple-Silicon-Unified-Memory-Domaenen werden mit Quelle genannt, ohne effektives GPU-Offloading oder dedizierten VRAM zu behaupten. Neue Meldungen sind deutsch/englisch verfuegbar.
+- Ollama-Update-Watcher: Gemeinsame Versionskonstanten in Tests und Dokumentation sind erlaubt; nur die verbindlichen Backend-Defaults muessen die alte Referenz enthalten. Vor dem Schreiben werden alle Pflichtreferenzen geprueft; andere Versionen und laengere Tags bleiben unveraendert.
+
 ### Kein stilles Vulkan statt CUDA
 
 - Der Block „Nachweis der Testbedingungen“ zeigt die GPU-API (`cuda`, `vulkan`, ...), die llama.cpp laut `--list-devices` wirklich nutzt. Bei einer NVIDIA-GPU mit Vulkan-/CPU-Build warnt der Lauf (Vulkan ist dort erfahrungsgemaess deutlich langsamer) und speichert die Warnung im Ergebnis.

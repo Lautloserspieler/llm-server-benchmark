@@ -174,6 +174,80 @@ def test_schema_copies_match_generation_and_are_closed() -> None:
             assert definition["additionalProperties"] is False
 
 
+@pytest.mark.parametrize("backend,identity", [
+    ("llama_cpp", "8642541b2"), ("llama_cpp", "abcdef0"),
+    ("llama_cpp", "a" * 40), ("llama_cpp", "a" * 64),
+    ("vllm", "0.10.2"), ("vllm", "0.10.2.dev1"),
+    ("vllm", "0.10.2rc1.dev2+cu128"), ("vllm", "0.10.2+cu128"),
+])
+def test_runtime_identity_survives_export_with_provenance(backend: str, identity: str) -> None:
+    source = native_source(backend)
+    observation = source["models"][0]["profiles"][0]["kv_cache"]["runtime_version"]
+    observation["value"] = identity
+    document = parse_document(serialize(project(source, nickname=None, excluded=set())).decode())
+    runtime = document.models[0].profiles[0].effective_kv_cache.runtime_version
+    assert runtime.value == identity
+    assert runtime.source == observation["source"]
+    assert runtime.evidence.method == observation["evidence"]["method"]
+
+
+@pytest.mark.parametrize("backend,identity", [
+    ("vllm", "abcdef12345"), ("llama_cpp", "abcdef"),
+    ("llama_cpp", "a" * 65), ("llama_cpp", "0.10.2.dev"),
+    ("llama_cpp", SECRET), ("vllm", "0.10.2 /private/model"),
+    ("vllm", "0.10.2\nsecret"), ("vllm", "1" * 129),
+])
+def test_runtime_identity_rejects_unbounded_or_wrong_backend_values(backend: str, identity: str) -> None:
+    source = native_source(backend)
+    source["models"][0]["profiles"][0]["kv_cache"]["runtime_version"]["value"] = identity
+    with pytest.raises(SafeError, match="invalid_version") as caught:
+        project(source, nickname=None, excluded=set())
+    assert identity not in str(caught.value)
+
+
+@pytest.mark.parametrize("backend", ["llama_cpp", "vllm", "ollama", "tgi"])
+@pytest.mark.parametrize("excluded", [set(), {"capabilities"}, {"hardware"}, {"hardware", "energy", "telemetry", "capabilities"}])
+def test_configuration_fingerprint_normalizes_integer_float_settings(backend: str, excluded: set[str]) -> None:
+    source = native_source(backend)
+    # Exercise every settings model, not just the original delay_seconds case.
+    source["config"]["benchmark"].update(delay_seconds=0, timeout_seconds=600)
+    source["models"][0]["profiles"][0]["settings"]["gpu_memory_utilization"] = 1
+    source["models"][0]["endpoint"]["settings"]["temperature"] = 0
+    source["models"][0]["soak"][0]["load_settings"]["cpu_request_timeout_seconds"] = 5
+    original = copy.deepcopy(source)
+    integer_document = project(source, nickname=None, excluded=excluded)
+    assert source == original
+
+    source["config"]["benchmark"].update(delay_seconds=0.0, timeout_seconds=600.0)
+    source["models"][0]["profiles"][0]["settings"]["gpu_memory_utilization"] = 1.0
+    source["models"][0]["endpoint"]["settings"]["temperature"] = 0.0
+    source["models"][0]["soak"][0]["load_settings"]["cpu_request_timeout_seconds"] = 5.0
+    float_document = project(source, nickname=None, excluded=excluded)
+    assert serialize(integer_document) == serialize(float_document)
+    parse_document(serialize(integer_document).decode())
+
+    changed = json.loads(serialize(integer_document))
+    changed["benchmark_configuration"]["values"]["timeout_seconds"] = 601
+    with pytest.raises(SafeError, match="incoherent_configuration_fingerprint"):
+        parse_document(json.dumps(changed))
+
+
+def test_configuration_fingerprint_does_not_accept_old_unnormalized_digest() -> None:
+    import hashlib
+    from llmbench.community.project import json_bytes, json_bytes_for_configuration
+
+    source = native_source()
+    source["config"]["benchmark"]["delay_seconds"] = 0
+    data = json.loads(serialize(project(source, nickname=None, excluded=set())))
+    canonical = json_bytes_for_configuration(data)
+    canonical["benchmark"]["delay_seconds"] = 0
+    data["benchmark_configuration"]["fingerprint"]["value"] = hashlib.sha256(json_bytes(canonical)).hexdigest()
+    # Previously invalid digests must be re-exported from the source result,
+    # not silently repaired when validating a supplied public document.
+    with pytest.raises(SafeError, match="incoherent_configuration_fingerprint"):
+        parse_document(json.dumps(data))
+
+
 def test_published_native_partial_legacy_and_redacted_examples_validate() -> None:
     root = Path(__file__).resolve().parents[1]
     examples = root / "docs/examples/community"

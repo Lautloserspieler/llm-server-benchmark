@@ -88,6 +88,19 @@ Before publishing a release or public demo:
 - [ ] Where multiple people substantially co-authored work, all contributors are credited
 - [ ] German and English Markdown documentation is synchronized
 - [ ] v1.7.0 only: the evidence list in [`docs/validation/v1.7.0-qualification.md`](validation/v1.7.0-qualification.md) is filled in with real measurement records (no ticks without hardware evidence)
+- [ ] v1.7.0 scope is llama.cpp, vLLM and Ollama; obsolete TGI validation/dependency entries in #116/#120/#124 are reconciled with #167
+- [ ] Required Ollama version/context/CPU/GPU combinations and five independent reference repeats have inspectable results
+- [ ] The 8-hour soak has attached result/telemetry/cleanup artifacts; a maintainer statement alone is distinguished from an inspectable record
+- [ ] Unavailable AMD/Intel hardware is explicitly marked untested; implemented providers and green CI are not advertised as hardware qualification
+
+TGI removal and SGLang beta are planned for 1.8.0, with full SGLang integration
+and stability validation planned for 1.9.0. SGLang is not selectable yet and is not
+part of the 1.7.0 acceptance matrix. The current smoke default still includes TGI;
+select the active backends explicitly:
+
+```bash
+python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --cycles 10 --device gpu --output results/qualification/cycles
+```
 
 ## Suggested project announcement copy
 
@@ -101,11 +114,21 @@ Before publishing a release or public demo:
 
 ## Final validation commands
 
+Start with the [read-only qualification preflight](validation/v1.7.0-qualification.md).
+It records missing prerequisites without installing or starting backends. A
+successful preflight is not hardware acceptance:
+
+```bash
+python scripts/qualification_preflight.py --device cuda --gguf models/reference.gguf --hash-model
+```
+
 ```bash
 llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml --hardware gpu --duration short
 pytest -q
 ruff check .
+mypy llmbench
+python -m pip check
 ```
 
 For an NVIDIA Linux machine, confirm the installed llama.cpp backend:
@@ -114,7 +137,8 @@ For an NVIDIA Linux machine, confirm the installed llama.cpp backend:
 cat tools/llama.cpp/.llama-build.json
 ```
 
-Expected for the native NVIDIA path:
+Example for a source-built CUDA installation (downloaded CUDA builds may record
+`source_build: false`):
 
 ```json
 {
@@ -124,3 +148,6 @@ Expected for the native NVIDIA path:
 ```
 
 The exact file contains additional fields such as the pinned llama.cpp tag and build paths.
+Also retain the actual GPU API reported by llama.cpp and the benchmark result.
+A GPU/Vulkan run is not CUDA evidence, and installation metadata alone does not
+establish which runtime executed the workload.

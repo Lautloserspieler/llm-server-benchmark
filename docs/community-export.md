@@ -131,6 +131,19 @@ not promise anonymity. `foreign_gpu_load_detected` and structured
 
 ## Group exclusions and examples
 
+Runtime identities preserve their provenance: effective llama.cpp KV-cache
+observations may contain a 7–64 digit hexadecimal build commit instead of a
+release number. Numeric runtime versions also accept bounded development
+versions such as vLLM's `0.10.2.dev1`. Paths, log text and arbitrary strings
+remain invalid.
+
+The configuration fingerprint uses the validated setting types across benchmark,
+profile, endpoint and soak settings. For a floating-point setting, `0` and `0.0`
+therefore produce the same digest. Existing valid v1 exports remain valid.
+Previously rejected exports with a digest calculated before numeric normalization
+must be regenerated from their original summary; validation does not repair or
+replace supplied fingerprints.
+
 All approved groups are enabled by default. `--exclude` accepts comma-separated
 `hardware`, `energy`, `capabilities`, `telemetry`, recorded exactly once in
 `omitted_groups`. Hardware hides static facts; remaining observations have

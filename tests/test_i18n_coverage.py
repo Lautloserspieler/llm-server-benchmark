@@ -19,11 +19,12 @@ from llmbench import i18n
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "llmbench"
 SCRIPT_LOCALES = ROOT / "scripts" / "locales"
+TRANSLATED_SCRIPTS = (ROOT / "scripts" / "qualification_preflight.py",)
 
 
 def _translation_calls() -> list[tuple[Path, int, ast.expr | None]]:
     calls = []
-    for path in sorted(PACKAGE.rglob("*.py")):
+    for path in sorted([*PACKAGE.rglob("*.py"), *TRANSLATED_SCRIPTS]):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_":
@@ -46,7 +47,7 @@ def test_no_function_shadows_the_translator():
     # `x, _ = ...` macht `_` in der ganzen Funktion lokal - ein `_("...")` in
     # derselben Funktion wuerde dann nicht mehr uebersetzen, sondern abstuerzen.
     bad = []
-    for path in sorted(PACKAGE.rglob("*.py")):
+    for path in sorted([*PACKAGE.rglob("*.py"), *TRANSLATED_SCRIPTS]):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for func in ast.walk(tree):
             if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):

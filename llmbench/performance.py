@@ -113,7 +113,10 @@ def _is_admin(platform_name: str) -> bool:
         try:
             import ctypes
 
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+            # ctypes exposes windll only on Windows. Dynamic lookup keeps this
+            # optional capability valid under both Linux and Windows typing.
+            windll = getattr(ctypes, "windll", None)
+            return bool(windll and windll.shell32.IsUserAnAdmin())
         except Exception:
             return False
     geteuid = getattr(os, "geteuid", None)

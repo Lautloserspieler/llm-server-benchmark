@@ -24,10 +24,18 @@ vLLM runs in containers and is especially useful for OpenAI-compatible serving s
 
 vLLM and llama.cpp results are not automatically directly comparable because schedulers, kernels, caches, and serving strategies differ.
 
-## Planned
+## Ollama
 
-- TGI
-- Ollama
+Ollama is supported since 1.6.5 through Docker and its native `/api/generate` API.
+CPU and GPU profiles are implemented. Hardware qualification is tracked separately
+in the [v1.7.0 record](https://github.com/Lautloserspieler/llm-server-benchmark/blob/main/docs/validation/v1.7.0-qualification.md).
+
+## TGI and SGLang
+
+[Decision #167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167)
+discontinues TGI, including legacy maintenance. Its unvalidated adapter is still
+present pending removal, planned for 1.8.0. SGLang beta is planned for 1.8.0 and
+full integration/stability validation for 1.9.0; no SGLang adapter is available yet.
 
 ## Build identity
 

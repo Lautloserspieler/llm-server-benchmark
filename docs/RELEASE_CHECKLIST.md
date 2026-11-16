@@ -114,6 +114,14 @@ python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --cycles 1
 
 ## Final validation commands
 
+Start with the [read-only qualification preflight](validation/v1.7.0-qualification.md).
+It records missing prerequisites without installing or starting backends. A
+successful preflight is not hardware acceptance:
+
+```bash
+python scripts/qualification_preflight.py --device cuda --gguf models/reference.gguf --hash-model
+```
+
 ```bash
 llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml --hardware gpu --duration short

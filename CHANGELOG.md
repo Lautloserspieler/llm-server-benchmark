@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Qualifikations-Preflight fuer 1.7.0
+
+- Neue lesende Vorpruefung `scripts/qualification_preflight.py` fuer llama.cpp, Ollama und vLLM: Werkzeug-/GGUF-Verfuegbarkeit, beobachtete CUDA-Geraete, Docker-Engine, Projekt-Installationszustand und exakte lokale Image-Digests. Es werden keine Backends installiert, Modelle geladen oder Benchmarks gestartet.
+- Eindeutige, nicht ueberschriebene Berichtsordner speichern Voraussetzungen und Blocker. Auch ein bereiter Preflight meldet Hardwarequalifikation als `not_run`; CPU-vLLM bleibt ausdruecklich nicht anwendbar. Dokumentation, deutsche/englische Meldungen und Regressionstests ergaenzt; mypy prueft das Skript auf beiden CI-Plattformen.
+
 ### Release- und Supportstatus abgeglichen
 
 - README, Roadmap, Architektur-Dokumentation und Wiki fuehren Ollama und Intel-Telemetrie als implementiert, TGI als eingestellt/noch enthalten und SGLang als geplanten Ersatz ohne verfuegbaren Adapter. Historische Phasen sind als solche gekennzeichnet; die CI-Matrix entspricht Python 3.10/3.12/3.14 und mypy auf Linux/Windows mit Python 3.12.

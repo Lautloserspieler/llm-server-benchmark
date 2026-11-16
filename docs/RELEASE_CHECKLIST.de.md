@@ -120,6 +120,14 @@ python scripts/smoke_all_backends.py --backends llama_cpp ollama vllm --cycles 1
 
 ## Finale Validierungsbefehle
 
+Mit der [lesenden Qualifikations-Vorpruefung](validation/v1.7.0-qualification.md)
+beginnen. Sie erfasst fehlende Voraussetzungen ohne Backend-Installation oder
+Serverstart. Ein erfolgreicher Preflight ist keine Hardware-Abnahme:
+
+```bash
+python scripts/qualification_preflight.py --device cuda --gguf models/reference.gguf --hash-model
+```
+
 ```bash
 llmbench doctor --config benchmark.yaml
 llmbench run --config benchmark.yaml --hardware gpu --duration short

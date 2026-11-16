@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,22 @@ class FakeRunner:
             if tuple(argv[: len(prefix)]) == prefix:
                 return subprocess.CompletedProcess(argv, rc, out, "")
         return subprocess.CompletedProcess(argv, 0, "", "")
+
+
+@pytest.mark.parametrize("admin", [0, 1])
+def test_windows_admin_detection_uses_optional_platform_api(monkeypatch, admin):
+    import ctypes
+
+    windll = SimpleNamespace(shell32=SimpleNamespace(IsUserAnAdmin=lambda: admin))
+    monkeypatch.setattr(ctypes, "windll", windll, raising=False)
+    assert performance._is_admin("windows") is bool(admin)
+
+
+def test_windows_admin_detection_without_platform_api_is_false(monkeypatch):
+    import ctypes
+
+    monkeypatch.delattr(ctypes, "windll", raising=False)
+    assert performance._is_admin("windows") is False
 
 
 # Unter Windows ist ":" im Dateinamen verboten; der Code sucht nur nach "intel-rapl*".

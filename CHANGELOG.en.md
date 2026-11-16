@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+### Qualification preflight for 1.7.0
+
+- New read-only `scripts/qualification_preflight.py` for llama.cpp, Ollama and vLLM: tool/GGUF availability, observed CUDA devices, Docker engine, project installation state, and exact local image digests. No backends are installed, models loaded, or benchmarks started.
+- Unique output directories preserve previous evidence and record prerequisites/blockers. Even a ready preflight reports hardware qualification as `not_run`; CPU vLLM is explicitly not applicable. Added documentation, German/English messages and regression tests; mypy checks the script on both CI platforms.
+
+### Reconciled release and support status
+
+- README, roadmap, architecture documentation and wiki identify Ollama and Intel telemetry as implemented, TGI as discontinued/retained, and SGLang as the planned replacement without an available adapter. Historical phases are labeled accordingly; the CI matrix reflects Python 3.10/3.12/3.14 and mypy on Linux/Windows with Python 3.12.
+- The bilingual 1.7.0 qualification protocol separates current CI/test evidence from historical hardware measurements, reconciles open issues with #167, and identifies remaining Ollama, CUDA/Windows, repeat-run and soak evidence. Release checklists and smoke examples explicitly select the active backends; runtime code and GitHub issue state are unchanged.
+
+### Portable type checking and isolated development environment
+
+- CI additionally runs mypy on Windows while preserving the existing Linux check name. The dev extra now includes PyYAML type definitions.
+- Linux affinity and Windows administrator APIs are resolved dynamically. Explicit checks of optional timeout, thread, and concurrency values retain existing fallbacks without type suppressions.
+- CONTRIBUTING documents direct calls using the isolated Windows interpreter and a dependency check. Regression tests cover missing platform APIs and empty numeric overrides.
+
+### Local stabilization: community export, doctor and update watcher
+
+- Community export (#146): llama.cpp build commits and bounded runtime development versions retain their provenance. Fingerprints are produced and checked using the same normalized setting types; integer input such as `delay_seconds: 0` no longer blocks export. Existing valid exports remain compatible; previously invalid exports must be regenerated from the summary.
+- Doctor (#145): An empty NVIDIA/AMD/Intel device list no longer implies CPU-only execution. Detected Apple Silicon unified-memory domains are identified with their source without claiming effective GPU offloading or dedicated VRAM. New messages are available in German and English.
+- Ollama update watcher: Tests and documentation may use shared version constants; only authoritative backend defaults must contain the old reference. All required references are checked before writing; other versions and longer tags remain unchanged.
+
 ### No silent Vulkan instead of CUDA
 
 - The "Test conditions" block shows the GPU API (`cuda`, `vulkan`, ...) that llama.cpp really uses according to `--list-devices`. With an NVIDIA GPU and a Vulkan/CPU build the run warns (Vulkan is much slower there in practice) and stores the warning in the result.

@@ -10,8 +10,8 @@ Die kanonische Roadmap liegt im Repository:
 
 ## Bereits vorhanden
 
-- llama.cpp und vLLM
-- NVIDIA- und AMD-Telemetrie
+- llama.cpp, vLLM und Ollama
+- NVIDIA-, AMD- und Intel-Telemetrieprovider (Hardware-Nachweise unterscheiden sich)
 - CPU/GPU/Hybrid
 - Long Context
 - TTFT/Concurrency
@@ -22,10 +22,14 @@ Die kanonische Roadmap liegt im Repository:
 
 ## Nächste größere Themen
 
-- Stresspfade weiter backend-unabhängig machen
-- TGI
-- Ollama
-- Intel-Telemetrie
-- weitere Reproduzierbarkeits- und Setup-Verbesserungen
+- 1.7.0: aktive Textbackends qualifizieren und verbleibende Hardwareluecken dokumentieren
+- 1.8.0: TGI entfernen, SGLang-Beta einfuehren, kalibrierte Last-/SLO-Messungen ergaenzen
+- 1.9.0: adaptive Kapazitaet und Engine-Vergleiche; SGLang-Integration und Stabilitaetsvalidierung vervollstaendigen
+- 2.0.0: multimodale Task-/Runtime-Ausfuehrung und Reports
+
+TGI wird gemaess [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167) eingestellt.
+SGLang ist geplant und hat noch keinen Adapter. Das
+[Qualifikationsprotokoll](https://github.com/Lautloserspieler/llm-server-benchmark/blob/main/docs/validation/v1.7.0-qualification.md)
+enthaelt vorhandene Messungen und offene Abnahmen; gruene CI ist keine Hardwarequalifikation.
 
 Diese Wiki-Seite bleibt bewusst kurz; Planänderungen gehören zuerst in `ROADMAP.md`.

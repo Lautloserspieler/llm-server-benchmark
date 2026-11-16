@@ -24,8 +24,13 @@ Beweismaterial belegte Ergebnisse statt bloßer Tokens/s-Zahlen.
 | vLLM | ✅ fertig (1.6.0) | Docker-Container (`vllm/vllm-openai`) | Phase A |
 | TGI | ⛔ wird eingestellt (Entscheidung in #167; Ersatz SGLang, geplant für 1.8.0) — bis zur Entfernung Beta ohne Validierung | Docker-Container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-kompatibles `/v1/completions`-Backend |
 | Ollama | ✅ fertig (1.6.5) | Docker-Container (`ollama/ollama`) | Phase 3, native `/api/generate`-API; lokaler GGUF-Import über Blob/Create-APIs |
+| SGLang | 📋 geplant (#167) | Docker-Container (geplant) | Beta fuer 1.8.0; vollstaendige Integration und Stabilitaetsvalidierung fuer 1.9.0 geplant; noch kein Adapter |
 
-Neue Backends (vLLM/Ollama/TGI) laufen bewusst **ausschließlich als Docker-Container** —
+„Fertig“ bezeichnet die Implementierung, keine pauschale Hardwarefreigabe.
+Der [v1.7.0-Qualifikationsstand](docs/validation/v1.7.0-qualification.md)
+enthaelt die vorhandenen Messnachweise und noch offenen Kombinationen.
+
+Die vorhandenen Server-Adapter (vLLM/Ollama sowie der noch enthaltene TGI-Adapter) laufen bewusst **ausschließlich als Docker-Container** —
 kein natives/bare-metal-Setup wie bei llama.cpp. Docker (inklusive
 `nvidia-container-toolkit` für GPU-Zugriff) wird damit zur Voraussetzung für diese drei
 Backends. Das vereinfacht Installation/Deinstallation erheblich (siehe
@@ -43,6 +48,10 @@ weitere Plattform-Sonderbehandlung wie bei llama.cpp einzuführen.
 
 Bei mehreren gleichzeitig vorhandenen GPU-Herstellern nutzt der `CompositeProvider`
 (seit 1.6.0) alle verfügbaren Provider parallel.
+
+NVIDIA-Messnachweise sind im Qualifikationsprotokoll dokumentiert; echte AMD- und
+Intel-Traces fehlen dort weiterhin. Implementierte Provider gelten dadurch nicht
+automatisch als auf jeder Hardware validiert.
 
 ## Phase 0 — Architekturverträge ✅ *umgesetzt/merged*
 
@@ -67,7 +76,8 @@ llama.cpp unterstützt die vorhandenen vier Stresspfade. vLLM, TGI und Ollama f�
 generischen TTFT/Concurrency-Stresstest und den HTTP-Kontext-/OOM-Probe aus
 (`llmbench/backends/http_probe.py`, inkl. Fehlerklassifikation `out_of_memory`,
 `context_exceeded`, `context_truncated`, `timeout`, `connection_error`; per Fake-HTTP-Server
-getestet, noch nicht gegen echte GPU-Container validiert). Lokaler Quantisierungsvergleich
+getestet; vorhandene Ollama-GPU-Kontextnachweise und deren Grenzen stehen im
+[Qualifikationsprotokoll](docs/validation/v1.7.0-qualification.md)). Lokaler Quantisierungsvergleich
 und Multi-Model-Stress bleiben dort explizit unsupported, weil kein reproduzierbarer
 Adaptervertrag existiert (siehe docs/architecture/backends.md).
 
@@ -84,7 +94,27 @@ alte Resultate bleiben unverändert lesbar). Es gibt keinen universellen Score, 
 Werte werden nie als 0 gespeichert. Noch **nicht** enthalten: multimodale Backends, Workloads
 oder Runner-Integration. Siehe [docs/architecture/](docs/architecture/README.md).
 
-## Nächste Schritte (Stand: nach 1.6.0)
+## Aktueller Entwicklungspfad: 1.7.0 bis 2.0.0
+
+Die Projektversion ist weiterhin **1.6.5**. Arbeiten fuer 1.7.0 sind auf `main`
+integriert; die Release-Abnahme ist noch offen. Release-Nummern beschreiben
+geplanten Umfang und keine zugesagten Termine.
+
+| Release | Schwerpunkt | Tracking |
+| --- | --- | --- |
+| 1.7.0 | llama.cpp, vLLM und Ollama stabilisieren; HTTP-Probes, Telemetrie, Plattformen und Hardwareabnahme | [#116](https://github.com/Lautloserspieler/llm-server-benchmark/issues/116), #121–#124; TGI-Validierung #120 entfaellt durch #167 |
+| 1.8.0 | Tokenkalibrierung, Lastprofile, SLO/Goodput und Reports; TGI entfernen und SGLang-Beta einfuehren | [#117](https://github.com/Lautloserspieler/llm-server-benchmark/issues/117), #125–#128, [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167) |
+| 1.9.0 | Adaptive Kapazitaet, Engine-Vergleich, Multi-Turn und Statistik; SGLang-Integration und Stabilitaet vervollstaendigen | [#118](https://github.com/Lautloserspieler/llm-server-benchmark/issues/118), #129–#132, #167 |
+| 2.0.0 | Multimodale Orchestrierung, STT, TTS, Bild, OCR, Embeddings und Abnahme | [#119](https://github.com/Lautloserspieler/llm-server-benchmark/issues/119), #133–#139 |
+
+Fuer 1.7.0 bleiben insbesondere CUDA und Windows auf echter Hardware, eine zweite
+Ollama-Version, die geforderten Kontextstufen, wiederholte Referenzmessungen und
+nachpruefbare Langzeit-Soak-Artefakte offen. AMD/Intel werden bei verfuegbarer
+Hardware geprueft und andernfalls als nicht getestet ausgewiesen. Details und
+der Abgleich der weiterhin offenen Issues stehen im
+[Qualifikationsprotokoll](docs/validation/v1.7.0-qualification.md).
+
+## Bereits integrierte Grundlagen
 
 Für alles gilt: **Das Sprachsystem (de/en) muss überall funktionieren**, und alles läuft über
 eine einheitliche, schöne Terminal-Oberfläche.
@@ -100,9 +130,8 @@ eine einheitliche, schöne Terminal-Oberfläche.
 
 ## Phasenplan (ursprünglich)
 
-Die vollständige technische Planung (Architekturentscheidungen, betroffene Module, Tests)
-lebt im internen Planungsdokument der Roadmap-Session; hier die grobe Reihenfolge, wie sie
-dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
+Der folgende urspruengliche Phasenplan dokumentiert die Entstehung der Adapter.
+Fuer neue Arbeiten gelten der Entwicklungspfad oben und Entscheidung #167.
 
 1. **Phase F, Teil 1 — Projekt-Infrastruktur (dieses Dokument + CONTRIBUTING.md)**
    Risikoarm, kein Verhaltenscode, dient als Kompass für den Rest der Roadmap.
@@ -111,9 +140,9 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
    `begin_profile`/`end_profile`-Hooks, ein neues `docker_backend.py` orchestriert
    Container-Lifecycle, ein neues `http_bench.py` misst pp/tg/long-context über
    kalibrierte HTTP-Requests statt eines externen Kommandozeilenwerkzeugs.
-3. **Phase C — TGI-Backend**
-   Nahezu kostenlos direkt nach Phase A: OpenAI-kompatibel, nutzt `http_bench.py`
-   unverändert, validiert die Abstraktion an einem zweiten Server.
+3. **Phase C — TGI-Backend** ⛔ *durch #167 abgeloest*
+   Der Adapter wurde umgesetzt, wird aber nicht weiter qualifiziert oder als
+   Legacy-Backend gepflegt. Entfernung und Ersatz durch SGLang sind geplant.
 4. **Phase B — Ollama-Backend**
    Bewusst zuletzt unter den Backends, da die native Ollama-API (`/api/generate`) am
    stärksten von der OpenAI-kompatiblen Norm abweicht.
@@ -128,15 +157,14 @@ dort unter "Empfohlene Reihenfolge" vorgeschlagen wurde:
    Am Ende, da die Phasen A–E neue übersetzungspflichtige Strings einführen — ein
    einziger Audit-Durchgang danach ist effizienter als mehrere Zwischen-Durchgänge.
 
-Die konkrete Reihenfolge ab Phase A ist eine Empfehlung, keine feste Zusage; sie kann sich
-je nach Ressourcen und Rückmeldungen verschieben.
+Die historische Reihenfolge ist keine aktuelle Aufgabenliste.
 
 ## Ideen, keine Zusagen
 
 Die folgenden Punkte sind **unverbindliche Ideen** für eine fernere Zukunft — keine
 geplanten Phasen, kein Zeitrahmen, keine Garantie, dass sie überhaupt umgesetzt werden:
 
-- Weitere Backends: SGLang, TensorRT-LLM
+- Weitere Backends ueber das bereits geplante SGLang hinaus: TensorRT-LLM
 - Weitere GPU-Hersteller/Telemetriequellen über AMD/Intel hinaus
 - Cloud-/Remote-Inferencing-Ziele statt ausschließlich lokaler Server
 

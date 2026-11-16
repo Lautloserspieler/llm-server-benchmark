@@ -11,7 +11,7 @@ Examples:
 
 - llama.cpp — text generation
 - vLLM — text generation
-- TGI — text generation
+- TGI — retained text adapter being discontinued (see #167)
 - Ollama — text generation and potentially other model types later
 - faster-whisper — speech-to-text
 - Piper — text-to-speech
@@ -95,8 +95,10 @@ marks regular llama.cpp `b` builds as prereleases, so this backend uses the
 `b<number>` tag instead of GitHub's stable flag. vLLM and the other container
 images are pinned to a version and `sha256` digest; the bot's draft PR intentionally
 drops the old digest and requires a freshly resolved digest before merging. TGI
-remains a supported backend but is no longer watched automatically, so TGI image
-updates are manual. Documentation changes alone do not trigger a bump; unclear
+is being discontinued under [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167)
+and is not monitored automatically or maintained as a legacy backend. Its current
+pin documents the retained adapter, not a commitment to further updates.
+Documentation changes alone do not trigger a bump; unclear
 release notes require manual review.
 The bot runs code tests but no hardware benchmarks. Before merging, verify the
 image/binary, API startup, and representative CPU/GPU measurements. Existing
@@ -121,6 +123,10 @@ Relevant serve arguments:
 - `--gpu-memory-utilization`, `--dtype`, additional `profile.additional_args`
 
 ### TGI
+
+The following describes the adapter still present in the code, not an active
+support commitment. TGI is not hardware-qualified for 1.7.0; removal and a
+SGLang beta are planned for 1.8.0 under #167. SGLang has no adapter yet.
 
 `TgiBackend` runs the official image `ghcr.io/huggingface/text-generation-inference`.
 The container listens internally on port 80 and is likewise published to the host port from

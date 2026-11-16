@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import platform
@@ -40,10 +41,13 @@ def _available_cpu_threads() -> int:
     Auf Linux respektiert sched_getaffinity() auch cpuset-/Container-Limits.
     Auf anderen Plattformen faellt die Erkennung auf os.cpu_count() zurueck.
     """
-    try:
-        return max(1, len(os.sched_getaffinity(0)))
-    except (AttributeError, OSError):
-        return max(1, os.cpu_count() or 1)
+    # Resolve the Linux-only API dynamically; Windows has no affinity symbol
+    # in either os or its platform-specific type definitions.
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
+    with contextlib.suppress(AttributeError, OSError):
+        if callable(sched_getaffinity):
+            return max(1, len(sched_getaffinity(0)))
+    return max(1, os.cpu_count() or 1)
 
 
 def _normalize_cpu_profile_threads(model: dict[str, Any]) -> bool:

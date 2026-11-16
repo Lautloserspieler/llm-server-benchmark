@@ -34,14 +34,18 @@ llmbench misst nicht nur Tokens pro Sekunde, sondern speichert auch Testbedingun
 - Soak-, OOM-, Multi-Tenant- und Quantisierungstests
 - CPU-, RAM-, GPU-, VRAM-, Temperatur- und Power-Telemetrie
 
-## Unterstützte Backends
+## Backend-Status
 
 | Backend | Status | Ausführung |
 | --- | --- | --- |
 | llama.cpp | unterstützt | nativ |
 | vLLM | unterstützt | Docker |
-| TGI | geplant | Docker |
-| Ollama | geplant | Docker |
+| Ollama | unterstuetzt (1.6.5) | Docker |
+| TGI | wird eingestellt; Adapter noch vorhanden, nicht validiert | Docker |
+| SGLang | geplanter TGI-Ersatz; noch kein Adapter | Docker (geplant) |
+
+Die [Qualifikationsnachweise](https://github.com/Lautloserspieler/llm-server-benchmark/blob/main/docs/validation/v1.7.0-qualification.md)
+zeigen echte Hardwaretests und noch offene Release-Abnahmen.
 
 ## Grundprinzip
 

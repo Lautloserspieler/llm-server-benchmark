@@ -161,7 +161,8 @@ def test_run_soak_test_drives_both_servers_and_reports_status_ok(tmp_path: Path,
     assert saved["telemetry"]["sample_count"] >= 0
 
 
-def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("gpu_concurrency,expected", [(3, 3), (None, 4), ("", 4)])
+def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: Path, monkeypatch, gpu_concurrency, expected):
     _patched_async_client(monkeypatch, httpx.MockTransport(_ok_response_handler))
     backend = _FakeBackend()
 
@@ -171,7 +172,7 @@ def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: 
         _soak_cfg(
             concurrency=4,
             cpu_concurrency=1,
-            gpu_concurrency=3,
+            gpu_concurrency=gpu_concurrency,
             cpu_request_timeout_seconds=420,
             gpu_request_timeout_seconds=180,
         ),
@@ -184,7 +185,7 @@ def test_run_soak_test_uses_separate_cpu_gpu_concurrency_and_timeouts(tmp_path: 
     assert result["status"] == "ok"
     settings = result["load_settings"]
     assert settings["cpu_concurrency"] == 1
-    assert settings["gpu_concurrency"] == 3
+    assert settings["gpu_concurrency"] == expected
     assert settings["cpu_request_timeout_seconds"] == 420.0
     assert settings["gpu_request_timeout_seconds"] == 180.0
     assert settings["cpu_server_threads"] >= 1
@@ -223,6 +224,19 @@ def test_partition_soak_profiles_respects_explicit_budget_without_oversubscripti
     assert cpu_runtime["threads"] == 12
     assert gpu_runtime["threads"] == 4
     assert settings["cpu_server_threads"] + settings["gpu_server_threads"] == 16
+
+
+@pytest.mark.parametrize("cpu_threads,gpu_threads,expected", [
+    (None, None, (12, 4)), ("", "", (12, 4)),
+    (None, 5, (11, 5)), (5, None, (5, 11)), ("6", "3", (6, 3)),
+])
+def test_partition_soak_profiles_keeps_optional_thread_overrides(monkeypatch, cpu_threads, gpu_threads, expected):
+    monkeypatch.setattr("llmbench.soak._available_cpu_threads", lambda: 16)
+    cpu, gpu, _settings = _partition_soak_profiles(
+        {"gpu_layers": 0}, {"gpu_layers": -1},
+        {"cpu_threads": cpu_threads, "gpu_threads": gpu_threads},
+    )
+    assert (cpu["threads"], gpu["threads"]) == expected
 
 
 def test_run_soak_test_marks_gpu_capacity_preflight_as_skipped(tmp_path: Path, monkeypatch):

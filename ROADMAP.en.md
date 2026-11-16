@@ -22,8 +22,13 @@ traceable benchmark results backed by evidence instead of isolated tokens/s numb
 | vLLM | ✅ complete (1.6.0) | Docker container (`vllm/vllm-openai`) | Phase A |
 | TGI | ⛔ being discontinued (decision in #167; replacement SGLang, planned for 1.8.0) — beta without validation until it is removed | Docker container (`ghcr.io/huggingface/text-generation-inference`) | Phase 2, OpenAI-compatible `/v1/completions` backend |
 | Ollama | ✅ complete (1.6.5) | Docker container (`ollama/ollama`) | Phase 3, native `/api/generate`; local GGUF import through blob/create APIs |
+| SGLang | 📋 planned (#167) | Docker container (planned) | Beta planned for 1.8.0; full integration and stability validation planned for 1.9.0; no adapter yet |
 
-New server backends such as vLLM/Ollama/TGI are intentionally containerized instead of
+“Complete” describes implementation, not unrestricted hardware qualification.
+The [v1.7.0 qualification record](docs/validation/v1.7.0-qualification.md)
+lists the available measurements and remaining untested combinations.
+
+The existing server adapters (vLLM/Ollama and the retained TGI adapter) are intentionally containerized instead of
 using another native/bare-metal installation path like llama.cpp. Docker, including the
 required GPU runtime, provides a more predictable installation and cleanup model and keeps
 Windows (Docker Desktop/WSL2) and Linux behavior closer together.
@@ -41,6 +46,10 @@ runtime install/uninstall expectations.
 
 When multiple GPU vendors are present, `CompositeProvider` (since 1.6.0) can combine
 available providers instead of selecting only the first source.
+
+NVIDIA measurements are documented in the qualification record; real AMD and
+Intel traces are still missing there. Implemented providers are not thereby
+validated on every hardware configuration.
 
 ## Phase 0 — Architecture contracts ✅ *implemented/merged*
 
@@ -64,7 +73,8 @@ llama.cpp supports the four existing stress paths. vLLM, TGI, and Ollama run the
 TTFT/concurrency stress workload and the HTTP context/OOM probe
 (`llmbench/backends/http_probe.py`, including failure classification `out_of_memory`,
 `context_exceeded`, `context_truncated`, `timeout`, `connection_error`; tested against a
-fake HTTP server, not yet validated against real GPU containers). Local quantization
+fake HTTP server; existing Ollama GPU context evidence and its limits are recorded
+in the [qualification protocol](docs/validation/v1.7.0-qualification.md)). Local quantization
 comparison and multi-model stress remain explicitly unsupported there because no
 reproducible adapter contract exists (see docs/architecture/backends.md).
 
@@ -81,7 +91,27 @@ SHA-256, sample selection); optional `task`/`workload`/`dataset` fields in schem
 missing values are never stored as 0. **Not** included yet: multimodal backends, workloads,
 or runner integration. See [docs/architecture/](docs/architecture/README.en.md).
 
-## Next steps (after 1.6.0)
+## Current development path: 1.7.0 to 2.0.0
+
+The project version is still **1.6.5**. Work for 1.7.0 is integrated on `main`,
+but release acceptance remains open. Release numbers describe planned scope,
+not promised delivery dates.
+
+| Release | Focus | Tracking |
+| --- | --- | --- |
+| 1.7.0 | Stabilize llama.cpp, vLLM and Ollama; HTTP probes, telemetry, platforms and hardware qualification | [#116](https://github.com/Lautloserspieler/llm-server-benchmark/issues/116), #121–#124; TGI validation #120 dropped by #167 |
+| 1.8.0 | Token calibration, traffic profiles, SLO/Goodput and reports; remove TGI and introduce SGLang beta | [#117](https://github.com/Lautloserspieler/llm-server-benchmark/issues/117), #125–#128, [#167](https://github.com/Lautloserspieler/llm-server-benchmark/issues/167) |
+| 1.9.0 | Adaptive capacity, engine comparisons, multi-turn and statistics; complete SGLang integration and stability validation | [#118](https://github.com/Lautloserspieler/llm-server-benchmark/issues/118), #129–#132, #167 |
+| 2.0.0 | Multimodal orchestration, STT, TTS, images, OCR, embeddings and qualification | [#119](https://github.com/Lautloserspieler/llm-server-benchmark/issues/119), #133–#139 |
+
+The remaining 1.7.0 work includes real CUDA and Windows hardware runs, a second
+Ollama version, required context sizes, repeated reference measurements, and
+inspectable long-soak artifacts. AMD/Intel are tested where hardware is available
+and otherwise explicitly marked untested. Details and reconciliation of the
+still-open issues are in the
+[qualification protocol](docs/validation/v1.7.0-qualification.md).
+
+## Foundations already integrated
 
 Everything below must continue to support **both German and English** and use the common
 terminal UI.
@@ -98,17 +128,17 @@ terminal UI.
 
 ## Original phase plan
 
-The detailed technical planning lives in the project planning material. The high-level
-sequence is:
+The original phase plan below records how the adapters were introduced.
+New work follows the development path above and decision #167.
 
 1. **Phase F, part 1 — Project infrastructure**  
    Low risk: roadmap, contribution guide, issue/PR templates, and project conventions.
 2. **Phase A — vLLM backend** ✅ *released in 1.6.0*  
    Architectural proof that `BenchmarkBackend` can support HTTP/server backends through
    profile hooks, Docker lifecycle management, and calibrated HTTP measurements.
-3. **Phase C — TGI backend**  
-   Reuses the HTTP benchmarking infrastructure and validates the abstraction with another
-   server.
+3. **Phase C — TGI backend** ⛔ *superseded by #167*
+   The adapter was implemented but will not receive further qualification or
+   legacy maintenance. Removal and replacement with SGLang are planned.
 4. **Phase B — Ollama backend**  
    Kept later because Ollama's native `/api/generate` API differs more strongly from the
    OpenAI-compatible path.
@@ -121,15 +151,14 @@ sequence is:
    Final language and contribution-flow audit after feature phases introduce additional
    user-visible strings.
 
-The order after Phase A is a recommendation, not a hard commitment. It may change based on
-resources, testing results, and contributor feedback.
+The historical sequence is not the current task list.
 
 ## Ideas, not commitments
 
 The following are **non-binding ideas** for a more distant future. They are not scheduled
 phases and have no promised timeframe:
 
-- Additional backends: SGLang, TensorRT-LLM
+- Additional backends beyond the already planned SGLang: TensorRT-LLM
 - Additional GPU vendors/telemetry sources beyond NVIDIA/AMD/Intel
 - Cloud or remote inference targets in addition to local servers
 

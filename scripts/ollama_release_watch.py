@@ -18,6 +18,9 @@ FILES = (
     "docs/architecture/backends.md",
     "docs/architecture/backends.en.md",
 )
+# Tests and docs may use shared constants or deliberate older-version fixtures.
+# Only the two authoritative defaults must contain the current pinned version.
+REQUIRED_FILES = ("llmbench/config.py", "llmbench/backend_setup.py")
 VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 RELEVANT = re.compile(
     r"api|endpoint|context|token|truncat|shift|gpu|cuda|rocm|model|gguf|"
@@ -87,14 +90,25 @@ def review(releases: list[dict], baseline: str) -> dict:
 
 
 def bump(root: Path, old: str, new: str) -> None:
-    before = re.compile(rf"ollama/ollama:{re.escape(old)}(?:@sha256:[0-9a-f]{{64}})?")
+    old_key, new_key = version_key(old), version_key(new)
+    if old_key is None or new_key is None or new_key <= old_key:
+        raise ValueError("Expected increasing concrete Ollama versions")
+    before = re.compile(rf"ollama/ollama:{re.escape(old)}(?:@sha256:[0-9a-f]{{64}})?(?![0-9A-Za-z_.+@-])")
     after = f"ollama/ollama:{new}"
+    updates: dict[Path, str] = {}
     for name in FILES:
         path = root / name
+        if not path.exists() and name not in REQUIRED_FILES:
+            continue
         content = path.read_text(encoding="utf-8")
         updated, replacements = before.subn(after, content)
-        if replacements == 0:
+        if replacements == 0 and name in REQUIRED_FILES:
             raise ValueError(f"Expected pinned reference absent in {name}")
+        if replacements:
+            updates[path] = updated
+    # Validate all required references before changing any file. A stale file
+    # list must not leave a half-applied proposal in the review checkout.
+    for path, updated in updates.items():
         path.write_text(updated, encoding="utf-8")
 
 

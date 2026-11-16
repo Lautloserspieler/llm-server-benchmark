@@ -110,6 +110,11 @@ def _model_meta(model: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         "quality_gate": model.get("quality_gate"),
         "notes": model.get("notes"),
     }
+    # Shared model catalog: lets `compare` tell whether two backends measured the same
+    # model and whether its quantization/precision matches.
+    for key in ("catalog_id", "precision"):
+        if model.get(key):
+            meta[key] = model[key]
     if runtime_ref:
         meta["runtime_reference"] = True
     if fingerprint.get("sha256"):
